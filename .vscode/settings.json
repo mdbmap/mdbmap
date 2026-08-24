@@ -1,0 +1,28 @@
+{
+	"files.watcherExclude": {
+		"src/generated/**": true
+	},
+	"search.exclude": {
+		"src/generated/**": true
+	},
+	"files.readonlyInclude": {
+		"src/generated/**": true
+	},
+
+	"editor.defaultFormatter": "oxc.oxc-vscode",
+	"prettier.enable": false,
+	"tailwindCSS.emmetCompletions": true,
+	"tailwindCSS.classFunctions": ["tv"],
+
+	"[javascript][typescript][javascriptreact][typescriptreact]": {
+		"editor.codeActionsOnSave": {
+			"source.fixAll.oxc": "explicit"
+		}
+	},
+
+	"[css][postcss][javascriptreact][typescriptreact]": {
+		"editor.codeActionsOnSave": {
+			"source.fixAll.stylelint": "explicit"
+		}
+	}
+}
