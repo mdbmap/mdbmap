@@ -6,6 +6,14 @@
 	"main": "@tanstack/react-start/server-entry",
 	// Set `id` to the real namespace before deploy: `wrangler kv namespace create METADATA_KV`.
 	"kv_namespaces": [{ "binding": "METADATA_KV", "id": "REPLACE_WITH_METADATA_KV_ID" }],
+	// Overflow builds run as durable Cloudflare Workflows (ADR-0002 §overflow).
+	"workflows": [
+		{
+			"binding": "OVERFLOW_BUILD",
+			"class_name": "OverflowBuildWorkflow",
+			"name": "overflow-build",
+		},
+	],
 	"observability": {
 		"enabled": true,
 	},
