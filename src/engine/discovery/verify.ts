@@ -108,10 +108,12 @@ const nativeServiceFor = (type: SimklEntry["type"]): SimklService => {
 };
 
 // A segment paired with the native catalogue record that verifies its identity
-// and supplies its instalment count and release date.
+// and supplies its instalment count and release date. `nativeService` is
+// resolved once here so no use site re-derives it from the entry shape.
 interface AnchoredSegment {
 	anchor: ServiceRef | undefined;
 	native: CatalogueTitle | undefined;
+	nativeService: SimklService;
 	segment: ChainSegment;
 }
 
@@ -119,17 +121,17 @@ const anchorSegment = async (
 	segment: ChainSegment,
 	clients: VerificationClients,
 ): Promise<AnchoredSegment> => {
-	const service = nativeServiceFor(segment.entry.type);
-	const serviceId = segment.externalIds[service];
-	const client = clients[service];
+	const nativeService = nativeServiceFor(segment.entry.type);
+	const serviceId = segment.externalIds[nativeService];
+	const client = clients[nativeService];
 	if (serviceId === undefined || client === undefined) {
-		return { anchor: undefined, native: undefined, segment };
+		return { anchor: undefined, native: undefined, nativeService, segment };
 	}
 	const native = await client.fetchTitle(serviceId);
 	if (native === undefined) {
-		return { anchor: undefined, native: undefined, segment };
+		return { anchor: undefined, native: undefined, nativeService, segment };
 	}
-	return { anchor: { service, serviceId }, native, segment };
+	return { anchor: { service: nativeService, serviceId }, native, nativeService, segment };
 };
 
 const namesEdge = (
@@ -192,7 +194,9 @@ const relationsOf = (
 // instalments are never laid end to end across the gap.
 interface TargetRun {
 	segments: readonly AnchoredSegment[];
-	targetId: string;
+	// The target title the run is verified against, resolved once so no use site
+	// rebuilds `{ service, serviceId }`.
+	target: ServiceRef;
 }
 
 const targetRuns = (
@@ -202,30 +206,29 @@ const targetRuns = (
 	const runs: TargetRun[] = [];
 	let previousOrdinal: number | undefined;
 	for (const item of anchored) {
-		const service = nativeServiceFor(item.segment.entry.type);
-		const targetId = item.segment.externalIds[target];
-		if (targetId === undefined || service === target) {
+		const serviceId = item.segment.externalIds[target];
+		if (serviceId === undefined || item.nativeService === target) {
 			previousOrdinal = undefined;
 			continue;
 		}
 		const open = runs.at(-1);
 		const adjacent =
 			previousOrdinal !== undefined && item.segment.ordinal === previousOrdinal + 1;
-		if (open !== undefined && open.targetId === targetId && adjacent) {
+		if (open !== undefined && open.target.serviceId === serviceId && adjacent) {
 			open.segments = [...open.segments, item];
 		} else {
-			runs.push({ segments: [item], targetId });
+			runs.push({ segments: [item], target: { service: target, serviceId } });
 		}
 		previousOrdinal = item.segment.ordinal;
 	}
 	return runs;
 };
 
-const candidatesOf = (run: TargetRun, target: SimklService): CandidateReference[] =>
+const candidatesOf = (run: TargetRun): CandidateReference[] =>
 	run.segments.map((item) => ({
 		segmentOrdinal: item.segment.ordinal,
-		service: target,
-		serviceId: run.targetId,
+		service: run.target.service,
+		serviceId: run.target.serviceId,
 	}));
 
 const DATE_TOLERANCE_DAYS = 366;
@@ -247,6 +250,10 @@ const dateVerdict = (
 	return distance <= DATE_TOLERANCE_DAYS ? "pass" : "fail";
 };
 
+// Like format, title only ever corroborates: catalogues legitimately name the
+// same run differently (localised, part-numbered, franchise-prefixed), so a low
+// similarity is absent evidence, never a contradiction. Only count and date —
+// the two objective signals — can fail and turn a run into a conflict.
 const titleVerdict = (run: TargetRun, targetTitle: string): CheckVerdict => {
 	let best = 0;
 	for (const item of run.segments) {
@@ -326,18 +333,16 @@ const rangesOf = (sizes: readonly number[]): InstalmentRange[] => {
 
 const conflictOf = (
 	run: TargetRun,
-	target: SimklService,
 	reason: VerificationConflictReason,
 ): VerificationConflict => ({
 	kind: "verification-conflict",
 	reason,
 	segmentOrdinals: run.segments.map((item) => item.segment.ordinal),
-	target: { service: target, serviceId: run.targetId },
+	target: run.target,
 });
 
 const assertionsOf = (
 	run: TargetRun,
-	target: SimklService,
 	ranges: readonly InstalmentRange[],
 	confidence: AssertionConfidence,
 ): TitleAssertionPlan[] =>
@@ -353,7 +358,7 @@ const assertionsOf = (
 				confidence,
 				flagged: confidence === "low",
 				segmentOrdinal: item.segment.ordinal,
-				target: { service: target, serviceId: run.targetId },
+				target: run.target,
 				targetRange,
 			},
 		];
@@ -375,30 +380,29 @@ const verifyRun = async (
 	run: TargetRun,
 	deps: VerifyDeps,
 ): Promise<RunOutcome> => {
-	const { clients, target } = deps;
-	const client = clients[target];
+	const client = deps.clients[deps.target];
 	if (client === undefined) {
-		return { ...empty(), candidates: candidatesOf(run, target) };
+		return { ...empty(), candidates: candidatesOf(run) };
 	}
-	const targetTitle = await client.fetchTitle(run.targetId);
+	const targetTitle = await client.fetchTitle(run.target.serviceId);
 	if (targetTitle === undefined) {
-		return { ...empty(), candidates: candidatesOf(run, target) };
+		return { ...empty(), candidates: candidatesOf(run) };
 	}
 
 	const sizes = sizesOf(run);
 	const counts = countVerdict(sumOf(sizes), targetTitle.instalmentCount);
 	const dates = dateVerdict(run.segments[0]?.native?.releaseDate, targetTitle.releaseDate);
 	if (counts === "fail") {
-		return { ...empty(), conflicts: [conflictOf(run, target, "count-mismatch")] };
+		return { ...empty(), conflicts: [conflictOf(run, "count-mismatch")] };
 	}
 	if (dates === "fail") {
-		return { ...empty(), conflicts: [conflictOf(run, target, "date-mismatch")] };
+		return { ...empty(), conflicts: [conflictOf(run, "date-mismatch")] };
 	}
 
 	// Without the counts to divide the target there is nothing to split on, so
 	// the ids stay candidates the target must confirm.
 	if (counts !== "pass") {
-		return { ...empty(), candidates: candidatesOf(run, target) };
+		return { ...empty(), candidates: candidatesOf(run) };
 	}
 
 	// Structural fit is evidence, not proof: an exact combined count reaches high
@@ -412,7 +416,7 @@ const verifyRun = async (
 	const ranges = rangesOf(sizes.filter((size) => size !== undefined));
 	return {
 		...empty(),
-		titleAssertions: assertionsOf(run, target, ranges, corroborated ? "high" : "low"),
+		titleAssertions: assertionsOf(run, ranges, corroborated ? "high" : "low"),
 	};
 };
 
