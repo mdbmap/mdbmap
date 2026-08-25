@@ -212,6 +212,10 @@ const targetRuns = (
 	let previousIndex: number | undefined;
 	for (const [index, item] of anchored.entries()) {
 		const serviceId = item.segment.externalIds[target];
+		// A target that is the segment's own native service needs no run: its
+		// anchor already is that service's verified identity, and a title
+		// assertion pairs two different services. Such a request is answered by
+		// the anchor and the emitted relations, not by a self-pair.
 		if (serviceId === undefined || item.nativeService === target) {
 			previousIndex = undefined;
 			continue;
@@ -371,10 +375,17 @@ interface RunOutcome {
 	titleAssertions: TitleAssertionPlan[];
 }
 
-const empty = (): RunOutcome => ({
+const emptyOutcome = (): RunOutcome => ({
 	candidates: [],
 	conflicts: [],
 	titleAssertions: [],
+});
+
+// The run couldn't be verified (no client, an unrecognised id, or no count to
+// split on): its ids fall back to candidate evidence the target must confirm.
+const candidateOutcome = (run: TargetRun): RunOutcome => ({
+	...emptyOutcome(),
+	candidates: candidatesOf(run),
 });
 
 const verifyRun = async (
@@ -383,27 +394,27 @@ const verifyRun = async (
 ): Promise<RunOutcome> => {
 	const client = deps.clients[deps.target];
 	if (client === undefined) {
-		return { ...empty(), candidates: candidatesOf(run) };
+		return candidateOutcome(run);
 	}
 	const targetTitle = await client.fetchTitle(run.target.serviceId);
 	if (targetTitle === undefined) {
-		return { ...empty(), candidates: candidatesOf(run) };
+		return candidateOutcome(run);
 	}
 
 	const sizes = sizesOf(run);
 	const counts = countVerdict(sumOf(sizes), targetTitle.instalmentCount);
 	const dates = dateVerdict(run.segments[0]?.native?.releaseDate, targetTitle.releaseDate);
 	if (counts === "fail") {
-		return { ...empty(), conflicts: [conflictOf(run, "count-mismatch")] };
+		return { ...emptyOutcome(), conflicts: [conflictOf(run, "count-mismatch")] };
 	}
 	if (dates === "fail") {
-		return { ...empty(), conflicts: [conflictOf(run, "date-mismatch")] };
+		return { ...emptyOutcome(), conflicts: [conflictOf(run, "date-mismatch")] };
 	}
 
 	// Without the counts to divide the target there is nothing to split on, so
 	// the ids stay candidates the target must confirm.
 	if (counts !== "pass") {
-		return { ...empty(), candidates: candidatesOf(run) };
+		return candidateOutcome(run);
 	}
 
 	// Structural fit is evidence, not proof: an exact combined count reaches high
@@ -416,7 +427,7 @@ const verifyRun = async (
 		relationVerdict(run) === "pass";
 	const ranges = rangesOf(sizes.filter((size) => size !== undefined));
 	return {
-		...empty(),
+		...emptyOutcome(),
 		titleAssertions: assertionsOf(run, ranges, corroborated ? "high" : "low"),
 	};
 };
