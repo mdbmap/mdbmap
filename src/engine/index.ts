@@ -1,4 +1,6 @@
 export type { ContinuityKey, InstalmentLocator } from "@/db/schema";
+export { deriveInstalment, deriveLink } from "./derived.ts";
+export type { InstalmentNode, UnitCoverage, UnitId } from "./derived.ts";
 export { FormatError, formatId, parseId } from "./identity.ts";
 export type {
 	Identity,
