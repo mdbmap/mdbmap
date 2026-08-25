@@ -33,6 +33,22 @@ interface T1Input {
 	readonly right: T1Side;
 }
 
+const ONE_DAY_MS = 24 * 60 * 60 * 1000;
+
+// Two dates agree within a day. Services date a title from different events
+// (timezone, simulcast) and ADR-0002 treats date agreement tolerantly (T3
+// scores with ±1-day proximity), so an exact-string gate would systematically
+// fail structurally identical titles. An unparseable date is absent evidence.
+const datesAgree = (left: string, right: string): boolean => {
+	const leftTime = Date.parse(left);
+	const rightTime = Date.parse(right);
+	return (
+		Number.isNaN(leftTime) ||
+		Number.isNaN(rightTime) ||
+		Math.abs(leftTime - rightTime) <= ONE_DAY_MS
+	);
+};
+
 // A spot check looks at a matched segment's first and last instalment only —
 // cheap corroboration on top of the free number comparison, not a full sweep.
 // Missing dates on either side are absent evidence, not disagreement, so they
@@ -45,7 +61,7 @@ const spotCheckAirDatesAgree = (left: T1Segment, right: T1Segment): boolean => {
 		return (
 			leftDate === undefined ||
 			rightDate === undefined ||
-			leftDate === rightDate
+			datesAgree(leftDate, rightDate)
 		);
 	});
 };

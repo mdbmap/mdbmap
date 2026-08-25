@@ -95,6 +95,20 @@ describe("createT1StructureTier", () => {
 		expect(tier.propose(context).pairings).toStrictEqual([]);
 	});
 
+	it("maps titles whose air dates differ by a day (timezone/simulcast skew)", () => {
+		const left = sideOf(segment(1, 2, "2024-06-01"));
+		const right = sideOf(segment(1, 2, "2024-06-02"));
+		const tier = createT1StructureTier({ cost: 5, left, right });
+
+		const context: TierContext = {
+			budget: createBudget(10),
+			left: streamFor(left),
+			placed: [],
+			right: streamFor(right),
+		};
+		expect(tier.propose(context).pairings).toHaveLength(2);
+	});
+
 	it("ignores a missing air date rather than treating it as a disagreement", () => {
 		const left = sideOf(segment(1, 2));
 		const right = sideOf(segment(1, 2, "2024-06-01"));
