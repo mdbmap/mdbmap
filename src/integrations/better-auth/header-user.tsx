@@ -1,7 +1,15 @@
+import { useCallback } from "react";
+
 import { authClient } from "@/lib/auth-client";
 
-export default function BetterAuthHeader() {
+const signOutLabel = "Sign out";
+
+export function BetterAuthHeader() {
 	const { data: session, isPending } = authClient.useSession();
+
+	const handleSignOut = useCallback(() => {
+		void authClient.signOut();
+	}, []);
 
 	if (isPending) {
 		return (
@@ -22,16 +30,15 @@ export default function BetterAuthHeader() {
 					</div>
 				)}
 				<button
-					onClick={() => {
-						void authClient.signOut();
-					}}
+					type="button"
+					onClick={handleSignOut}
 					className="h-9 flex-1 border border-neutral-300 bg-white px-4 text-sm font-medium text-neutral-900 transition-colors hover:bg-neutral-50 dark:border-neutral-700 dark:bg-neutral-900 dark:text-neutral-50 dark:hover:bg-neutral-800"
 				>
-					Sign out
+					{signOutLabel}
 				</button>
 			</div>
 		);
 	}
 
-	return null;
+	return;
 }
