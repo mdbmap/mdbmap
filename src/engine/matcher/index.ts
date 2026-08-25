@@ -6,6 +6,7 @@ export type {
 	AlignmentOutcome,
 	PublishedAlignment,
 	SideDisposition,
+	StrayLocator,
 } from "./framework.ts";
 export { instalmentKinds, mainSequence, streamBoundaries } from "./instalment.ts";
 export type {

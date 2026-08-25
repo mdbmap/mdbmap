@@ -1,28 +1,10 @@
-import type { InstalmentLocator } from "@/db/schema";
 import { describe, expect, it } from "vitest";
 
 import { createBudget } from "./budget.ts";
-import type { Instalment, InstalmentStream } from "./instalment.ts";
 import type { CandidatePairing } from "./monotonic.ts";
 import { runLadder } from "./ladder.ts";
 import type { Tier, TierContext } from "./ladder.ts";
-
-const locator = (raw: string): InstalmentLocator => raw;
-
-const regular = (raw: string): Instalment => ({
-	kind: "regular",
-	locator: locator(raw),
-});
-
-const special = (raw: string): Instalment => ({
-	kind: "special",
-	locator: locator(raw),
-});
-
-const streamOf = (instalments: readonly Instalment[]): InstalmentStream => ({
-	boundary: "complete",
-	instalments,
-});
+import { locator, regular, special, streamOf } from "./test-fixtures.ts";
 
 const pair = (left: string, right: string): CandidatePairing => ({
 	left: [locator(left)],
