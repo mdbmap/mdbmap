@@ -94,8 +94,8 @@ describe("hub-and-spoke coverage edges", () => {
 			.from(instalmentAssertions)
 			.where(eq(instalmentAssertions.instalmentId, instalment.id))
 			.all();
-		expect(rows.map((row) => row.unitId).toSorted()).toEqual(
-			[unitA.id, unitB.id].toSorted(),
+		expect(rows.map((row) => row.unitId).toSorted((left, right) => left - right)).toEqual(
+			[unitA.id, unitB.id].toSorted((left, right) => left - right),
 		);
 	});
 
@@ -117,8 +117,8 @@ describe("hub-and-spoke coverage edges", () => {
 			.run();
 
 		const rows = db.select().from(instalmentAssertions).all();
-		expect(rows.map((row) => row.instalmentId).toSorted()).toEqual(
-			[spokeA.id, spokeB.id].toSorted(),
+		expect(rows.map((row) => row.instalmentId).toSorted((left, right) => left - right)).toEqual(
+			[spokeA.id, spokeB.id].toSorted((left, right) => left - right),
 		);
 	});
 
