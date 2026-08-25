@@ -5,13 +5,13 @@ import { onError } from "@orpc/server";
 import { ZodToJsonSchemaConverter } from "@orpc/zod/zod4";
 import { createFileRoute } from "@tanstack/react-router";
 
-import router from "@/orpc/router";
+import { router } from "@/orpc/router";
 import { TodoSchema } from "@/orpc/schema";
 
 const handler = new OpenAPIHandler(router, {
 	interceptors: [
-		onError((error) => {
-			console.error(error);
+		onError((caught) => {
+			console.error(caught);
 		}),
 	],
 	plugins: [

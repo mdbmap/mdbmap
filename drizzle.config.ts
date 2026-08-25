@@ -5,10 +5,12 @@ import stripUndefined from "strip-undefined";
 
 config({ path: [".env.local", ".env"] });
 
+const { DATABASE_URL } = process.env;
+
 export default defineConfig(
 	stripUndefined<Config>({
 		dbCredentials: {
-			url: process.env.DATABASE_URL,
+			url: DATABASE_URL,
 		},
 		dialect: "sqlite",
 		out: "./schemas/drizzle",

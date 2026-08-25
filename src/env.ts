@@ -4,6 +4,8 @@ import { z } from "zod";
 export const env = createEnv({
 	client: {
 		VITE_APP_TITLE: z.string().min(1).optional(),
+		VITE_POSTHOG_HOST: z.string().optional(),
+		VITE_POSTHOG_KEY: z.string().optional(),
 	},
 
 	/**
@@ -34,6 +36,7 @@ export const env = createEnv({
 	runtimeEnv: import.meta.env,
 
 	server: {
-		SERVER_URL: z.string().url().optional(),
+		DATABASE_URL: z.string().optional(),
+		SERVER_URL: z.url().optional(),
 	},
 });

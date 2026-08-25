@@ -1,6 +1,6 @@
 import { addTodo, listTodos } from "./todos";
 
-export default {
+export const router = {
 	addTodo,
 	listTodos,
 };
