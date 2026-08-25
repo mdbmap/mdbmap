@@ -16,6 +16,14 @@ interface StrayLocator {
 	readonly side: "left" | "right";
 }
 
+// A locator that more than one pairing claims on the same side. All legal
+// multi-coverage lives within a single pairing, so a shared locator has no legal
+// reading whatever its kind, and the set is rejected before assembly.
+interface ReusedLocator {
+	readonly locator: InstalmentLocator;
+	readonly side: "left" | "right";
+}
+
 // `noCounterpart` is an explicit `[]` for an evaluated released instalment;
 // `pending` is an airing stream's future position beyond its settled prefix,
 // which never hardens into no-counterpart.
@@ -34,7 +42,11 @@ type AlignmentOutcome =
 	| { readonly alignment: PublishedAlignment; readonly status: "published" }
 	| { readonly crossings: readonly Crossing[]; readonly status: "conflict" }
 	| { readonly reason: "truncated-fetch"; readonly status: "unpublishable" }
-	| { readonly status: "invalid"; readonly strays: readonly StrayLocator[] };
+	| {
+			readonly reused: readonly ReusedLocator[];
+			readonly status: "invalid";
+			readonly strays: readonly StrayLocator[];
+	  };
 
 // Locators absent from their stream never reach the crossing check: the specials
 // exemption filters them out first, so membership must be enforced here, on every
@@ -58,6 +70,29 @@ const findStrays = (
 		}
 	}
 	return strays;
+};
+
+// A locator may be claimed by at most one pairing on its side. Two pairings
+// sharing one has no legal reading — merges and splits are expressed within a
+// single pairing — so it never reaches the crossing sweep, which is where an
+// all-special reuse would otherwise slip through as an inert (spanless) side.
+const findReused = (
+	pairings: readonly CandidatePairing[],
+): readonly ReusedLocator[] => {
+	const reused: ReusedLocator[] = [];
+	for (const side of ["left", "right"] as const) {
+		const claims = new Map<InstalmentLocator, number>();
+		for (const pairing of pairings) {
+			for (const locator of new Set(pairing[side])) {
+				const seen = (claims.get(locator) ?? 0) + 1;
+				claims.set(locator, seen);
+				if (seen === 2) {
+					reused.push({ locator, side });
+				}
+			}
+		}
+	}
+	return reused;
 };
 
 // An airing stream's settled prefix ends at its last paired position: unpaired
@@ -104,8 +139,9 @@ const alignStreams = (
 	const leftIndex = indexStream(left);
 	const rightIndex = indexStream(right);
 	const strays = findStrays(pairings, leftIndex, rightIndex);
-	if (strays.length > 0) {
-		return { status: "invalid", strays };
+	const reused = findReused(pairings);
+	if (strays.length > 0 || reused.length > 0) {
+		return { reused, status: "invalid", strays };
 	}
 	const verdict = checkMonotonic(pairings, leftIndex, rightIndex);
 	if (!verdict.ok) {
@@ -137,6 +173,7 @@ export type {
 	AlignedPair,
 	AlignmentOutcome,
 	PublishedAlignment,
+	ReusedLocator,
 	SideDisposition,
 	StrayLocator,
 };

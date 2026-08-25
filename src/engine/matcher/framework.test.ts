@@ -115,20 +115,92 @@ describe("alignStreams", () => {
 		}
 	});
 
-	it("detects a regular reused across a mixed and a pure pairing", () => {
+	it("rejects a regular reused across a mixed and a pure pairing", () => {
 		const left = streamOf([regular("l#1"), regular("l#2")]);
 		const right = streamOf([regular("r#1"), special("r#sp")]);
-		// l#1 maps to a special on one pairing and a regular on another. The mixed
-		// pairing must not escape the sweep, or l#1 maps twice with no conflict.
+		// l#1 maps to a special on one pairing and a regular on another. Multi-
+		// coverage lives within one pairing, so claiming l#1 twice is rejected.
 		const outcome = alignStreams(left, right, [
 			pair(["l#1"], ["r#sp"]),
 			pair(["l#1"], ["r#1"]),
+		]);
+		expect(outcome.status).toBe("invalid");
+		if (outcome.status === "invalid") {
+			expect(outcome.reused).toStrictEqual([
+				{ locator: locator("l#1"), side: "left" },
+			]);
+		}
+	});
+
+	it("rejects a special claimed by two pairings on the right", () => {
+		const left = streamOf([regular("l#1"), regular("l#2")]);
+		const right = streamOf([regular("r#1"), special("r#sp")]);
+		// Both pairings' right side is the same special, so neither imposes a span.
+		// Without the up-front check r#sp would publish in two pairs at once.
+		const outcome = alignStreams(left, right, [
+			pair(["l#1"], ["r#sp"]),
+			pair(["l#2"], ["r#sp"]),
+		]);
+		expect(outcome.status).toBe("invalid");
+		if (outcome.status === "invalid") {
+			expect(outcome.reused).toStrictEqual([
+				{ locator: locator("r#sp"), side: "right" },
+			]);
+		}
+	});
+
+	it("rejects a special claimed by two pairings on the left", () => {
+		const left = streamOf([special("l#sp"), regular("l#1")]);
+		const right = streamOf([regular("r#1"), regular("r#2")]);
+		// Both left spans are undefined (all-special), the ranking path that would
+		// otherwise compute Infinity - Infinity = NaN. The reuse is caught first.
+		const outcome = alignStreams(left, right, [
+			pair(["l#sp"], ["r#1"]),
+			pair(["l#sp"], ["r#2"]),
+		]);
+		expect(outcome.status).toBe("invalid");
+		if (outcome.status === "invalid") {
+			expect(outcome.reused).toStrictEqual([
+				{ locator: locator("l#sp"), side: "left" },
+			]);
+		}
+	});
+
+	it("detects a genuine crossing of distinct left locators", () => {
+		const left = streamOf([regular("l#1"), regular("l#2"), regular("l#3")]);
+		const right = streamOf([regular("r#1"), regular("r#2")]);
+		// A merge over l#1 and l#3 overlaps the l#2 pairing on the left: distinct
+		// locators, no reuse, but their left spans cross.
+		const outcome = alignStreams(left, right, [
+			pair(["l#1", "l#3"], ["r#1"]),
+			pair(["l#2"], ["r#2"]),
 		]);
 		expect(outcome.status).toBe("conflict");
 		if (outcome.status === "conflict") {
 			expect(outcome.crossings.some((cross) => cross.side === "left")).toBe(
 				true,
 			);
+		}
+	});
+
+	it("publishes multi-coverage expressed within a single pairing", () => {
+		const left = streamOf([regular("l#1"), regular("l#2"), regular("l#3")]);
+		const right = streamOf([
+			regular("r#1"),
+			regular("r#2a"),
+			regular("r#2b"),
+		]);
+		// A merge (l#1 + l#2 into r#1) and a split (l#3 into r#2a + r#2b), each
+		// contained in one pairing, share no locator and publish.
+		const outcome = alignStreams(left, right, [
+			pair(["l#1", "l#2"], ["r#1"]),
+			pair(["l#3"], ["r#2a", "r#2b"]),
+		]);
+		expect(outcome.status).toBe("published");
+		if (outcome.status === "published") {
+			expect(outcome.alignment.pairs).toHaveLength(2);
+			expect(outcome.alignment.left.noCounterpart).toStrictEqual([]);
+			expect(outcome.alignment.right.noCounterpart).toStrictEqual([]);
 		}
 	});
 

@@ -5,6 +5,7 @@ export type {
 	AlignedPair,
 	AlignmentOutcome,
 	PublishedAlignment,
+	ReusedLocator,
 	SideDisposition,
 	StrayLocator,
 } from "./framework.ts";
