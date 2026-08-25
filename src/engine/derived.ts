@@ -97,19 +97,24 @@ const compareCounterpart = (
 
 // Derive every counterpart in one target service for a source instalment: the
 // array of every target instalment sharing a unit the source covers, each at
-// its strongest valid path's confidence. undefined means no shared-unit route
-// exists, which a caller answers with a direct comparison (out of scope).
+// its strongest valid path's confidence. Derivation is cross-service (ADR-0002),
+// so the source's own service has no derived route — same-service overlap is
+// direct split/merge, not a hub derivation. undefined also means no shared-unit
+// route, which a caller answers with a direct comparison (out of scope).
 const deriveLink = (
 	source: InstalmentNode,
 	pool: readonly InstalmentNode[],
 	targetService: Service,
 ): ResolvedLink | undefined => {
+	if (targetService === source.identity.title.service) {
+		return undefined;
+	}
 	const sourceUnits = new Map(
 		source.coverage.map((coverage) => [coverage.unitId, coverage] as const),
 	);
 	const counterparts: ResolvedCounterpart[] = [];
 	for (const target of pool) {
-		if (target === source || target.identity.title.service !== targetService) {
+		if (target.identity.title.service !== targetService) {
 			continue;
 		}
 		const path = derivePath(sourceUnits, target);

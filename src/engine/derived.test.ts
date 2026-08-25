@@ -102,6 +102,19 @@ describe("deriveLink", () => {
 		]);
 	});
 
+	it("has no derived route to the source's own service", () => {
+		// Same-service split siblings sharing a unit are direct split/merge, not
+		// a hub derivation (ADR-0002).
+		const source = node(anilistTitle, 1, [
+			{ confidence: "high", source: "t1-structure", unitId: 7 },
+		]);
+		const sibling = node(anilistTitle, 2, [
+			{ confidence: "high", source: "t3-episode", unitId: 7 },
+		]);
+
+		expect(deriveLink(source, [source, sibling], "anilist")).toBeUndefined();
+	});
+
 	it("has no shared-unit route when nothing overlaps", () => {
 		const source = node(anilistTitle, 1, [
 			{ confidence: "high", source: "t1-structure", unitId: 7 },
