@@ -19,8 +19,8 @@ interface ServiceRef {
 	readonly serviceId: string;
 }
 
-// A candidate title's own cross-service ids plus its live first-air date. The
-// date orders members and is never persisted; only the derived `ordinal` is.
+// A title's own cross-service ids plus its live first-air date. The date orders
+// members and is never persisted; only the derived `ordinal` is.
 interface TitleDescriptor {
 	readonly externalIds: readonly ServiceRef[];
 	readonly firstAirDate: string | undefined;
@@ -38,10 +38,10 @@ interface FindClient {
 	readonly find: (shared: ServiceRef) => Promisable<readonly ServiceRef[]>;
 }
 
-// A candidate's own `external_ids` (and live date), read to check it points back
-// at the shared title before it may join.
+// A title's own `external_ids` (and live date), read to check a candidate points
+// back at the shared title and to place the anchor in member order.
 interface ExternalIdsClient {
-	readonly describe: (candidate: ServiceRef) => Promisable<TitleDescriptor>;
+	readonly describe: (title: ServiceRef) => Promisable<TitleDescriptor>;
 }
 
 // Fetches a title's instalment list. The shared title is fetched once and every
@@ -59,8 +59,6 @@ interface DiscoveryClients {
 interface DiscoveryInput {
 	readonly budget: number;
 	readonly clients: DiscoveryClients;
-	// Cost charged for each title's instalment fetch. One request each by default.
-	readonly enumerationCost?: number;
 	readonly shared: ServiceRef;
 }
 
@@ -72,7 +70,7 @@ interface MappedPair {
 	readonly sharedLocators: readonly InstalmentLocator[];
 }
 
-// A joined member in its persisted position, with the pairs the matcher placed
+// A mapped member in its persisted position, with the pairs the matcher placed
 // for it over whatever earlier members left unclaimed on the shared title.
 interface MemberMapping {
 	readonly member: ServiceRef;
@@ -80,16 +78,23 @@ interface MemberMapping {
 	readonly pairs: readonly MappedPair[];
 }
 
-// A discovered, mapped group; a whole refusal that writes nothing (over budget);
-// or no group at all, when no candidate's evidence pointed back.
+// A discovered, mapped group carries the anchor's own ordinal so the whole
+// group's order is reproducible from ordinals alone. A refusal writes nothing:
+// the group's enumeration did not fit one budget, or a member could not be
+// mapped at all — a partial group is a wrong group, not a smaller one. `no-group`
+// means no candidate's evidence pointed back.
 type DiscoveryOutcome =
 	| {
+			readonly anchorOrdinal: number;
 			readonly kind: "discovered";
 			readonly mappings: readonly MemberMapping[];
 			readonly shared: ServiceRef;
 	  }
 	| { readonly kind: "no-group" }
-	| { readonly kind: "refused"; readonly reason: "over-budget" };
+	| {
+			readonly kind: "refused";
+			readonly reason: "over-budget" | "unmappable-member";
+	  };
 
 const sameRef = (first: ServiceRef, second: ServiceRef): boolean =>
 	first.service === second.service && first.serviceId === second.serviceId;
@@ -104,6 +109,11 @@ const pointsBack = (
 
 interface OrderedMember {
 	readonly firstAirDate: string | undefined;
+	readonly ref: ServiceRef;
+}
+
+interface MemberTarget {
+	readonly ordinal: number;
 	readonly ref: ServiceRef;
 }
 
@@ -162,10 +172,15 @@ const matchMember = (
 		},
 	});
 
-const publishedPairs = (result: LadderResult): readonly MappedPair[] => {
+// The placed pairs for a member, or `undefined` when the alignment could not
+// publish at all (a conflict or a truncated fetch) — which cannot be flattened to
+// "matched nothing" without turning the group partial.
+const publishedPairs = (
+	result: LadderResult,
+): readonly MappedPair[] | undefined => {
 	const { outcome } = result;
 	if (outcome.status !== "published") {
-		return [];
+		return undefined;
 	}
 	return outcome.alignment.pairs.map((aligned) => ({
 		memberLocators: aligned.right,
@@ -227,56 +242,92 @@ const gatherMembers = async (
 			descriptor: await clients.externalIds.describe(candidate),
 		})),
 	);
-	const members = described
+	return described
 		.filter((entry) => pointsBack(entry.descriptor, shared))
 		.map((entry) => ({
 			firstAirDate: entry.descriptor.firstAirDate,
 			ref: entry.candidate,
 		}));
-	return members.toSorted(byMemberOrder);
 };
 
-// Fetch the shared title and every member once, charging each fetch to the one
-// shared budget. A fetch that will not fit refuses the whole group before any
-// mapping, so a partial group is never enumerated.
+// Order the anchor alongside its members and hand back the anchor's own ordinal
+// plus each member's — one deterministic slot per title in the group.
+interface OrderedGroup {
+	readonly anchorOrdinal: number;
+	readonly members: readonly MemberTarget[];
+}
+
+const orderGroup = (
+	anchor: OrderedMember,
+	members: readonly OrderedMember[],
+): OrderedGroup => {
+	const ordered = [anchor, ...members].toSorted(byMemberOrder);
+	const anchorOrdinal = ordered.findIndex((entry) =>
+		sameRef(entry.ref, anchor.ref),
+	);
+	const targets = ordered
+		.map((entry, ordinal) => ({ ordinal, ref: entry.ref }))
+		.filter((target) => !sameRef(target.ref, anchor.ref));
+	return { anchorOrdinal, members: targets };
+};
+
+interface EnumeratedMember {
+	readonly enumerated: EnumeratedTitle;
+	readonly ordinal: number;
+	readonly ref: ServiceRef;
+}
+
 interface Enumeration {
-	readonly members: readonly { readonly enumerated: EnumeratedTitle; readonly member: OrderedMember }[];
+	readonly members: readonly EnumeratedMember[];
 	readonly shared: EnumeratedTitle;
 }
 
+interface EnumerateInput {
+	readonly budget: number;
+	readonly clients: DiscoveryClients;
+	readonly members: readonly MemberTarget[];
+	readonly shared: ServiceRef;
+}
+
+// Fetch the shared title and every member once, charging each fetch to the one
+// shared budget. Refused before any fetch when the group will not fit, so a
+// partial group is never enumerated.
 const enumerateGroup = async (
-	shared: ServiceRef,
-	members: readonly OrderedMember[],
-	clients: DiscoveryClients,
-	limit: number,
-	cost: number,
+	input: EnumerateInput,
 ): Promise<Enumeration | undefined> => {
-	// The whole group's enumeration is charged to one budget up front: a group
-	// that will not fit is refused whole, so no member is ever fetched partially.
-	const budget = createBudget(limit);
-	if (!budget.spend(cost * (members.length + 1))) {
+	const budget = createBudget(input.budget);
+	if (!budget.spend(input.members.length + 1)) {
 		return undefined;
 	}
-	const [sharedTitle, enumerated] = await Promise.all([
-		clients.instalments.enumerate(shared),
+	const [shared, members] = await Promise.all([
+		input.clients.instalments.enumerate(input.shared),
 		Promise.all(
-			members.map(async (member) => ({
-				enumerated: await clients.instalments.enumerate(member.ref),
-				member,
+			input.members.map(async (target) => ({
+				enumerated: await input.clients.instalments.enumerate(target.ref),
+				ordinal: target.ordinal,
+				ref: target.ref,
 			})),
 		),
 	]);
-	return { members: enumerated, shared: sharedTitle };
+	return { members, shared };
 };
 
-const mapMembers = (enumeration: Enumeration): readonly MemberMapping[] => {
+type MapResult =
+	| { readonly kind: "mapped"; readonly mappings: readonly MemberMapping[] }
+	| { readonly kind: "unmappable" };
+
+const mapMembers = (enumeration: Enumeration): MapResult => {
 	const mappings: MemberMapping[] = [];
 	let sharedStream = enumeration.shared.stream;
-	for (const [ordinal, entry] of enumeration.members.entries()) {
-		const facts = mergeFacts(enumeration.shared.facts, entry.enumerated.facts);
-		const result = matchMember(sharedStream, entry.enumerated.stream, facts);
-		const pairs = publishedPairs(result);
-		mappings.push({ member: entry.member.ref, ordinal, pairs });
+	for (const member of enumeration.members) {
+		const facts = mergeFacts(enumeration.shared.facts, member.enumerated.facts);
+		const pairs = publishedPairs(
+			matchMember(sharedStream, member.enumerated.stream, facts),
+		);
+		if (pairs === undefined) {
+			return { kind: "unmappable" };
+		}
+		mappings.push({ member: member.ref, ordinal: member.ordinal, pairs });
 		const claimed = new Set<InstalmentLocator>();
 		for (const pair of pairs) {
 			for (const locator of pair.sharedLocators) {
@@ -285,35 +336,44 @@ const mapMembers = (enumeration: Enumeration): readonly MemberMapping[] => {
 		}
 		sharedStream = remainingShared(sharedStream, claimed);
 	}
-	return mappings;
+	return { kind: "mapped", mappings };
 };
 
 // Discover a structural group from a shared external id (ADR-0002). A `/find`
 // lists every candidate; each joins only on two-sided `external_ids` evidence.
-// The whole group's enumeration is charged to one budget and refused whole if it
-// will not fit; otherwise the shared title is matched per member, in member
-// order, over what earlier members left unclaimed.
+// The whole group's enumeration is charged to one budget, and both an over-budget
+// group and a member that cannot be mapped are refused whole and write nothing —
+// a partial group is a wrong group. Otherwise the shared title is matched per
+// member, in member order, over what earlier members left unclaimed.
 const discoverStructuralGroup = async (
 	input: DiscoveryInput,
 ): Promise<DiscoveryOutcome> => {
-	const cost = input.enumerationCost ?? 1;
 	const members = await gatherMembers(input.shared, input.clients);
 	if (members.length === 0) {
 		return { kind: "no-group" };
 	}
-	const enumeration = await enumerateGroup(
-		input.shared,
+	const anchor = await input.clients.externalIds.describe(input.shared);
+	const ordered = orderGroup(
+		{ firstAirDate: anchor.firstAirDate, ref: input.shared },
 		members,
-		input.clients,
-		input.budget,
-		cost,
 	);
+	const enumeration = await enumerateGroup({
+		budget: input.budget,
+		clients: input.clients,
+		members: ordered.members,
+		shared: input.shared,
+	});
 	if (enumeration === undefined) {
 		return { kind: "refused", reason: "over-budget" };
 	}
+	const mapped = mapMembers(enumeration);
+	if (mapped.kind === "unmappable") {
+		return { kind: "refused", reason: "unmappable-member" };
+	}
 	return {
+		anchorOrdinal: ordered.anchorOrdinal,
 		kind: "discovered",
-		mappings: mapMembers(enumeration),
+		mappings: mapped.mappings,
 		shared: input.shared,
 	};
 };

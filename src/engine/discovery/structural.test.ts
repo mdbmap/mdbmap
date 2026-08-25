@@ -78,11 +78,14 @@ const totalDramaClients = (
 	enumerate: InstalmentsClient["enumerate"],
 ): DiscoveryClients => ({
 	externalIds: {
-		describe: (candidate) => {
-			if (candidate.serviceId === S1_REF.serviceId) {
+		describe: (title) => {
+			if (title.serviceId === SHARED.serviceId) {
+				return { externalIds: [S1_REF, S2_REF], firstAirDate: "2007-07-08" };
+			}
+			if (title.serviceId === S1_REF.serviceId) {
 				return { externalIds: [SHARED], firstAirDate: "2007-07-08" };
 			}
-			if (candidate.serviceId === S2_REF.serviceId) {
+			if (title.serviceId === S2_REF.serviceId) {
 				return { externalIds: [SHARED], firstAirDate: "2008-01-04" };
 			}
 			return { externalIds: [ref("imdb", "tt-other")], firstAirDate: "2007-07-08" };
@@ -132,8 +135,12 @@ describe("discoverStructuralGroup", () => {
 			S1_REF,
 			S2_REF,
 		]);
+		// The anchor is a member too: it shares season one's 2007 date and, tying,
+		// sorts first by service (imdb < tmdb), taking ordinal 0 — so the group's
+		// whole order is reproducible from ordinals with no stored dates.
+		expect(outcome.anchorOrdinal).toBe(0);
 		expect(outcome.mappings.map((mapping) => mapping.ordinal)).toStrictEqual([
-			0, 1,
+			1, 2,
 		]);
 
 		const [first, second] = outcome.mappings;
@@ -165,9 +172,9 @@ describe("discoverStructuralGroup", () => {
 	});
 
 	it("refuses an over-budget group whole and writes nothing", async () => {
-		const enumerate = vi.fn(enumerateFor);
 		// Shared title plus two members needs three fetches; a budget of two cannot
-		// finish, so the whole group is refused before any member is enumerated.
+		// finish, so the group is refused before a single title is enumerated.
+		const enumerate = vi.fn(enumerateFor);
 		const outcome = await discoverStructuralGroup({
 			budget: 2,
 			clients: totalDramaClients(enumerate),
@@ -175,9 +182,32 @@ describe("discoverStructuralGroup", () => {
 		});
 
 		expect(outcome).toStrictEqual({ kind: "refused", reason: "over-budget" });
-		// A refused group writes nothing: the whole group is refused up front, so
-		// not one title is enumerated and there are no mappings to persist.
 		expect(enumerate).not.toHaveBeenCalled();
+	});
+
+	it("refuses the whole group when a member cannot be mapped", async () => {
+		// Season two's list came back truncated, so its alignment cannot publish.
+		// A member that maps to nothing is a partial group, so the whole discovery
+		// is refused rather than persisting season one alone.
+		const truncatedTwo: EnumeratedTitle = {
+			facts: seasonTwo.facts,
+			stream: streamOf(
+				[regular("tmdb-s2#1"), regular("tmdb-s2#2")],
+				"truncated",
+			),
+		};
+		const enumerate = (title: ServiceRef): EnumeratedTitle =>
+			title.serviceId === S2_REF.serviceId ? truncatedTwo : enumerateFor(title);
+
+		const outcome = await discoverStructuralGroup({
+			budget: 10,
+			clients: totalDramaClients(enumerate),
+			shared: SHARED,
+		});
+		expect(outcome).toStrictEqual({
+			kind: "refused",
+			reason: "unmappable-member",
+		});
 	});
 
 	it("reports no group when no candidate points back", async () => {
