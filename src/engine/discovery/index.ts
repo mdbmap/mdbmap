@@ -1,4 +1,23 @@
 export { discover } from "./broker.ts";
+export {
+	commitCandidate,
+	commitMerge,
+	convergeGroups,
+	planConverge,
+	readConvergeState,
+	readRevalidationMembers,
+} from "./converge.ts";
+export type {
+	ConvergeInput,
+	ConvergeMember,
+	ConvergeOutcome,
+	ConvergePlan,
+	ConvergePrecondition,
+	ConvergeState,
+	GroupSnapshot,
+	RevalidationMember,
+	StoredMember,
+} from "./converge.ts";
 export type {
 	BrokeredChain,
 	BrokerDeps,
