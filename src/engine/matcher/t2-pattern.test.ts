@@ -17,6 +17,11 @@ import type {
 
 const noOpTier = (id: Tier["id"]): Tier => ({ id, propose: () => ({ pairings: [] }) });
 
+const placingTier = (
+	id: Tier["id"],
+	pairings: readonly CandidatePairing[],
+): Tier => ({ id, propose: () => ({ pairings }) });
+
 const inst = (
 	raw: string,
 	airDate?: string,
@@ -184,6 +189,8 @@ describe("createT2PatternTier", () => {
 	describe("episode groups", () => {
 		// The natural left order pairs no dates, so the free transforms never fit;
 		// only a re-ordering into `aligned` corroborates against the right side.
+		// That re-ordering differs from `scrambledLeft`'s stored order, so it can
+		// only publish where the stored order already matches it.
 		const right = sideOf(
 			seg(1, [
 				inst("r#1", "2024-03-01"),
@@ -211,7 +218,7 @@ describe("createT2PatternTier", () => {
 			],
 		};
 
-		it("spends one listing plus one detail to accept an alternate ordering", () => {
+		it("stands down when the accepted ordering breaks stored order", () => {
 			const fetched: string[] = [];
 			let listings = 0;
 			const budget = createBudget(10);
@@ -232,12 +239,85 @@ describe("createT2PatternTier", () => {
 				right,
 			});
 
+			// `aligned` corroborates against the right side, but its order inverts
+			// `scrambledLeft`'s stored positions, so proposing it would conflict the
+			// whole build. The tier spends the budget probing, then stands down.
 			const proposal = tier.propose(contextFor(scrambledLeft, right, budget));
 
-			expect(proposal.pairings).toHaveLength(4);
+			expect(proposal.pairings).toStrictEqual([]);
 			expect(listings).toBe(1);
 			expect(fetched).toStrictEqual(["official"]);
 			expect(budget.snapshot().spent).toBe(2);
+		});
+
+		it("proposes and publishes an ordering that holds against stored order", () => {
+			const budget = createBudget(10);
+			const tier = createT2PatternTier({
+				episodeGroups: {
+					detailCost: 1,
+					fetchDetail: () => aligned,
+					list: () => [summary("official", 4)],
+					listCost: 1,
+				},
+				left: scrambledLeft,
+				right,
+			});
+
+			// Stored order matches the group ordering (not the scrambled natural
+			// order the free transforms saw), so the accepted pairs stay monotonic
+			// and the whole build publishes.
+			const result = runLadder({
+				budget,
+				left: streamFor(aligned),
+				right: streamFor(right),
+				tiers: { t1: noOpTier("t1-structure"), t2: tier, t3: noOpTier("t3-episode") },
+			});
+
+			expect(result.contributions[1]?.pairings).toHaveLength(4);
+			expect(result.outcome.status).toBe("published");
+			if (result.outcome.status === "published") {
+				expect(result.outcome.alignment.pairs).toHaveLength(4);
+			}
+		});
+
+		it("standing down leaves earlier tiers' links to publish, not conflict", () => {
+			const budget = createBudget(10);
+			const tier = createT2PatternTier({
+				episodeGroups: {
+					detailCost: 1,
+					fetchDetail: () => aligned,
+					list: () => [summary("official", 4)],
+					listCost: 1,
+				},
+				left: scrambledLeft,
+				right,
+			});
+			const t3Link: CandidatePairing = {
+				left: [locator("l#1")],
+				right: [locator("r#1")],
+			};
+
+			// Were the tier to propose the order-breaking `aligned` pairs, they would
+			// cross the T3 link and conflict the whole outcome; standing down keeps
+			// T3's valid link publishable.
+			const result = runLadder({
+				budget,
+				left: streamFor(scrambledLeft),
+				right: streamFor(right),
+				tiers: {
+					t1: noOpTier("t1-structure"),
+					t2: tier,
+					t3: placingTier("t3-episode", [t3Link]),
+				},
+			});
+
+			expect(result.contributions[1]?.pairings).toStrictEqual([]);
+			expect(result.outcome.status).toBe("published");
+			if (result.outcome.status === "published") {
+				expect(result.outcome.alignment.pairs).toStrictEqual([
+					{ left: [locator("l#1")], right: [locator("r#1")] },
+				]);
+			}
 		});
 
 		it("stops at three group-detail requests and never fetches a mismatched group", () => {

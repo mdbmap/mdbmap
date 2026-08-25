@@ -2,6 +2,8 @@ import type { InstalmentLocator } from "@/db/schema";
 
 import type { Tier, TierContext, TierProposal } from "./ladder.ts";
 import type { CandidatePairing } from "./monotonic.ts";
+import { checkMonotonic, indexStream } from "./monotonic.ts";
+import { normaliseTitle } from "./tier3-scoring.ts";
 
 // One regular instalment as T2 evidence. A whole-title transform proposes the
 // pairing; the air date (or, where dates are missing, the title) is what a
@@ -74,9 +76,10 @@ const ONE_DAY_MS = 24 * 60 * 60 * 1000;
 
 type Evidence = "absent" | "agree" | "disagree";
 
-// Match T1/T3's air-date handling: agreement is within a day, not exact string
-// equality (timezone and simulcast skew). An unparseable or missing date on
-// either side is absent evidence, never a disagreement.
+// Agreement is within a day, not exact string equality (timezone and simulcast
+// skew). A missing or unparseable date on either side is absent evidence, never
+// a disagreement — this matches T3's `dayDistance`; T1 instead passes an
+// unparseable date as agreement.
 const compareByDate = (
 	left: string | undefined,
 	right: string | undefined,
@@ -92,9 +95,6 @@ const compareByDate = (
 	return Math.abs(leftTime - rightTime) <= ONE_DAY_MS ? "agree" : "disagree";
 };
 
-const normalizeTitle = (raw: string): string =>
-	raw.toLowerCase().replaceAll(/\s+/gu, " ").trim();
-
 const compareByTitle = (
 	left: string | undefined,
 	right: string | undefined,
@@ -102,8 +102,8 @@ const compareByTitle = (
 	if (left === undefined || right === undefined) {
 		return "absent";
 	}
-	const leftTitle = normalizeTitle(left);
-	const rightTitle = normalizeTitle(right);
+	const leftTitle = normaliseTitle(left);
+	const rightTitle = normaliseTitle(right);
 	if (leftTitle.length === 0 || rightTitle.length === 0) {
 		return "absent";
 	}
@@ -230,6 +230,30 @@ const freeTransforms = (
 	return undefined;
 };
 
+const toCandidatePairings = (
+	pairs: readonly PairedInstalments[],
+): readonly CandidatePairing[] =>
+	pairs.map((pair) => ({
+		left: [pair.left.locator],
+		right: [pair.right.locator],
+	}));
+
+// A group ordering that differs from stored order pairs monotonically against
+// the alternate order but inverts against the stored positions `alignStreams`
+// validates over, conflicting the whole build (and discarding T3's links) where
+// standing down would publish. Until the order-aware seam lands (deferred
+// framework follow-up, ADR-0002), only accept a group whose pairs also hold
+// monotonic against stored order.
+const holdsAgainstStoredOrder = (
+	context: TierContext,
+	pairs: readonly PairedInstalments[],
+): boolean =>
+	checkMonotonic(
+		toCandidatePairings(pairs),
+		indexStream(context.left),
+		indexStream(context.right),
+	).ok;
+
 // Episode groups are the paid fallback: one listing, then at most three
 // group-detail requests, each an alternate ordering re-run through the free
 // transforms. Groups whose instalment count can't cover the right side are
@@ -257,20 +281,12 @@ const tryEpisodeGroups = (
 		detailsUsed += 1;
 		const ordering = provider.fetchDetail(summary.id);
 		const pairs = freeTransforms({ segments: ordering.segments }, input.right);
-		if (pairs !== undefined) {
+		if (pairs !== undefined && holdsAgainstStoredOrder(context, pairs)) {
 			return pairs;
 		}
 	}
 	return undefined;
 };
-
-const toCandidatePairings = (
-	pairs: readonly PairedInstalments[],
-): readonly CandidatePairing[] =>
-	pairs.map((pair) => ({
-		left: [pair.left.locator],
-		right: [pair.right.locator],
-	}));
 
 // Tier 2 — pattern (ADR-0002). Runs on what T1 leaves: when T1 placed a full
 // structural alignment there is nothing whole-title left to transform, so T2
