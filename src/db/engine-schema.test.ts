@@ -9,6 +9,7 @@ import {
 	relationAssertions,
 	serviceInstalments,
 	serviceTitles,
+	titleAssertions,
 	titleGroups,
 } from "./engine-schema.ts";
 
@@ -36,7 +37,7 @@ const seedTitle = (
 	const group = one(
 		db
 			.insert(titleGroups)
-			.values({ source: "t1-structure", status: "unmatched" })
+			.values({ ladderComplete: false, source: "t1-structure" })
 			.returning()
 			.all(),
 	);
@@ -120,6 +121,28 @@ describe("hub-and-spoke coverage edges", () => {
 		expect(rows.map((row) => row.instalmentId).toSorted((left, right) => left - right)).toEqual(
 			[spokeA.id, spokeB.id].toSorted((left, right) => left - right),
 		);
+	});
+
+	it("rejects a title overlap edge that is reversed or self-referential", () => {
+		const first = seedTitle(db, "tmdb", "first");
+		const second = seedTitle(db, "tmdb", "second");
+		const [lower, higher] =
+			first.id < second.id ? [first, second] : [second, first];
+
+		const insertPair = (titleAId: number, titleBId: number) =>
+			db
+				.insert(titleAssertions)
+				.values({
+					confidence: "high",
+					source: "t1-structure",
+					titleAId,
+					titleBId,
+				})
+				.run();
+
+		expect(() => insertPair(higher.id, lower.id)).toThrow(/constraint/iu);
+		expect(() => insertPair(lower.id, lower.id)).toThrow(/constraint/iu);
+		expect(() => insertPair(lower.id, higher.id)).not.toThrow();
 	});
 
 	it("rejects a second immediate sequel for one title", () => {

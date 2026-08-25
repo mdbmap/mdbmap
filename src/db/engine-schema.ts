@@ -1,12 +1,16 @@
 import { sql } from "drizzle-orm";
-import { integer, sqliteTable, text, uniqueIndex } from "drizzle-orm/sqlite-core";
+import {
+	check,
+	integer,
+	sqliteTable,
+	text,
+	uniqueIndex,
+} from "drizzle-orm/sqlite-core";
 
+import { timestamp } from "./columns.ts";
 import type { ContinuityKey, InstalmentLocator } from "./schema.ts";
 
 type Service = string;
-
-const groupStatuses = ["matched", "unmatched"] as const;
-type GroupStatus = (typeof groupStatuses)[number];
 
 const assertionSources = [
 	"t1-structure",
@@ -31,9 +35,6 @@ type InstalmentLocatorKind = (typeof instalmentLocatorKinds)[number];
 const coverageStates = ["complete", "open", "pending", "conflict"] as const;
 type CoverageState = (typeof coverageStates)[number];
 
-const timestamp = (name: string) =>
-	integer(name, { mode: "timestamp" }).default(sql`(unixepoch())`).notNull();
-
 const contentUnits = sqliteTable("content_units", {
 	createdAt: timestamp("created_at"),
 	id: integer({ mode: "number" }).primaryKey({ autoIncrement: true }),
@@ -46,7 +47,6 @@ const titleGroups = sqliteTable("title_groups", {
 		.default(false)
 		.notNull(),
 	source: text({ enum: groupSources }).notNull(),
-	status: text({ enum: groupStatuses }).notNull(),
 	updatedAt: timestamp("updated_at").$onUpdateFn(() => new Date()),
 });
 
@@ -127,6 +127,10 @@ const titleAssertions = sqliteTable(
 			.references(() => serviceTitles.id, { onDelete: "cascade" }),
 	},
 	(table) => [
+		check(
+			"title_assertions_canonical_order",
+			sql`${table.titleAId} < ${table.titleBId}`,
+		),
 		uniqueIndex("title_assertions_pair_idx").on(table.titleAId, table.titleBId),
 	],
 );
@@ -201,7 +205,6 @@ export {
 	contentUnits,
 	coverageStates,
 	groupSources,
-	groupStatuses,
 	instalmentAssertions,
 	instalmentLocatorKinds,
 	relationAssertions,
@@ -216,7 +219,6 @@ export type {
 	AssertionSource,
 	CoverageState,
 	GroupSource,
-	GroupStatus,
 	InstalmentLocatorKind,
 	Service,
 };

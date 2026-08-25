@@ -1,7 +1,7 @@
 {
   "version": "6",
   "dialect": "sqlite",
-  "id": "a88f5225-3038-460f-b6b4-97b87d525ad4",
+  "id": "a7de24cf-44fa-47be-bc47-3060475c6780",
   "prevId": "703a44d2-02cc-4560-9184-563232886cee",
   "tables": {
     "account": {
@@ -1202,7 +1202,12 @@
       },
       "compositePrimaryKeys": {},
       "uniqueConstraints": {},
-      "checkConstraints": {}
+      "checkConstraints": {
+        "title_assertions_canonical_order": {
+          "name": "title_assertions_canonical_order",
+          "value": "\"title_assertions\".\"title_a_id\" < \"title_assertions\".\"title_b_id\""
+        }
+      }
     },
     "title_groups": {
       "name": "title_groups",
@@ -1232,13 +1237,6 @@
         },
         "source": {
           "name": "source",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "status": {
-          "name": "status",
           "type": "text",
           "primaryKey": false,
           "notNull": true,

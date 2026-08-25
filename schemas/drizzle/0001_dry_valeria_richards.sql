@@ -80,7 +80,8 @@ CREATE TABLE `title_assertions` (
 	`title_a_id` integer NOT NULL,
 	`title_b_id` integer NOT NULL,
 	FOREIGN KEY (`title_a_id`) REFERENCES `service_titles`(`id`) ON UPDATE no action ON DELETE cascade,
-	FOREIGN KEY (`title_b_id`) REFERENCES `service_titles`(`id`) ON UPDATE no action ON DELETE cascade
+	FOREIGN KEY (`title_b_id`) REFERENCES `service_titles`(`id`) ON UPDATE no action ON DELETE cascade,
+	CONSTRAINT "title_assertions_canonical_order" CHECK("title_assertions"."title_a_id" < "title_assertions"."title_b_id")
 );
 --> statement-breakpoint
 CREATE UNIQUE INDEX `title_assertions_pair_idx` ON `title_assertions` (`title_a_id`,`title_b_id`);--> statement-breakpoint
@@ -89,6 +90,5 @@ CREATE TABLE `title_groups` (
 	`id` integer PRIMARY KEY AUTOINCREMENT NOT NULL,
 	`ladder_complete` integer DEFAULT false NOT NULL,
 	`source` text NOT NULL,
-	`status` text NOT NULL,
 	`updated_at` integer DEFAULT (unixepoch()) NOT NULL
 );
