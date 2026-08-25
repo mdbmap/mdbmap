@@ -1,0 +1,219 @@
+import { eq, inArray } from "drizzle-orm";
+
+import {
+	instalmentAssertions,
+	serviceInstalments,
+	serviceTitles,
+	titleGroups,
+} from "@/db/engine-schema";
+import type { InstalmentLocator } from "@/db/schema";
+
+import { survivorGroupId } from "./gateway/read.ts";
+import type { GatewayDb } from "./gateway/read.ts";
+import type {
+	EngineRead,
+	MediaKind,
+	MemberTitles,
+	ResolveResult,
+	Segment,
+} from "./seam.ts";
+import { metadataProviderFor } from "./seam.ts";
+
+// The EngineRead over the hub-and-spoke graph (ADR-0002). A continuity is a title
+// group; its ordered spine (the metadata provider's own titles) gives the
+// segments, and every other service's member id aligns to a segment through the
+// content units they share — no group/spoke/unit internal crosses the seam.
+
+type TitleRow = typeof serviceTitles.$inferSelect;
+
+// Services the seam surfaces as members; other spokes in a group (imdb, tvdb,
+// kitsu) resolve too but have no MemberTitles slot to carry them.
+const memberServices = ["anidb", "anilist", "mal", "tmdb"] as const;
+type MemberService = (typeof memberServices)[number];
+
+const animeServices = new Set<string>(["anidb", "anilist", "kitsu", "mal"]);
+
+const continuityPrefix = "group:";
+
+const parseGroupId = (continuityId: string): number | undefined => {
+	if (!continuityId.startsWith(continuityPrefix)) {
+		return undefined;
+	}
+	const raw = continuityId.slice(continuityPrefix.length);
+	const id = Number(raw);
+	return raw !== "" && Number.isInteger(id) ? id : undefined;
+};
+
+// TMDB spokes fold their movie/tv namespace into the stored id (keys.ts); the
+// seam publishes the bare numeric id the metadata provider expects.
+const memberId = (title: TitleRow): string =>
+	title.service === "tmdb"
+		? (title.serviceId.split(":")[1] ?? title.serviceId)
+		: title.serviceId;
+
+const isMemberService = (service: string): service is MemberService =>
+	memberServices.some((candidate) => candidate === service);
+
+// Anime when the group carries an anime-catalogue spoke; otherwise the TMDB
+// namespace tells film from tv (the routing metadataProviderFor encodes).
+const detectMediaKind = (titles: readonly TitleRow[]): MediaKind => {
+	if (titles.some((title) => animeServices.has(title.service))) {
+		return "anime";
+	}
+	const tmdb = titles.find((title) => title.service === "tmdb");
+	return tmdb?.serviceId.startsWith("movie:") === true ? "film" : "tv";
+};
+
+const compareTitles = (left: TitleRow, right: TitleRow): number =>
+	left.ordinal - right.ordinal || left.id - right.id;
+
+// The content units a title's spokes cover — the hub side of the assertion graph
+// (ADR-0002). Segment membership is decided by which titles share these units.
+const unitsCovered = (db: GatewayDb, titleId: number): ReadonlySet<number> => {
+	const spokes = db
+		.select({ id: serviceInstalments.id })
+		.from(serviceInstalments)
+		.where(eq(serviceInstalments.titleId, titleId))
+		.all();
+	if (spokes.length === 0) {
+		return new Set();
+	}
+	const edges = db
+		.select({ unitId: instalmentAssertions.unitId })
+		.from(instalmentAssertions)
+		.where(
+			inArray(
+				instalmentAssertions.instalmentId,
+				spokes.map((spoke) => spoke.id),
+			),
+		)
+		.all();
+	return new Set(edges.map((edge) => edge.unitId));
+};
+
+const countShared = (
+	left: ReadonlySet<number>,
+	right: ReadonlySet<number>,
+): number => {
+	let shared = 0;
+	for (const unit of left) {
+		if (right.has(unit)) {
+			shared += 1;
+		}
+	}
+	return shared;
+};
+
+interface Candidate {
+	readonly title: TitleRow;
+	readonly units: ReadonlySet<number>;
+}
+
+// The candidate sharing the most content units with the segment's spine; ties go
+// to the earlier candidate, so pre-sorting by ordinal keeps the pick stable.
+const bestAligned = (
+	candidates: readonly Candidate[],
+	spineUnits: ReadonlySet<number>,
+): TitleRow | undefined => {
+	let best: { readonly shared: number; readonly title: TitleRow } | undefined;
+	for (const candidate of candidates) {
+		const shared = countShared(candidate.units, spineUnits);
+		if (shared > 0 && (best === undefined || shared > best.shared)) {
+			best = { shared, title: candidate.title };
+		}
+	}
+	return best?.title;
+};
+
+const buildMembers = (
+	byService: ReadonlyMap<MemberService, readonly Candidate[]>,
+	spineUnits: ReadonlySet<number>,
+): MemberTitles => {
+	const members: MemberTitles = {};
+	for (const service of memberServices) {
+		const candidates = byService.get(service);
+		const aligned =
+			candidates === undefined ? undefined : bestAligned(candidates, spineUnits);
+		if (aligned !== undefined) {
+			members[service] = memberId(aligned);
+		}
+	}
+	return members;
+};
+
+const candidatesByService = (
+	db: GatewayDb,
+	titles: readonly TitleRow[],
+): ReadonlyMap<MemberService, readonly Candidate[]> => {
+	const byService = new Map<MemberService, Candidate[]>();
+	for (const title of titles) {
+		if (!isMemberService(title.service)) {
+			continue;
+		}
+		const list = byService.get(title.service) ?? [];
+		list.push({ title, units: unitsCovered(db, title.id) });
+		byService.set(title.service, list);
+	}
+	return byService;
+};
+
+const segmentLocators = (
+	db: GatewayDb,
+	provider: string,
+	spine: TitleRow,
+): InstalmentLocator[] => {
+	const spokes = db
+		.select({ id: serviceInstalments.id })
+		.from(serviceInstalments)
+		.where(eq(serviceInstalments.titleId, spine.id))
+		.orderBy(serviceInstalments.id)
+		.all();
+	const id = memberId(spine);
+	const locators: InstalmentLocator[] = [];
+	for (let position = 1; position <= spokes.length; position += 1) {
+		locators.push(`${provider}:${id}#${position}`);
+	}
+	return locators;
+};
+
+const resolve = (db: GatewayDb, continuityId: string): ResolveResult => {
+	const requested = parseGroupId(continuityId);
+	if (requested === undefined) {
+		throw new Error(`engine: malformed continuity ${continuityId}`);
+	}
+	const groupId = survivorGroupId(db, requested);
+	const group = db
+		.select()
+		.from(titleGroups)
+		.where(eq(titleGroups.id, groupId))
+		.all();
+	if (group.length === 0) {
+		throw new Error(`engine: no continuity ${continuityId}`);
+	}
+	const titles = db
+		.select()
+		.from(serviceTitles)
+		.where(eq(serviceTitles.groupId, groupId))
+		.all()
+		.toSorted(compareTitles);
+	const mediaKind = detectMediaKind(titles);
+	const provider = metadataProviderFor(mediaKind);
+	const spine = titles.filter((title) => title.service === provider);
+	if (spine.length === 0) {
+		throw new Error(`engine: continuity ${continuityId} has no ${provider} spine`);
+	}
+	const byService = candidatesByService(db, titles);
+	const segments: Segment[] = spine.map(
+		(title): Segment => ({
+			instalments: segmentLocators(db, provider, title),
+			members: buildMembers(byService, unitsCovered(db, title.id)),
+		}),
+	);
+	return { mediaKind, segments };
+};
+
+const createEngine = (db: GatewayDb): EngineRead => ({
+	resolveContinuity: (continuityId) => resolve(db, continuityId),
+});
+
+export { createEngine };

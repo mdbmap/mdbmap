@@ -37,6 +37,7 @@ export type {
 	ResolvedLinks,
 	TitleAnswer,
 } from "./serializer.ts";
+export { createEngine } from "./engine.ts";
 export { noColdLookup, resolveMapping, runMapping } from "./gateway/index.ts";
 export type {
 	ColdLookup,
@@ -54,4 +55,3 @@ export type {
 	ResolveResult,
 	Segment,
 } from "./seam.ts";
-export { stubEngine } from "./stub-engine.ts";

@@ -1,7 +1,7 @@
 import { ORPCError, os } from "@orpc/server";
 
 import { db as defaultDb } from "@/db";
-import { stubEngine } from "@/engine";
+import { createEngine } from "@/engine";
 import { auth } from "@/lib/auth";
 
 import type { Db, ORPCContext, ResolveSession } from "./context.ts";
@@ -31,10 +31,11 @@ const base = os.$context<ORPCContext>();
 const pub = base.use(async ({ context, next }) => {
 	const resolve = context.resolveSession ?? resolveViaBetterAuth;
 	const user = await resolve(context.headers);
+	const db = context.db ?? fallbackDb;
 	return next({
 		context: {
-			db: context.db ?? fallbackDb,
-			engine: context.engine ?? stubEngine,
+			db,
+			engine: context.engine ?? createEngine(db),
 			providers: context.providers ?? defaultProviders,
 			user,
 		},

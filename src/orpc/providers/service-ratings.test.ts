@@ -1,18 +1,20 @@
 import { describe, expect, it } from "vitest";
 
-import { stubEngine } from "@/engine";
+import type { MemberTitles } from "@/engine";
 import type { RateableUnit } from "@/orpc/schema";
 
 import { serviceRatingsProvider } from "./service-ratings.ts";
 
-const resolved = stubEngine.resolveContinuity("continuity:spy-x-family");
-const [cour] = resolved.segments;
-if (cour === undefined) {
-	throw new Error("sample continuity resolved with no segments");
-}
-const { members } = cour;
+// The first-cour member ids the engine resolves for Spy × Family; the seam-level
+// end-to-end path is covered in orpc/router/seam.test.ts against real resolution.
+const members: MemberTitles = {
+	anidb: "16947",
+	anilist: "140960",
+	mal: "50265",
+	tmdb: "120089",
+};
 
-const part: RateableUnit = { key: "part:continuity:spy-x-family:0", kind: "part" };
+const part: RateableUnit = { key: "part:group:1:0", kind: "part" };
 
 describe("service ratings list", () => {
 	it("returns a per-service list, each in its native scale, never merged", async () => {
