@@ -1,0 +1,171 @@
+import { and, eq, inArray } from "drizzle-orm";
+
+import type { WatchStatus } from "@/db/schema";
+import { episodeProgress, personalRating, watchStatus } from "@/db/schema";
+import type { ResolveResult } from "@/engine";
+import { metadataProviderFor } from "@/engine";
+import { pub } from "@/orpc/base";
+import type { Db } from "@/orpc/context";
+import { instalmentsOf } from "@/orpc/instalments";
+import type { Providers, WorkMetadata } from "@/orpc/providers";
+import type {
+	EpisodeView,
+	PartView,
+	RateableUnit,
+	ViewerTracking,
+	WorkView,
+} from "@/orpc/schema";
+import { WorkGetInput } from "@/orpc/schema";
+
+interface ViewerState {
+	personalByUnit: Map<string, number>;
+	statusRow: { rewatchCount: number; status: WatchStatus | undefined } | undefined;
+	watchedSet: Set<string>;
+}
+
+const unitId = (unit: RateableUnit) => `${unit.kind}:${unit.key}`;
+const partKeyFor = (continuityId: string, index: number) =>
+	`part:${continuityId}:${index}`;
+
+const loadViewerState = (
+	db: Db,
+	userId: string,
+	locators: string[],
+	continuityId: string,
+): ViewerState => {
+	const watchedSet = new Set<string>();
+	if (locators.length > 0) {
+		const progress = db
+			.select({ locator: episodeProgress.instalmentLocator })
+			.from(episodeProgress)
+			.where(
+				and(
+					eq(episodeProgress.userId, userId),
+					inArray(episodeProgress.instalmentLocator, locators),
+				),
+			)
+			.all();
+		for (const row of progress) {
+			watchedSet.add(row.locator);
+		}
+	}
+
+	const statusRow = db
+		.select()
+		.from(watchStatus)
+		.where(
+			and(
+				eq(watchStatus.userId, userId),
+				eq(watchStatus.continuityKey, continuityId),
+			),
+		)
+		.get();
+
+	const personalByUnit = new Map<string, number>();
+	const ratings = db
+		.select()
+		.from(personalRating)
+		.where(eq(personalRating.userId, userId))
+		.all();
+	for (const row of ratings) {
+		personalByUnit.set(`${row.unitKind}:${row.unitKey}`, row.score);
+	}
+
+	return { personalByUnit, statusRow, watchedSet };
+};
+
+const buildParts = (
+	resolved: ResolveResult,
+	meta: WorkMetadata,
+	providers: Providers,
+	continuityId: string,
+	viewer: ViewerState | undefined,
+): PartView[] =>
+	resolved.segments.map((segment, index) => {
+		const segMeta = meta.segments[index];
+		const partUnit: RateableUnit = {
+			key: partKeyFor(continuityId, index),
+			kind: "part",
+		};
+		const episodes: EpisodeView[] = segment.instalments.map(
+			(locator, position) => {
+				const epMeta = segMeta?.episodes[position];
+				const episodeUnit: RateableUnit = { key: locator, kind: "episode" };
+				return {
+					airDate: epMeta?.airDate,
+					communityScore: providers.community.scoreFor(episodeUnit),
+					instalmentLocator: locator,
+					number: epMeta?.number ?? position + 1,
+					personalRating: viewer?.personalByUnit.get(unitId(episodeUnit)),
+					rateableUnit: episodeUnit,
+					title: epMeta?.title ?? `Episode ${position + 1}`,
+					watched: viewer?.watchedSet.has(locator) ?? false,
+				};
+			},
+		);
+		return {
+			airedFrom: segMeta?.airedFrom,
+			airedTo: segMeta?.airedTo,
+			communityScore: providers.community.scoreFor(partUnit),
+			episodeCount: segment.instalments.length,
+			episodes,
+			label: segMeta?.label ?? `Part ${index + 1}`,
+			personalRating: viewer?.personalByUnit.get(unitId(partUnit)),
+			rateableUnit: partUnit,
+			serviceRatings: [...providers.serviceRatings.ratingsFor(partUnit)],
+			year: segMeta?.year,
+		};
+	});
+
+const get = pub.input(WorkGetInput).handler(({ context, input }): WorkView => {
+	const { continuityId } = input;
+	const resolved = context.engine.resolveContinuity(continuityId);
+	const meta = context.providers.metadata[
+		metadataProviderFor(resolved.mediaKind)
+	].fetchWork(resolved);
+
+	const { user } = context;
+	let viewerState: ViewerState | undefined;
+	if (user !== undefined) {
+		viewerState = loadViewerState(
+			context.db,
+			user.id,
+			instalmentsOf(resolved),
+			continuityId,
+		);
+	}
+
+	let viewer: ViewerTracking | undefined;
+	if (viewerState !== undefined) {
+		const workUnit: RateableUnit = { key: continuityId, kind: "work" };
+		viewer = {
+			personalRating: viewerState.personalByUnit.get(unitId(workUnit)),
+			rewatchCount: viewerState.statusRow?.rewatchCount ?? 0,
+			status: viewerState.statusRow?.status,
+			watched: [...viewerState.watchedSet],
+		};
+	}
+
+	return {
+		cast: [...meta.cast],
+		continuityId,
+		header: {
+			backdropRef: meta.backdropRef,
+			coverRef: meta.coverRef,
+			nativeTitle: meta.nativeTitle,
+			span: meta.span,
+			synopsis: meta.synopsis,
+			title: meta.title,
+		},
+		ifYouLiked: [...meta.ifYouLiked],
+		mediaKind: resolved.mediaKind,
+		parts: buildParts(resolved, meta, context.providers, continuityId, viewerState),
+		staff: [...meta.staff],
+		studios: [...meta.studios],
+		viewer,
+	};
+});
+
+const work = { get };
+
+export { work };
