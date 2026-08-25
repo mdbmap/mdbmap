@@ -1,25 +1,8 @@
-import type { InstalmentLocator } from "@/db/schema";
 import { describe, expect, it } from "vitest";
 
 import { alignStreams } from "./framework.ts";
 import { mainSequence } from "./instalment.ts";
-import type { CandidatePairing, NonEmptyArray } from "./monotonic.ts";
-import { locator, regular, special, streamOf } from "./test-fixtures.ts";
-
-const locators = (
-	raws: NonEmptyArray<string>,
-): NonEmptyArray<InstalmentLocator> => {
-	const [head, ...tail] = raws;
-	return [locator(head), ...tail.map((raw) => locator(raw))];
-};
-
-const pair = (
-	left: NonEmptyArray<string>,
-	right: NonEmptyArray<string>,
-): CandidatePairing => ({
-	left: locators(left),
-	right: locators(right),
-});
+import { locator, pair, regular, special, streamOf } from "./test-fixtures.ts";
 
 describe("mainSequence", () => {
 	it("excludes specials from cumulative offsets", () => {
@@ -111,6 +94,24 @@ describe("alignStreams", () => {
 				locator("l#2"),
 			]);
 			expect(outcome.alignment.left.pending).toStrictEqual([locator("l#4")]);
+		}
+	});
+
+	it("publishes an order-preserving alignment whose mixed pairing lands a special", () => {
+		const left = streamOf([regular("l#1"), regular("l#2"), regular("l#3")]);
+		const right = streamOf([special("r#sp"), regular("r#1"), regular("r#2")]);
+		// l#3 pairs with the special stored at right index 0. The pairing's right
+		// span must ignore that off-ordinal index — measured over its regulars
+		// (none here) it imposes no right constraint, so the order-preserving set
+		// publishes instead of false-conflicting on the special's storage slot.
+		const outcome = alignStreams(left, right, [
+			pair(["l#1"], ["r#1"]),
+			pair(["l#2"], ["r#2"]),
+			pair(["l#3"], ["r#sp"]),
+		]);
+		expect(outcome.status).toBe("published");
+		if (outcome.status === "published") {
+			expect(outcome.alignment.pairs).toHaveLength(3);
 		}
 	});
 

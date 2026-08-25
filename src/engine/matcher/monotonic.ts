@@ -36,20 +36,28 @@ interface Span {
 	readonly min: number;
 }
 
+// A side's span is measured over its regular locators alone. Specials carry an
+// off-ordinal storage index that would poison the span, so a side made only of
+// specials yields no span and imposes no constraint on that side's sweep.
 const spanOf = (
 	locators: NonEmptyArray<InstalmentLocator>,
 	index: StreamIndex,
 	side: "left" | "right",
-): Span => {
-	const positions = locators.map((locator) => {
-		const position = index.position.get(locator);
-		if (position === undefined) {
-			throw new Error(
-				`matcher: ${side} locator ${locator} is not in its stream`,
-			);
-		}
-		return position;
-	});
+): Span | undefined => {
+	const positions = locators
+		.filter((locator) => index.regular.has(locator))
+		.map((locator) => {
+			const position = index.position.get(locator);
+			if (position === undefined) {
+				throw new Error(
+					`matcher: ${side} locator ${locator} is not in its stream`,
+				);
+			}
+			return position;
+		});
+	if (positions.length === 0) {
+		return undefined;
+	}
 	return { max: Math.max(...positions), min: Math.min(...positions) };
 };
 
@@ -80,6 +88,36 @@ interface Reach {
 	readonly pairing: CandidatePairing;
 }
 
+const startKey = (span: Span | undefined): number =>
+	span?.min ?? Number.POSITIVE_INFINITY;
+
+interface RankedPairing {
+	readonly left: Span | undefined;
+	readonly pairing: CandidatePairing;
+	readonly right: Span | undefined;
+}
+
+// Sweep one side of a pairing: an empty span (all specials) is inert, otherwise
+// a start at or before the furthest end seen so far is a crossing. Returns the
+// extended reach for the next pairing.
+const sweepSide = (
+	entry: RankedPairing,
+	side: "left" | "right",
+	reach: Reach | undefined,
+	crossings: Crossing[],
+): Reach | undefined => {
+	const span = entry[side];
+	if (span === undefined) {
+		return reach;
+	}
+	if (reach !== undefined && span.min <= reach.max) {
+		crossings.push({ earlier: reach.pairing, later: entry.pairing, side });
+	}
+	return reach === undefined || span.max > reach.max
+		? { max: span.max, pairing: entry.pairing }
+		: reach;
+};
+
 // Legal alignments preserve both sequences' relative order: gaps and split or
 // merged runs are fine, but two pairings may never overlap or cross. Sorting by
 // left start, every later pairing must also start after the furthest right end
@@ -96,32 +134,14 @@ const checkMonotonic = (
 			pairing,
 			right: spanOf(pairing.right, rightIndex, "right"),
 		}))
-		.toSorted((first, second) => first.left.min - second.left.min);
+		.toSorted((first, second) => startKey(first.left) - startKey(second.left));
 
 	const crossings: Crossing[] = [];
 	let leftReach: Reach | undefined;
 	let rightReach: Reach | undefined;
 	for (const entry of ranked) {
-		if (leftReach !== undefined && entry.left.min <= leftReach.max) {
-			crossings.push({
-				earlier: leftReach.pairing,
-				later: entry.pairing,
-				side: "left",
-			});
-		}
-		if (rightReach !== undefined && entry.right.min <= rightReach.max) {
-			crossings.push({
-				earlier: rightReach.pairing,
-				later: entry.pairing,
-				side: "right",
-			});
-		}
-		if (leftReach === undefined || entry.left.max > leftReach.max) {
-			leftReach = { max: entry.left.max, pairing: entry.pairing };
-		}
-		if (rightReach === undefined || entry.right.max > rightReach.max) {
-			rightReach = { max: entry.right.max, pairing: entry.pairing };
-		}
+		leftReach = sweepSide(entry, "left", leftReach, crossings);
+		rightReach = sweepSide(entry, "right", rightReach, crossings);
 	}
 	return crossings.length > 0 ? { crossings, ok: false } : { ok: true };
 };

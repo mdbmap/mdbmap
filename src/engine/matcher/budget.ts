@@ -6,8 +6,7 @@ interface BudgetSnapshot {
 
 // The accounting hook tiers spend fetch requests against. `spend` grants and
 // deducts when the cost fits the remaining budget, and refuses without
-// deducting when it would overrun — a tier that is refused persists a bare
-// unmatched group rather than exceeding the subrequest limit.
+// deducting when it would overrun.
 interface BudgetLedger {
 	readonly snapshot: () => BudgetSnapshot;
 	readonly spend: (cost: number) => boolean;

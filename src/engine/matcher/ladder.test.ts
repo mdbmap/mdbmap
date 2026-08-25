@@ -4,12 +4,7 @@ import { createBudget } from "./budget.ts";
 import type { CandidatePairing } from "./monotonic.ts";
 import { runLadder } from "./ladder.ts";
 import type { Tier, TierContext } from "./ladder.ts";
-import { locator, regular, special, streamOf } from "./test-fixtures.ts";
-
-const pair = (left: string, right: string): CandidatePairing => ({
-	left: [locator(left)],
-	right: [locator(right)],
-});
+import { pair, regular, special, streamOf } from "./test-fixtures.ts";
 
 const staticTier = (
 	id: Tier["id"],
@@ -56,9 +51,9 @@ describe("runLadder", () => {
 			left,
 			right,
 			tiers: {
-				t1: recorder("t1-structure", [pair("l#1", "r#1")], 3),
-				t2: recorder("t2-pattern", [pair("l#2", "r#2")], 2),
-				t3: recorder("t3-episode", [pair("l#sp", "r#sp")], 1),
+				t1: recorder("t1-structure", [pair(["l#1"], ["r#1"])], 3),
+				t2: recorder("t2-pattern", [pair(["l#2"], ["r#2"])], 2),
+				t3: recorder("t3-episode", [pair(["l#sp"], ["r#sp"])], 1),
 			},
 		});
 
@@ -85,8 +80,8 @@ describe("runLadder", () => {
 			left,
 			right,
 			tiers: {
-				t1: staticTier("t1-structure", [pair("l#1", "r#2")]),
-				t2: staticTier("t2-pattern", [pair("l#2", "r#1")]),
+				t1: staticTier("t1-structure", [pair(["l#1"], ["r#2"])]),
+				t2: staticTier("t2-pattern", [pair(["l#2"], ["r#1"])]),
 				t3: staticTier("t3-episode", []),
 			},
 		});
