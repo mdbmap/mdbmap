@@ -53,15 +53,17 @@ const spanOf = (
 	return { max: Math.max(...positions), min: Math.min(...positions) };
 };
 
-// Specials never carry a main-sequence position, so a pairing that touches one
-// is matched separately and is exempt from the crossing check.
-const isMainSequence = (
+// A pairing is exempt from the crossing sweep only when it carries no
+// main-sequence position at all — every locator on both sides is a special. A
+// pairing that mixes a special with a regular still pins that regular to a
+// main-sequence position, so it must be checked or the regular could map twice.
+const touchesMainSequence = (
 	pairing: CandidatePairing,
 	leftIndex: StreamIndex,
 	rightIndex: StreamIndex,
 ): boolean =>
-	pairing.left.every((locator) => leftIndex.regular.has(locator)) &&
-	pairing.right.every((locator) => rightIndex.regular.has(locator));
+	pairing.left.some((locator) => leftIndex.regular.has(locator)) ||
+	pairing.right.some((locator) => rightIndex.regular.has(locator));
 
 interface Crossing {
 	readonly earlier: CandidatePairing;
@@ -88,7 +90,7 @@ const checkMonotonic = (
 	rightIndex: StreamIndex,
 ): MonotonicVerdict => {
 	const ranked = pairings
-		.filter((pairing) => isMainSequence(pairing, leftIndex, rightIndex))
+		.filter((pairing) => touchesMainSequence(pairing, leftIndex, rightIndex))
 		.map((pairing) => ({
 			left: spanOf(pairing.left, leftIndex, "left"),
 			pairing,
