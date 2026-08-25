@@ -35,6 +35,14 @@ export type {
 	ResolvedLinks,
 	TitleAnswer,
 } from "./serializer.ts";
+export { noColdLookup, resolveMapping, runMapping } from "./gateway/index.ts";
+export type {
+	ColdLookup,
+	ColdResult,
+	GatewayDeps,
+	MappingOutcome,
+	PendingBuild,
+} from "./gateway/index.ts";
 export { metadataProviderFor } from "./seam.ts";
 export type {
 	EngineRead,
