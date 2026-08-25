@@ -38,6 +38,21 @@ export type {
 	SimklRelationKind,
 	SimklService,
 } from "./simkl.ts";
+export { verifyChain } from "./verify.ts";
+export type {
+	CandidateReference,
+	CatalogueClient,
+	CatalogueTitle,
+	InstalmentRange,
+	RelationAssertionPlan,
+	ServiceRef,
+	TitleAssertionPlan,
+	VerificationClients,
+	VerificationConflict,
+	VerificationConflictReason,
+	VerificationResult,
+	VerifyDeps,
+} from "./verify.ts";
 export { walkContinuity } from "./walk.ts";
 export type {
 	ChainSegment,

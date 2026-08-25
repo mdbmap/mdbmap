@@ -42,5 +42,6 @@ export const env = createEnv({
 		SERVER_URL: z.url().optional(),
 		SIMKL_API_KEY: z.string().optional(),
 		TMDB_API_KEY: z.string().optional(),
+		TVDB_API_KEY: z.string().optional(),
 	},
 });
