@@ -3,10 +3,12 @@ import { beforeEach, describe, expect, it } from "vitest";
 import {
 	contentUnits,
 	instalmentAssertions,
+	pendingGroupCandidates,
 	relationAssertions,
 	serviceInstalments,
 	serviceTitles,
 	titleAssertions,
+	titleGroupAliases,
 	titleGroups,
 } from "./engine-schema.ts";
 import { freshDb } from "./test-helpers.ts";
@@ -203,5 +205,162 @@ describe("hub-and-spoke coverage edges", () => {
 				})
 				.run(),
 		).toThrow(/unique/iu);
+	});
+});
+
+const seedGroup = (db: ReturnType<typeof freshDb>) =>
+	one(
+		db
+			.insert(titleGroups)
+			.values({ ladderComplete: false, source: "t1-structure" })
+			.returning()
+			.all(),
+	);
+
+describe("pending group candidates", () => {
+	let db: ReturnType<typeof freshDb>;
+
+	beforeEach(() => {
+		db = freshDb();
+	});
+
+	it("coalesces a repeat open candidate but reopens on a differing evidence hash", () => {
+		const subject = { subjectType: "title" as const, titleId: 1 };
+		const evidence = {
+			competingGroupIds: [1, 2],
+			kind: "structural" as const,
+			proposedMembers: [{ service: "tmdb", serviceId: "1396" }],
+		};
+
+		db.insert(pendingGroupCandidates)
+			.values({ evidence, evidenceHash: "hash-a", kind: "structural", subject })
+			.run();
+
+		expect(() =>
+			db
+				.insert(pendingGroupCandidates)
+				.values({
+					evidence,
+					evidenceHash: "hash-a",
+					kind: "structural",
+					subject,
+				})
+				.run(),
+		).toThrow(/unique/iu);
+
+		expect(() =>
+			db
+				.insert(pendingGroupCandidates)
+				.values({
+					evidence,
+					evidenceHash: "hash-b",
+					kind: "structural",
+					subject,
+				})
+				.run(),
+		).not.toThrow();
+
+		expect(db.select().from(pendingGroupCandidates).all()).toHaveLength(2);
+	});
+
+	it("lets a resolved candidate coexist with a fresh open row for the same question", () => {
+		const subject = { subjectType: "title" as const, titleId: 7 };
+		const evidence = {
+			competingGroupIds: [],
+			kind: "structural" as const,
+			proposedMembers: [],
+		};
+
+		db.insert(pendingGroupCandidates)
+			.values({
+				evidence,
+				evidenceHash: "hash-c",
+				kind: "structural",
+				status: "rejected",
+				subject,
+			})
+			.run();
+
+		expect(() =>
+			db
+				.insert(pendingGroupCandidates)
+				.values({
+					evidence,
+					evidenceHash: "hash-c",
+					kind: "structural",
+					subject,
+				})
+				.run(),
+		).not.toThrow();
+	});
+});
+
+describe("title group aliases", () => {
+	let db: ReturnType<typeof freshDb>;
+
+	beforeEach(() => {
+		db = freshDb();
+	});
+
+	it("resolves an alias to its survivor in one hop after a merge", () => {
+		const survivor = seedGroup(db);
+		const retired = seedGroup(db);
+
+		db.insert(titleGroupAliases)
+			.values({ retiredGroupId: retired.id, survivorGroupId: survivor.id })
+			.run();
+
+		const alias = one(
+			db
+				.select()
+				.from(titleGroupAliases)
+				.where(eq(titleGroupAliases.retiredGroupId, retired.id))
+				.all(),
+		);
+		expect(alias.survivorGroupId).toBe(survivor.id);
+	});
+
+	it("flattens a later merge so the original retired id still resolves in one hop", () => {
+		const finalSurvivor = seedGroup(db);
+		const middle = seedGroup(db);
+		const original = seedGroup(db);
+
+		// original merges into middle first.
+		db.insert(titleGroupAliases)
+			.values({ retiredGroupId: original.id, survivorGroupId: middle.id })
+			.run();
+
+		// middle later merges into finalSurvivor; the writer flattens the
+		// existing alias instead of leaving an alias-of-alias chain.
+		db.update(titleGroupAliases)
+			.set({ survivorGroupId: finalSurvivor.id })
+			.where(eq(titleGroupAliases.retiredGroupId, original.id))
+			.run();
+		db.insert(titleGroupAliases)
+			.values({
+				retiredGroupId: middle.id,
+				survivorGroupId: finalSurvivor.id,
+			})
+			.run();
+
+		const resolved = one(
+			db
+				.select()
+				.from(titleGroupAliases)
+				.where(eq(titleGroupAliases.retiredGroupId, original.id))
+				.all(),
+		);
+		expect(resolved.survivorGroupId).toBe(finalSurvivor.id);
+	});
+
+	it("rejects an alias that points a group to itself", () => {
+		const group = seedGroup(db);
+
+		expect(() =>
+			db
+				.insert(titleGroupAliases)
+				.values({ retiredGroupId: group.id, survivorGroupId: group.id })
+				.run(),
+		).toThrow(/constraint/iu);
 	});
 });
