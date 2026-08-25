@@ -1,18 +1,10 @@
 import { describe, expect, it } from "vitest";
 
 import { createBudget } from "./budget.ts";
-import type { CandidatePairing } from "./monotonic.ts";
 import { runLadder } from "./ladder.ts";
 import type { Tier, TierContext } from "./ladder.ts";
-import { pair, regular, special, streamOf } from "./test-fixtures.ts";
-
-const staticTier = (
-	id: Tier["id"],
-	pairings: readonly CandidatePairing[],
-): Tier => ({
-	id,
-	propose: () => ({ pairings }),
-});
+import type { CandidatePairing } from "./monotonic.ts";
+import { pair, regular, special, staticTier, streamOf } from "./test-fixtures.ts";
 
 describe("createBudget", () => {
 	it("grants within the limit and refuses an overrun without deducting", () => {

@@ -38,3 +38,18 @@ export type {
 } from "./monotonic.ts";
 export { createT1StructureTier } from "./t1-structure.ts";
 export type { T1Input, T1Instalment, T1Segment, T1Side } from "./t1-structure.ts";
+export { createTier3, matchTier3 } from "./tier3.ts";
+export type {
+	FactsByLocator,
+	InstalmentFacts,
+	Tier3Input,
+	Tier3Link,
+	Tier3Result,
+} from "./tier3.ts";
+export {
+	dayDistance,
+	editDistance,
+	normaliseTitle,
+	titleSimilarity,
+	tokenOverlap,
+} from "./tier3-scoring.ts";
