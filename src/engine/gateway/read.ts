@@ -118,8 +118,8 @@ const titleEvidence = (
 	if (source === "release") {
 		return { assertionPath: [], confidence: "low" };
 	}
-	const path: readonly PathAssertion[] = [{ confidence: "high", source }];
-	return { assertionPath: path, confidence: "high" };
+	const path: readonly PathAssertion[] = [{ confidence: "low", source }];
+	return { assertionPath: path, confidence: "low" };
 };
 
 const completionFor = (
@@ -241,7 +241,11 @@ const addInstalmentCounterpart = (
 	counterparts.set(title.service, list);
 };
 
-const instalmentLinks = (db: GatewayDb, anchorId: number): ResolvedLinks => {
+const instalmentCounterparts = (
+	db: GatewayDb,
+	anchorId: number,
+): ReadonlyMap<Service, ResolvedCounterpart[]> => {
+	const counterparts = new Map<Service, ResolvedCounterpart[]>();
 	const anchorEdges = db
 		.select()
 		.from(instalmentAssertions)
@@ -249,9 +253,8 @@ const instalmentLinks = (db: GatewayDb, anchorId: number): ResolvedLinks => {
 		.all();
 	const unitIds = anchorEdges.map((row) => row.unitId);
 	if (unitIds.length === 0) {
-		return new Map();
+		return counterparts;
 	}
-	const counterparts = new Map<Service, ResolvedCounterpart[]>();
 	const edges = db
 		.select()
 		.from(instalmentAssertions)
@@ -262,11 +265,37 @@ const instalmentLinks = (db: GatewayDb, anchorId: number): ResolvedLinks => {
 			addInstalmentCounterpart(db, counterparts, edge);
 		}
 	}
+	return counterparts;
+};
+
+// An instalment lookup answers per target service like a title lookup: a matched
+// spoke where a counterpart instalment exists, otherwise the anchor title's group
+// coverage decides pending/conflict/known-no-counterpart (ADR-0001).
+const instalmentLinks = (
+	db: GatewayDb,
+	anchorId: number,
+	requestedService: string,
+	verdicts: ReadonlyMap<string, CoverageVerdict>,
+): { readonly links: ResolvedLinks; readonly refs: RefSink } => {
+	const counterparts = instalmentCounterparts(db, anchorId);
 	const links = new Map<Service, ResolvedLink>();
-	for (const [service, list] of counterparts) {
-		links.set(service, { counterparts: list, status: "matched" });
+	const refs: RefSink = { pendingRef: undefined, reviewRef: undefined };
+	const services = new Set<string>([...counterparts.keys(), ...verdicts.keys()]);
+	for (const service of [...services].toSorted()) {
+		if (!isIdentityService(service) || service === requestedService) {
+			continue;
+		}
+		const list = counterparts.get(service);
+		if (list !== undefined && list.length > 0) {
+			links.set(service, { counterparts: list, status: "matched" });
+			continue;
+		}
+		const completion = completionFor(verdicts.get(service), refs);
+		if (completion !== undefined) {
+			links.set(service, completion);
+		}
 	}
-	return links;
+	return { links, refs };
 };
 
 const readInstalment = (
@@ -282,11 +311,18 @@ const readInstalment = (
 	if (anchor === undefined) {
 		return { found: false };
 	}
+	const groupId = survivorGroupId(db, requested.groupId);
+	const { links, refs } = instalmentLinks(
+		db,
+		anchor.id,
+		requested.service,
+		coverageVerdicts(db, groupId),
+	);
 	return {
-		answer: { input: identity, kind: "instalment", links: instalmentLinks(db, anchor.id) },
+		answer: { input: identity, kind: "instalment", links },
 		found: true,
-		pendingRef: undefined,
-		reviewRef: undefined,
+		pendingRef: refs.pendingRef,
+		reviewRef: refs.reviewRef,
 	};
 };
 

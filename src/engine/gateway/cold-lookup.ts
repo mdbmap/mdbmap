@@ -14,18 +14,15 @@ type ColdResult =
 	| { readonly build: PendingBuild; readonly kind: "started" }
 	| { readonly kind: "miss" };
 
-// The hand-off a cache miss takes. Discovery and overflow (their own issues)
-// implement `begin` to spawn a build; a "started" result answers 202 and a
-// "miss" leaves the request as a 404. The route never reaches past this seam, so
-// those issues slot in without touching it.
+// The hand-off a cache miss takes: `begin` spawns a build, a "started" result
+// answers 202 and a "miss" leaves the request as a 404.
 interface ColdLookup {
 	readonly begin: (identity: Identity, profile: Profile) => Promisable<ColdResult>;
 }
 
 const missed: ColdResult = { kind: "miss" };
 
-// Until discovery lands, a miss on an unknown id has no build to wait on, so it
-// falls straight through to 404.
+// A no-op hand-off: every miss falls straight through to 404.
 const noColdLookup: ColdLookup = {
 	begin: () => missed,
 };

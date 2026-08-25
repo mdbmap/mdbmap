@@ -342,4 +342,72 @@ describe("mapping gateway instalment resolution", () => {
 			"tt0903747:1:1",
 		]);
 	});
+
+	it("returns 202 for an episodic id whose anchor group has a pending target", async () => {
+		const group = seedGroup(db);
+		const source = seedTitle(db, group.id, "tmdb", "tv:1396");
+		db.insert(serviceInstalments)
+			.values({ locator: "s1e1", locatorKind: "position", titleId: source.id })
+			.run();
+		seedCoverage(db, group.id, "imdb", "pending");
+
+		const outcome = await resolveMapping(db, "series", "tmdb:1396:1:1", noColdLookup);
+
+		expect(outcome.kind).toBe("pending");
+		if (outcome.kind !== "pending") {
+			return;
+		}
+		expect(outcome.statusUrl.length).toBeGreaterThan(0);
+		expect(outcome.body.mappings.imdb?.status).toBe("pending");
+	});
+
+	it("returns 409 for an episodic id whose anchor group has a blocking conflict", async () => {
+		const group = seedGroup(db);
+		const source = seedTitle(db, group.id, "tmdb", "tv:1396");
+		db.insert(serviceInstalments)
+			.values({ locator: "s1e1", locatorKind: "position", titleId: source.id })
+			.run();
+		seedCoverage(db, group.id, "imdb", "conflict");
+
+		const outcome = await resolveMapping(db, "series", "tmdb:1396:1:1", noColdLookup);
+
+		expect(outcome.kind).toBe("conflict");
+		if (outcome.kind !== "conflict") {
+			return;
+		}
+		expect(outcome.review.startsWith("review:")).toBe(true);
+		expect(outcome.body.mappings.imdb?.status).toBe("conflict");
+	});
+});
+
+describe("mapping gateway assertion integrity", () => {
+	let db: Db;
+
+	beforeEach(() => {
+		db = freshDb();
+	});
+
+	it("does not fabricate a high assertion for a group-co-membership-only counterpart", async () => {
+		const group = seedGroup(db, "t1-structure");
+		seedTitle(db, group.id, "tmdb", "movie:603");
+		seedTitle(db, group.id, "imdb", "tt0133093");
+
+		const outcome = await resolveMapping(db, "movie", "tmdb:603", noColdLookup);
+
+		expect(outcome.kind).toBe("ok");
+		if (outcome.kind !== "ok") {
+			return;
+		}
+		const { imdb } = outcome.body.mappings;
+		expect(imdb?.status).toBe("matched");
+		if (imdb?.status !== "matched") {
+			return;
+		}
+		expect(imdb.confidence).toBe("low");
+		expect(
+			imdb.counterparts.every((counterpart) =>
+				counterpart.assertionPath.every((assertion) => assertion.confidence !== "high"),
+			),
+		).toBe(true);
+	});
 });

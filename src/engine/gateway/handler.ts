@@ -9,7 +9,7 @@ import { toResponse } from "./respond.ts";
 
 // Everything the route reads is injectable so tests drive a fresh in-memory db
 // and a stubbed cold path; production falls back to the shared db and the no-op
-// cold lookup (a miss stays a 404 until discovery lands).
+// cold lookup.
 interface GatewayDeps {
 	readonly coldLookup?: ColdLookup;
 	readonly db?: GatewayDb;
