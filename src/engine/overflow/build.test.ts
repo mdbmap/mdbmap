@@ -41,7 +41,7 @@ const workFor = (targetService: Service): BuildWork => ({
 });
 
 describe("runOverflowBuild", () => {
-	it("runs discovery, target fetch, alignment and publication as ordered durable steps", async () => {
+	it("seeds, discovers, fetches, aligns and publishes as ordered durable steps", async () => {
 		const received: string[] = [];
 		const deps: BuildDeps<string, string, string> = {
 			align: ({ chain, streams }) => {
@@ -56,26 +56,32 @@ describe("runOverflowBuild", () => {
 			publish: (alignment) => {
 				received.push(`publish:${alignment}`);
 			},
+			seedPending: () => {
+				received.push("seed");
+			},
 		};
 		const { calls, step } = recordingStep();
 
 		const outcome = await runOverflowBuild(workFor("mal"), deps, step);
 
-		expect(outcome).toEqual({ published: true, targetService: "mal" });
+		expect(outcome).toEqual({ targetService: "mal" });
 		expect(calls.map((call) => call.name)).toEqual([
+			"seed",
 			"discover",
 			"fetch-target",
 			"align",
 			"publish",
 		]);
+		// Seeding runs before any fetch, so a reader sees pending, never partial.
 		expect(received).toEqual([
+			"seed",
 			"fetch:chain",
 			"align:chain:streams",
 			"publish:aligned",
 		]);
 		// Steps carry service-specific retry and timeout policies.
-		expect(calls[1]?.policy).toBe(defaultStepPolicies.fetchTarget);
-		expect(calls[1]?.policy.timeout).not.toBe(
+		expect(calls[2]?.policy).toBe(defaultStepPolicies.fetchTarget);
+		expect(calls[2]?.policy.timeout).not.toBe(
 			defaultStepPolicies.discover.timeout,
 		);
 	});
@@ -84,9 +90,6 @@ describe("runOverflowBuild", () => {
 		const db = freshDb();
 		const continuity: ContinuityKey = "simkl:anime:42";
 		const revision = 1;
-		for (const service of ["anilist", "kitsu", "mal"] as const) {
-			seedPendingCoverage(db, continuity, revision, service);
-		}
 
 		const healthyDeps = (
 			service: Service,
@@ -97,6 +100,9 @@ describe("runOverflowBuild", () => {
 			publish: () => {
 				completeCoverage(db, continuity, revision, service);
 			},
+			seedPending: () => {
+				seedPendingCoverage(db, continuity, revision, service);
+			},
 		});
 		const kitsuDeps: BuildDeps<string, string, string> = {
 			align: () => "aligned",
@@ -106,6 +112,9 @@ describe("runOverflowBuild", () => {
 			},
 			publish: () => {
 				completeCoverage(db, continuity, revision, "kitsu");
+			},
+			seedPending: () => {
+				seedPendingCoverage(db, continuity, revision, "kitsu");
 			},
 		};
 

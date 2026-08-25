@@ -37,6 +37,7 @@ interface BuildStepPolicies {
 	readonly discover: StepPolicy;
 	readonly fetchTarget: StepPolicy;
 	readonly publish: StepPolicy;
+	readonly seed: StepPolicy;
 }
 
 // The slice of Cloudflare's `WorkflowStep` the orchestration uses. A test passes a
@@ -51,9 +52,11 @@ interface DurableStep {
 	) => Promise<Result>;
 }
 
-// The four durable phases, injected so steps call the discovery and matcher
-// modules in production and simple stand-ins in tests. `publish` performs the
-// atomic per-service coverage write.
+// The five durable phases, injected so steps call the discovery and matcher
+// modules in production and simple stand-ins in tests. `seedPending` writes this
+// target's `pending` coverage row and `publish` flips it to complete — both are
+// the build's own responsibility, so the never-a-partial-group invariant is
+// enforced by the orchestration rather than left to a caller.
 interface BuildDeps<Chain, Streams, Alignment> {
 	readonly align: (input: {
 		readonly chain: Chain;
@@ -62,10 +65,10 @@ interface BuildDeps<Chain, Streams, Alignment> {
 	readonly discover: () => Promisable<Chain>;
 	readonly fetchTarget: (chain: Chain) => Promisable<Streams>;
 	readonly publish: (alignment: Alignment) => Promisable<void>;
+	readonly seedPending: () => Promisable<void>;
 }
 
 interface BuildOutcome {
-	readonly published: boolean;
 	readonly targetService: Service;
 }
 
@@ -86,13 +89,19 @@ const defaultStepPolicies: BuildStepPolicies = {
 		retries: { backoff: "exponential", delay: "5 seconds", limit: 5 },
 		timeout: "30 seconds",
 	},
+	seed: {
+		retries: { backoff: "constant", delay: "1 second", limit: 3 },
+		timeout: "10 seconds",
+	},
 };
 
 // One idempotent background build for one (continuity, target service, revision).
-// Discovery, target fetching, alignment and publication are separate durable
-// steps: a step already completed on a prior attempt is memoised and skipped, so
-// a retry after a partial run resumes rather than repeats, and a publish that
-// already committed is never undone (ADR-0002 §overflow).
+// Seeding, discovery, target fetching, alignment and publication are separate
+// durable steps: a step already completed on a prior attempt is memoised and
+// skipped, so a retry after a partial run resumes rather than repeats, and a
+// publish that already committed is never undone (ADR-0002 §overflow). Seeding
+// runs first so a reader observes this target as pending, never a partial group,
+// from the moment the build begins.
 const runOverflowBuild = async <
 	Chain extends Rpc.Serializable<Chain>,
 	Streams extends Rpc.Serializable<Streams>,
@@ -103,6 +112,10 @@ const runOverflowBuild = async <
 	step: DurableStep,
 	policies: BuildStepPolicies = defaultStepPolicies,
 ): Promise<BuildOutcome> => {
+	await step.do("seed", policies.seed, async () => {
+		await deps.seedPending();
+		return { targetService: work.targetService };
+	});
 	const chain = await step.do("discover", policies.discover, async () =>
 		deps.discover(),
 	);
@@ -116,9 +129,9 @@ const runOverflowBuild = async <
 	);
 	await step.do("publish", policies.publish, async () => {
 		await deps.publish(alignment);
-		return { published: true };
+		return { targetService: work.targetService };
 	});
-	return { published: true, targetService: work.targetService };
+	return { targetService: work.targetService };
 };
 
 export { defaultStepPolicies, runOverflowBuild };
