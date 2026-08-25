@@ -266,6 +266,29 @@ const formatVerdict = (run: TargetRun, targetFormat: string | undefined): CheckV
 	return agrees ? "pass" : "unavailable";
 };
 
+// Neighbouring-relation evidence: a combined run only earns this signal when
+// every SIMKL segment it merges is joined to the next by a confirmed two-sided
+// mainline edge, so the catalogue's own adjacency backs the merge. A lone
+// segment has no internal neighbour and a one-sided edge is too weak to count.
+const relationVerdict = (run: TargetRun): CheckVerdict => {
+	if (run.segments.length < 2) {
+		return "unavailable";
+	}
+	for (let index = 1; index < run.segments.length; index += 1) {
+		const earlier = run.segments[index - 1]?.segment.entry;
+		const later = run.segments[index]?.segment.entry;
+		if (earlier === undefined || later === undefined) {
+			return "unavailable";
+		}
+		const twoSided =
+			namesEdge(earlier, "sequel", later.id) && namesEdge(later, "prequel", earlier.id);
+		if (!twoSided) {
+			return "unavailable";
+		}
+	}
+	return "pass";
+};
+
 // Segment sizes drive the target's instalment split, so a run only verifies
 // structurally when every segment has a native count and they sum to the
 // target's own count. A sum that disagrees is a conflict, not weak evidence.
@@ -379,13 +402,14 @@ const verifyRun = async (
 		return { ...empty(), candidates: candidatesOf(run, target) };
 	}
 
-	// Structural fit is evidence, not proof: an exact combined count reaches
-	// high only with an independent signal — title, date or format — agreeing.
-	// Without one the alignment still publishes, but low and flagged for review.
+	// Structural fit is evidence, not proof: an exact combined count reaches high
+	// only with an independent signal — title, date, format or neighbouring
+	// relation — agreeing. Without one it still publishes, but low and flagged.
 	const corroborated =
 		dates === "pass" ||
 		titleVerdict(run, targetTitle.title) === "pass" ||
-		formatVerdict(run, targetTitle.format) === "pass";
+		formatVerdict(run, targetTitle.format) === "pass" ||
+		relationVerdict(run) === "pass";
 	const ranges = rangesOf(sizes.filter((size) => size !== undefined));
 	return {
 		...empty(),

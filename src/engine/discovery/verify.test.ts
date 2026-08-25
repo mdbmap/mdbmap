@@ -201,6 +201,26 @@ describe("simkl verification", () => {
 		expect(result.titleAssertions[0]).toMatchObject({ confidence: "high", flagged: false });
 	});
 
+	it("reaches high on a two-sided mainline edge when nothing else corroborates", async () => {
+		const chain = chainOf([
+			segment("p2", { anidb: "d2", anilist: "al" }, [{ kind: "sequel", toId: "p3" }], 0),
+			segment("p3", { anidb: "d3", anilist: "al" }, [{ kind: "prequel", toId: "p2" }], 1),
+		]);
+		const clients = clientsFrom({
+			anidb: {
+				d2: title({ instalmentCount: 12, title: "Part 2" }),
+				d3: title({ instalmentCount: 14, title: "Part 3" }),
+			},
+			anilist: { al: title({ instalmentCount: 26, title: "Wholly Different Name" }) },
+		});
+
+		const result = await verifyChain(chain, { clients, target: "anilist" });
+
+		expect(result.conflicts).toStrictEqual([]);
+		expect(result.titleAssertions.every((plan) => plan.confidence === "high")).toBe(true);
+		expect(result.titleAssertions).toHaveLength(2);
+	});
+
 	it("does not bridge a repeated id across a segment that lacks it", async () => {
 		const chain = chainOf([
 			segment("a", { anidb: "d0", anilist: "al" }, [], 0),
