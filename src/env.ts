@@ -38,5 +38,6 @@ export const env = createEnv({
 	server: {
 		DATABASE_URL: z.string().optional(),
 		SERVER_URL: z.url().optional(),
+		TMDB_API_KEY: z.string().optional(),
 	},
 });

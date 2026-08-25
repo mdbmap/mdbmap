@@ -37,9 +37,10 @@ interface WorkMetadata {
 
 // Display metadata for one media kind. Real impls (#5 TMDB, #6 AniDB) fetch the
 // resolved members from their service and snapshot to KV; segments align
-// index-for-index with the engine's segments.
+// index-for-index with the engine's segments. Async because a snapshot miss
+// hits the upstream service.
 interface MetadataProvider {
-	fetchWork: (resolved: ResolveResult) => WorkMetadata;
+	fetchWork: (resolved: ResolveResult) => Promise<WorkMetadata>;
 }
 
 type MetadataRegistry = Readonly<Record<MetadataProviderKind, MetadataProvider>>;
