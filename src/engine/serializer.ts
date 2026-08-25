@@ -7,15 +7,22 @@ import type {
 	GroupSource,
 } from "@/db/engine-schema";
 
-import { formatId } from "./identity.ts";
+import { FormatError, formatId } from "./identity.ts";
 import type { Identity, Service } from "./identity.ts";
 
-// Grade of an established counterpart; the matcher never emits none/unmatched for
-// a real link.
+// Grade of an established counterpart: exact is the external-id match, the ladder
+// matcher adds high and low. Completion states are never confidence (ADR-0001).
 type LinkedConfidence = AssertionConfidence | "exact";
-// Grade of a spoke with no counterpart, decided by ladder completeness.
-type UnlinkedConfidence = "none" | "unmatched";
-type MappingConfidence = LinkedConfidence | UnlinkedConfidence;
+
+// A link with no established counterpart sits in one of these completion states,
+// separate from confidence. Mirrors coverageStates in engine-schema.
+type CompletionStatus =
+	| "conflict"
+	| "known-no-counterpart"
+	| "pending"
+	| "unmatched";
+
+type LinkStatus = "matched" | CompletionStatus;
 
 // One accepted assertion in a derivation path, carrying its provenance and grade.
 interface PathAssertion {
@@ -24,18 +31,20 @@ interface PathAssertion {
 }
 
 // A resolved counterpart names a member title/instalment and the path that
-// established it. The serializer formats the identity into a valid input id.
+// established it. supportingInstalment names the request-side instalment that
+// backs a non-coextensive title-level link (ADR-0001).
 interface ResolvedCounterpart {
 	readonly assertionPath: readonly PathAssertion[];
 	readonly confidence: LinkedConfidence;
 	readonly identity: Identity;
+	readonly supportingInstalment?: Identity;
 }
 
-// One counterpart service either resolves to spokes or is a known no-counterpart
-// whose grade depends on ladder completeness.
+// One counterpart service either resolves to spokes or sits in a completion
+// state with no spokes.
 type ResolvedLink =
-	| { readonly counterparts: readonly ResolvedCounterpart[]; readonly linked: true }
-	| { readonly ladderComplete: boolean; readonly linked: false };
+	| { readonly counterparts: readonly ResolvedCounterpart[]; readonly status: "matched" }
+	| { readonly status: CompletionStatus };
 
 type ResolvedLinks = ReadonlyMap<Service, ResolvedLink>;
 
@@ -64,20 +73,41 @@ interface TitleAnswer {
 // The in-memory answer #33 feeds the serializer: no DB, no IO, fully resolved.
 type ResolvedAnswer = InstalmentAnswer | TitleAnswer;
 
-// A bare counterpart with its own grade and evidence path.
+// A bare counterpart with its own grade and evidence path. supportingInstalment
+// names the request-side instalment backing a non-coextensive title-level link.
 interface Counterpart {
 	readonly assertionPath: readonly PathAssertion[];
 	readonly confidence: LinkedConfidence;
 	readonly id: string;
+	readonly supportingInstalment?: string;
 }
 
-// A counterpart service's link. counterparts is always an array; [] is a known
-// no-counterpart carrying none or unmatched.
-interface Link {
-	readonly confidence: MappingConfidence;
-	readonly counterparts: readonly Counterpart[];
-	readonly source: GroupSource | undefined;
+// A counterpart the matcher established but whose identity has no boundary id
+// (ADR-0001); surfaced so one unrepresentable spoke never drops the whole link.
+interface CounterpartError {
+	readonly assertionPath: readonly PathAssertion[];
+	readonly confidence: LinkedConfidence;
+	readonly reason: string;
 }
+
+// A counterpart service that resolved to spokes: a confidence grade plus the
+// formatted counterparts and any that could not be formatted.
+interface MatchedLink {
+	readonly confidence: LinkedConfidence;
+	readonly counterparts: readonly Counterpart[];
+	readonly errors: readonly CounterpartError[];
+	readonly source: GroupSource | undefined;
+	readonly status: "matched";
+}
+
+// A counterpart service with no spokes, carrying only its completion state.
+// counterparts stays empty; status is the meaningful field.
+interface CompletionLink {
+	readonly counterparts: readonly Counterpart[];
+	readonly status: CompletionStatus;
+}
+
+type Link = CompletionLink | MatchedLink;
 
 type Mappings = Partial<Record<Service, Link>>;
 
@@ -94,30 +124,41 @@ interface MappingResponse {
 }
 
 // Legacy compact shape for Stremio adapters: bare counterpart ids plus a single
-// top-level grade and source.
+// top-level grade, completion status and source.
 interface CompactResponse {
-	readonly confidence: MappingConfidence;
+	readonly confidence: LinkedConfidence | undefined;
 	readonly input: string;
 	readonly mappings: Partial<Record<Service, readonly string[]>>;
 	readonly source: GroupSource | undefined;
+	readonly status: LinkStatus;
 }
 
-const confidenceOrder = ["unmatched", "none", "low", "high", "exact"] as const;
+const maxBy = <Item>(
+	items: Iterable<Item>,
+	rank: (item: Item) => number,
+): Item | undefined => {
+	let best: Item | undefined;
+	let bestRank = 0;
+	for (const item of items) {
+		const itemRank = rank(item);
+		if (best === undefined || itemRank > bestRank) {
+			best = item;
+			bestRank = itemRank;
+		}
+	}
+	return best;
+};
 
-const confidenceRank = (confidence: MappingConfidence): number =>
+const confidenceOrder = ["low", "high", "exact"] as const;
+
+const confidenceRank = (confidence: LinkedConfidence): number =>
 	confidenceOrder.indexOf(confidence);
 
 const bestConfidence = (
 	counterparts: readonly ResolvedCounterpart[],
-): LinkedConfidence => {
-	let best: LinkedConfidence | undefined;
-	for (const counterpart of counterparts) {
-		if (best === undefined || confidenceRank(counterpart.confidence) > confidenceRank(best)) {
-			best = counterpart.confidence;
-		}
-	}
-	return best ?? "low";
-};
+): LinkedConfidence =>
+	maxBy(counterparts, (counterpart) => confidenceRank(counterpart.confidence))
+		?.confidence ?? "low";
 
 const sourceRank = (source: AssertionSource): number =>
 	assertionSources.indexOf(source);
@@ -129,37 +170,55 @@ const groupSourceRank = (source: GroupSource): number =>
 // The link's own source: the most-curated provenance across its assertions.
 const ownSource = (
 	counterparts: readonly ResolvedCounterpart[],
-): AssertionSource | undefined => {
-	let winner: AssertionSource | undefined;
-	for (const counterpart of counterparts) {
-		for (const assertion of counterpart.assertionPath) {
-			if (winner === undefined || sourceRank(assertion.source) > sourceRank(winner)) {
-				winner = assertion.source;
-			}
+): AssertionSource | undefined =>
+	maxBy(
+		counterparts.flatMap((counterpart) => counterpart.assertionPath),
+		(assertion) => sourceRank(assertion.source),
+	)?.source;
+
+const formatCounterpart = (
+	counterpart: ResolvedCounterpart,
+): Counterpart | { readonly error: CounterpartError } => {
+	const evidence = {
+		assertionPath: counterpart.assertionPath,
+		confidence: counterpart.confidence,
+	};
+	try {
+		const id = formatId(counterpart.identity);
+		if (counterpart.supportingInstalment === undefined) {
+			return { ...evidence, id };
 		}
+		return { ...evidence, id, supportingInstalment: formatId(counterpart.supportingInstalment) };
+	} catch (error) {
+		if (error instanceof FormatError) {
+			return { error: { ...evidence, reason: error.message } };
+		}
+		throw error;
 	}
-	return winner;
 };
 
 // A title-level answer serves the derived group source; an instalment-level one
 // serves the link's own, so groupSource is present only for the former.
 const linkFor = (link: ResolvedLink, groupSource: GroupSource | undefined): Link => {
-	if (!link.linked) {
-		return {
-			confidence: link.ladderComplete ? "none" : "unmatched",
-			counterparts: [],
-			source: undefined,
-		};
+	if (link.status !== "matched") {
+		return { counterparts: [], status: link.status };
 	}
-	const counterparts = link.counterparts.map((counterpart) => ({
-		assertionPath: counterpart.assertionPath,
-		confidence: counterpart.confidence,
-		id: formatId(counterpart.identity),
-	}));
+	const counterparts: Counterpart[] = [];
+	const errors: CounterpartError[] = [];
+	for (const counterpart of link.counterparts) {
+		const formatted = formatCounterpart(counterpart);
+		if ("error" in formatted) {
+			errors.push(formatted.error);
+		} else {
+			counterparts.push(formatted);
+		}
+	}
 	return {
 		confidence: bestConfidence(link.counterparts),
 		counterparts,
+		errors,
 		source: groupSource ?? ownSource(link.counterparts),
+		status: "matched",
 	};
 };
 
@@ -186,28 +245,32 @@ const serialize = (answer: ResolvedAnswer): MappingResponse => {
 	};
 };
 
-const aggregateConfidence = (links: readonly Link[]): MappingConfidence => {
-	let best: MappingConfidence | undefined;
-	for (const link of links) {
-		if (best === undefined || confidenceRank(link.confidence) > confidenceRank(best)) {
-			best = link.confidence;
-		}
-	}
-	return best ?? "unmatched";
-};
+const aggregateConfidence = (links: readonly Link[]): LinkedConfidence | undefined =>
+	maxBy(
+		links.filter((link): link is MatchedLink => link.status === "matched"),
+		(link) => confidenceRank(link.confidence),
+	)?.confidence;
 
-const aggregateSource = (links: readonly Link[]): GroupSource | undefined => {
-	let winner: GroupSource | undefined;
-	for (const { source } of links) {
-		if (source !== undefined && (winner === undefined || groupSourceRank(source) > groupSourceRank(winner))) {
-			winner = source;
-		}
-	}
-	return winner;
-};
+// Aggregate completion state, matched winning so any usable target reads as such.
+const statusOrder = [
+	"known-no-counterpart",
+	"unmatched",
+	"pending",
+	"conflict",
+	"matched",
+] as const;
+
+const aggregateStatus = (links: readonly Link[]): LinkStatus =>
+	maxBy(links, (link) => statusOrder.indexOf(link.status))?.status ?? "unmatched";
+
+const aggregateSource = (links: readonly Link[]): GroupSource | undefined =>
+	maxBy(
+		links.flatMap((link) => (link.status === "matched" && link.source !== undefined ? [link.source] : [])),
+		groupSourceRank,
+	);
 
 // Strip assertion evidence to bare counterpart ids and collapse the per-link
-// grades and sources into the single legacy pair.
+// grades, statuses and sources into the single legacy triple.
 const toCompact = (response: MappingResponse): CompactResponse => {
 	const mappings: Partial<Record<Service, readonly string[]>> = {};
 	const links: Link[] = [];
@@ -224,20 +287,25 @@ const toCompact = (response: MappingResponse): CompactResponse => {
 		input: response.input,
 		mappings,
 		source: aggregateSource(links),
+		status: aggregateStatus(links),
 	};
 };
 
 export { serialize, toCompact };
 export type {
 	CompactResponse,
+	CompletionLink,
+	CompletionStatus,
 	Counterpart,
+	CounterpartError,
 	InstalmentAnswer,
 	InstalmentMapping,
 	Link,
 	LinkedConfidence,
-	MappingConfidence,
+	LinkStatus,
 	MappingResponse,
 	Mappings,
+	MatchedLink,
 	PathAssertion,
 	ResolvedAnswer,
 	ResolvedCounterpart,
@@ -245,5 +313,4 @@ export type {
 	ResolvedLink,
 	ResolvedLinks,
 	TitleAnswer,
-	UnlinkedConfidence,
 };
