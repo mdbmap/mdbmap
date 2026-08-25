@@ -3,6 +3,7 @@
 // assertions through a hub content unit and never invents an A->B assertion.
 // It produces the resolved answer the serializer formats.
 
+import { assertionSources } from "@/db/engine-schema";
 import type { AssertionConfidence, AssertionSource } from "@/db/engine-schema";
 
 import type { Identity, Service } from "./identity.ts";
@@ -42,10 +43,31 @@ const toPathAssertion = (coverage: UnitCoverage): PathAssertion => ({
 	source: coverage.source,
 });
 
+// The most-curated provenance on a path, mirroring how the serializer derives a
+// link's own source, so a tie-break here matches what it publishes.
+const provenanceRank = (path: readonly PathAssertion[]): number =>
+	Math.max(...path.map((assertion) => assertionSources.indexOf(assertion.source)));
+
 interface DerivedPath {
 	readonly assertionPath: readonly PathAssertion[];
 	readonly confidence: AssertionConfidence;
+	readonly unitId: UnitId;
 }
+
+// ADR-0002 leaves ties unspecified; break them by provenance, then by unit, so
+// the selected path never depends on coverage row order.
+const isStrongerPath = (candidate: DerivedPath, best: DerivedPath): boolean => {
+	const byConfidence = confidenceRank(candidate.confidence) - confidenceRank(best.confidence);
+	if (byConfidence !== 0) {
+		return byConfidence > 0;
+	}
+	const byProvenance =
+		provenanceRank(candidate.assertionPath) - provenanceRank(best.assertionPath);
+	if (byProvenance !== 0) {
+		return byProvenance > 0;
+	}
+	return candidate.unitId < best.unitId;
+};
 
 // The strongest valid path from the source instalment to one target instalment
 // through a shared unit. Each shared unit is a candidate path; the strongest
@@ -64,11 +86,9 @@ const derivePath = (
 		const candidate: DerivedPath = {
 			assertionPath,
 			confidence: pathConfidence(assertionPath),
+			unitId: coverage.unitId,
 		};
-		if (
-			best === undefined ||
-			confidenceRank(candidate.confidence) > confidenceRank(best.confidence)
-		) {
+		if (best === undefined || isStrongerPath(candidate, best)) {
 			best = candidate;
 		}
 	}
@@ -80,13 +100,22 @@ const locatorRank = (identity: Identity): readonly [number, number] =>
 		? [identity.locator.season, identity.locator.episode]
 		: [0, 0];
 
+// A runtime-independent relational order on ids (locale collation would vary
+// across ICU versions, and these ids are digit strings).
+const compareStrings = (left: string, right: string): number => {
+	if (left < right) {
+		return -1;
+	}
+	return left > right ? 1 : 0;
+};
+
 // Deterministic counterpart order, independent of pool order: member title,
 // then position within it.
 const compareCounterpart = (
 	left: ResolvedCounterpart,
 	right: ResolvedCounterpart,
 ): number => {
-	const titleComparison = left.identity.title.id.localeCompare(right.identity.title.id);
+	const titleComparison = compareStrings(left.identity.title.id, right.identity.title.id);
 	if (titleComparison !== 0) {
 		return titleComparison;
 	}

@@ -3,7 +3,6 @@ import { describe, expect, it } from "vitest";
 import { deriveInstalment, deriveLink } from "./derived.ts";
 import type { InstalmentNode, UnitCoverage } from "./derived.ts";
 import type { Identity, Service, TitleIdentity } from "./identity.ts";
-import type { Link, MatchedLink, ResolvedLink } from "./serializer.ts";
 import { serialize } from "./serializer.ts";
 
 const anilistTitle: TitleIdentity = { id: "100", service: "anilist" };
@@ -21,15 +20,10 @@ const node = (
 	coverage: readonly UnitCoverage[],
 ): InstalmentNode => ({ coverage, identity: episode(title, ep) });
 
-// Narrow a resolved link to its matched variant, failing the test otherwise.
-function expectMatched(
-	link: ResolvedLink | undefined,
-): asserts link is Extract<ResolvedLink, { status: "matched" }> {
-	expect(link?.status).toBe("matched");
-}
-
-// The serializer's matched Link variant, for asserting on a formatted response.
-function expectServiceMatched(link: Link | undefined): asserts link is MatchedLink {
+// Narrow any status-bearing link to its matched variant, failing otherwise.
+function expectMatched<LinkType extends { readonly status: string }>(
+	link: LinkType | undefined,
+): asserts link is Extract<LinkType, { status: "matched" }> {
 	expect(link?.status).toBe("matched");
 }
 
@@ -102,6 +96,33 @@ describe("deriveLink", () => {
 		]);
 	});
 
+	it("breaks equal-confidence paths by provenance, not coverage order", () => {
+		// Both hub units yield a high path; the more-curated one must win
+		// regardless of the order the target lists its coverage.
+		const source = node(anilistTitle, 1, [
+			{ confidence: "high", source: "t1-structure", unitId: 7 },
+			{ confidence: "high", source: "manual", unitId: 8 },
+		]);
+		const curatedFirst = node(malTitle, 1, [
+			{ confidence: "high", source: "manual", unitId: 8 },
+			{ confidence: "high", source: "t3-episode", unitId: 7 },
+		]);
+		const curatedLast = node(malTitle, 1, [
+			{ confidence: "high", source: "t3-episode", unitId: 7 },
+			{ confidence: "high", source: "manual", unitId: 8 },
+		]);
+		const curatedPath = [
+			{ confidence: "high", source: "manual" },
+			{ confidence: "high", source: "manual" },
+		];
+
+		for (const target of [curatedFirst, curatedLast]) {
+			const link = deriveLink(source, [source, target], "mal");
+			expectMatched(link);
+			expect(link.counterparts[0]?.assertionPath).toStrictEqual(curatedPath);
+		}
+	});
+
 	it("has no derived route to the source's own service", () => {
 		// Same-service split siblings sharing a unit are direct split/merge, not
 		// a hub derivation (ADR-0002).
@@ -148,7 +169,7 @@ describe("deriveInstalment", () => {
 		const response = serialize(answer);
 		expect(response.input).toBe("anilist:100:1");
 		const { mal } = response.mappings;
-		expectServiceMatched(mal);
+		expectMatched(mal);
 		expect(mal.counterparts.map((counterpart) => counterpart.id)).toStrictEqual([
 			"mal:200:1",
 		]);
