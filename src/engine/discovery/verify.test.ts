@@ -12,8 +12,9 @@ const segment = (
 	externalIds: SimklExternalIds,
 	relations: readonly SimklRelation[],
 	ordinal: number,
+	entryTitle: string = id,
 ): ChainSegment => ({
-	entry: anime(id, externalIds, relations),
+	entry: { ...anime(id, externalIds, relations), title: entryTitle },
 	externalIds,
 	nativeAnidbId: externalIds.anidb,
 	ordinal,
@@ -51,8 +52,8 @@ const catalogue = (fields: Partial<CatalogueTitle>): CatalogueTitle => ({
 describe("simkl verification", () => {
 	it("splits a combined target across the segments it covers at high confidence", async () => {
 		const chain = chainOf([
-			segment("so2", { anidb: "d2", anilist: "al" }, [{ kind: "sequel", toId: "so3" }], 0),
-			segment("so3", { anidb: "d3", anilist: "al" }, [{ kind: "prequel", toId: "so2" }], 1),
+			segment("so2", { anidb: "d2", anilist: "al" }, [{ kind: "sequel", toId: "so3" }], 0, "Stone Ocean Part 2"),
+			segment("so3", { anidb: "d3", anilist: "al" }, [{ kind: "prequel", toId: "so2" }], 1, "Stone Ocean Part 3"),
 		]);
 		const clients = clientsFrom({
 			anidb: {
@@ -144,7 +145,7 @@ describe("simkl verification", () => {
 	});
 
 	it("publishes low and flags when the count fits but nothing corroborates", async () => {
-		const chain = chainOf([segment("x", { anidb: "dx", anilist: "alx" }, [], 0)]);
+		const chain = chainOf([segment("x", { anidb: "dx", anilist: "alx" }, [], 0, "Blue Lock")]);
 		const clients = clientsFrom({
 			anidb: { dx: catalogue({ instalmentCount: 12, title: "Blue Lock" }) },
 			anilist: { alx: catalogue({ instalmentCount: 12, title: "Something Unrelated" }) },
@@ -159,6 +160,23 @@ describe("simkl verification", () => {
 			flagged: true,
 			targetRange: { from: 1, to: 12 },
 		});
+	});
+
+	it("refuses to anchor when the native record is not the SIMKL entry's title", async () => {
+		const chain = chainOf([segment("x", { anidb: "dx", anilist: "alx" }, [], 0, "Real Show")]);
+		const clients = clientsFrom({
+			anidb: { dx: catalogue({ instalmentCount: 12, title: "Totally Different Anime" }) },
+			anilist: { alx: catalogue({ instalmentCount: 12, title: "Real Show" }) },
+		});
+
+		const result = await verifyChain(chain, { clients, target: "anilist" });
+
+		// No anchor means no verified pairing — the target id stays candidate
+		// evidence rather than reaching a title assertion off a bad native id.
+		expect(result.titleAssertions).toStrictEqual([]);
+		expect(result.candidates).toStrictEqual([
+			{ segmentOrdinal: 0, service: "anilist", serviceId: "alx" },
+		]);
 	});
 
 	it("leaves an unconfigured target id as candidate evidence", async () => {
@@ -189,7 +207,7 @@ describe("simkl verification", () => {
 	});
 
 	it("reaches high on format agreement when the title does not corroborate", async () => {
-		const chain = chainOf([segment("x", { anidb: "dx", anilist: "alx" }, [], 0)]);
+		const chain = chainOf([segment("x", { anidb: "dx", anilist: "alx" }, [], 0, "Blue Lock")]);
 		const clients = clientsFrom({
 			anidb: { dx: catalogue({ format: "ONA", instalmentCount: 12, title: "Blue Lock" }) },
 			anilist: { alx: catalogue({ format: "ona", instalmentCount: 12, title: "Different Name" }) },
@@ -203,8 +221,8 @@ describe("simkl verification", () => {
 
 	it("reaches high on a two-sided mainline edge when nothing else corroborates", async () => {
 		const chain = chainOf([
-			segment("p2", { anidb: "d2", anilist: "al" }, [{ kind: "sequel", toId: "p3" }], 0),
-			segment("p3", { anidb: "d3", anilist: "al" }, [{ kind: "prequel", toId: "p2" }], 1),
+			segment("p2", { anidb: "d2", anilist: "al" }, [{ kind: "sequel", toId: "p3" }], 0, "Part 2"),
+			segment("p3", { anidb: "d3", anilist: "al" }, [{ kind: "prequel", toId: "p2" }], 1, "Part 3"),
 		]);
 		const clients = clientsFrom({
 			anidb: {

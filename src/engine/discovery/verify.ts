@@ -98,6 +98,8 @@ interface VerifyDeps {
 	target: SimklService;
 }
 
+const TITLE_AGREEMENT = 0.5;
+
 // Every chain segment is anime-shaped (the walk guards it), but keeping the map
 // explicit lets a future TV/film continuity anchor against its own catalogue.
 const nativeServiceFor = (type: SimklEntry["type"]): SimklService => {
@@ -105,6 +107,17 @@ const nativeServiceFor = (type: SimklEntry["type"]): SimklService => {
 		return "tmdb";
 	}
 	return type === "show" ? "tvdb" : "anidb";
+};
+
+// The cheap native check: the fetched catalogue record must actually be the
+// SIMKL entry's title, not merely exist under the claimed id. Titles are
+// compared when both sides expose one; a side without a title leaves existence
+// as the only available signal rather than manufacturing a mismatch.
+const nativeAgrees = (entry: SimklEntry, native: CatalogueTitle): boolean => {
+	if (entry.title === "" || native.title === "") {
+		return true;
+	}
+	return titleSimilarity(entry.title, native.title) >= TITLE_AGREEMENT;
 };
 
 // A segment paired with the native catalogue record that verifies its identity
@@ -128,7 +141,7 @@ const anchorSegment = async (
 		return { anchor: undefined, native: undefined, nativeService, segment };
 	}
 	const native = await client.fetchTitle(serviceId);
-	if (native === undefined) {
+	if (native === undefined || !nativeAgrees(segment.entry, native)) {
 		return { anchor: undefined, native: undefined, nativeService, segment };
 	}
 	return { anchor: { service: nativeService, serviceId }, native, nativeService, segment };
@@ -240,7 +253,6 @@ const candidatesOf = (run: TargetRun): CandidateReference[] =>
 	}));
 
 const DATE_TOLERANCE_DAYS = 366;
-const TITLE_AGREEMENT = 0.5;
 
 type CheckVerdict = "fail" | "pass" | "unavailable";
 
