@@ -1,4 +1,8 @@
-import type { MetadataProvider as MetadataProviderKind, ResolveResult } from "@/engine";
+import type {
+	MemberTitles,
+	MetadataProvider as MetadataProviderKind,
+	ResolveResult,
+} from "@/engine";
 import type { Db } from "@/orpc/context";
 import type {
 	CommunityScore,
@@ -46,9 +50,15 @@ interface MetadataProvider {
 
 type MetadataRegistry = Readonly<Record<MetadataProviderKind, MetadataProvider>>;
 
-// External per-service ratings, never merged (#7). Keyed by rateable unit.
+// External per-service ratings, never merged (#7). Keyed by rateable unit and
+// driven by the unit's resolved member ids. Async because the live per-service
+// fetch is the engine's unblock; the member titles are threaded at the call
+// site, mirroring how the db is threaded into the community provider.
 interface ServiceRatingsProvider {
-	ratingsFor: (unit: RateableUnit) => readonly ServiceRating[];
+	ratingsFor: (
+		unit: RateableUnit,
+		members: MemberTitles,
+	) => Promise<readonly ServiceRating[]>;
 }
 
 // mdbmap's own mean + count over personal ratings (#8). Async because it
