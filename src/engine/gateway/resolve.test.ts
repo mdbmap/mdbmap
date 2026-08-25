@@ -58,6 +58,23 @@ const seedCoverage = (db: Db, groupId: number, targetService: string, state: Cov
 		.run();
 };
 
+const seedInstalment = (db: Db, titleId: number, locator: string) =>
+	one(
+		db
+			.insert(serviceInstalments)
+			.values({ locator, locatorKind: "position", titleId })
+			.returning()
+			.all(),
+	);
+
+const seedUnit = (db: Db) => one(db.insert(contentUnits).values({}).returning().all());
+
+const coverInstalment = (db: Db, instalmentId: number, unitId: number) => {
+	db.insert(instalmentAssertions)
+		.values({ confidence: "high", instalmentId, source: "t3-episode", unitId })
+		.run();
+};
+
 describe("mapping gateway resolution", () => {
 	let db: Db;
 
@@ -377,6 +394,68 @@ describe("mapping gateway instalment resolution", () => {
 		}
 		expect(outcome.review.startsWith("review:")).toBe(true);
 		expect(outcome.body.mappings.imdb?.status).toBe("conflict");
+	});
+});
+
+describe("mapping gateway title-level instalments", () => {
+	let db: Db;
+
+	beforeEach(() => {
+		db = freshDb();
+	});
+
+	it("carries the requested title's instalments with per-instalment mappings", async () => {
+		const group = seedGroup(db);
+		const source = seedTitle(db, group.id, "tmdb", "tv:1396");
+		const target = seedTitle(db, group.id, "imdb", "tt0903747");
+		linkTitles(db, source.id, target.id, "t1-structure");
+		const sourceEpisode = seedInstalment(db, source.id, "s1e1");
+		const targetEpisode = seedInstalment(db, target.id, "s1e1");
+		const unit = seedUnit(db);
+		coverInstalment(db, sourceEpisode.id, unit.id);
+		coverInstalment(db, targetEpisode.id, unit.id);
+
+		const outcome = await resolveMapping(db, "series", "tmdb:1396", noColdLookup);
+
+		expect(outcome.kind).toBe("ok");
+		if (outcome.kind !== "ok") {
+			return;
+		}
+		expect(outcome.body.instalments?.map((entry) => entry.input)).toEqual(["tmdb:1396:1:1"]);
+		const [entry] = outcome.body.instalments ?? [];
+		expect(entry?.mappings.imdb?.counterparts.map((counterpart) => counterpart.id)).toEqual([
+			"tt0903747:1:1",
+		]);
+		expect(outcome.body.mappings.imdb?.counterparts[0]?.supportingInstalment).toBeUndefined();
+	});
+
+	it("names the supporting instalment for a non-coextensive counterpart", async () => {
+		const group = seedGroup(db);
+		const source = seedTitle(db, group.id, "tmdb", "tv:1396");
+		const target = seedTitle(db, group.id, "imdb", "tt0903747");
+		linkTitles(db, source.id, target.id, "t1-structure");
+		const firstUnit = seedUnit(db);
+		const secondUnit = seedUnit(db);
+		const sourceOne = seedInstalment(db, source.id, "s1e1");
+		const sourceTwo = seedInstalment(db, source.id, "s1e2");
+		const targetOne = seedInstalment(db, target.id, "s1e1");
+		coverInstalment(db, sourceOne.id, firstUnit.id);
+		coverInstalment(db, sourceTwo.id, secondUnit.id);
+		coverInstalment(db, targetOne.id, firstUnit.id);
+
+		const outcome = await resolveMapping(db, "series", "tmdb:1396", noColdLookup);
+
+		expect(outcome.kind).toBe("ok");
+		if (outcome.kind !== "ok") {
+			return;
+		}
+		const counterpart = outcome.body.mappings.imdb?.counterparts[0];
+		expect(counterpart?.id).toBe("tt0903747");
+		expect(counterpart?.supportingInstalment).toBe("tmdb:1396:1:1");
+		expect(outcome.body.instalments?.map((entry) => entry.input)).toEqual([
+			"tmdb:1396:1:1",
+			"tmdb:1396:1:2",
+		]);
 	});
 });
 

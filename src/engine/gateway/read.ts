@@ -17,6 +17,7 @@ import type {
 	PathAssertion,
 	ResolvedAnswer,
 	ResolvedCounterpart,
+	ResolvedInstalment,
 	ResolvedLink,
 	ResolvedLinks,
 } from "@/engine/serializer.ts";
@@ -41,6 +42,7 @@ type GraphRead =
 	  };
 
 type TitleRow = typeof serviceTitles.$inferSelect;
+type InstalmentRow = typeof serviceInstalments.$inferSelect;
 type InstalmentEdge = typeof instalmentAssertions.$inferSelect;
 
 // A target service's standing across every coverage revision. A usable revision
@@ -143,20 +145,81 @@ const completionFor = (
 	return undefined;
 };
 
+// The content units a title's own spokes cover, each mapped to a spoke that
+// covers it. Used to decide whether a title-level counterpart is coextensive
+// with the requested title, and to name the request-side supporting spoke.
+const titleUnitSpokes = (db: GatewayDb, titleId: number): Map<number, InstalmentRow> => {
+	const spokes = db
+		.select()
+		.from(serviceInstalments)
+		.where(eq(serviceInstalments.titleId, titleId))
+		.all();
+	const byUnit = new Map<number, InstalmentRow>();
+	if (spokes.length === 0) {
+		return byUnit;
+	}
+	const spokeById = new Map(spokes.map((spoke) => [spoke.id, spoke]));
+	const edges = db
+		.select()
+		.from(instalmentAssertions)
+		.where(inArray(instalmentAssertions.instalmentId, [...spokeById.keys()]))
+		.all();
+	for (const edge of edges) {
+		const spoke = spokeById.get(edge.instalmentId);
+		if (spoke !== undefined && !byUnit.has(edge.unitId)) {
+			byUnit.set(edge.unitId, spoke);
+		}
+	}
+	return byUnit;
+};
+
+// A bare title counterpart overstates coverage when it covers only part of the
+// requested title (ADR-0001). When the counterpart misses a unit the request
+// covers, name the request-side spoke on a shared unit; a counterpart covering
+// every requested unit is coextensive and stays bare.
+const supportingInstalmentFor = (
+	requested: TitleRow,
+	requestedUnits: ReadonlyMap<number, InstalmentRow>,
+	counterpartUnits: ReadonlySet<number>,
+): Identity | undefined => {
+	if (requestedUnits.size === 0 || !isIdentityService(requested.service)) {
+		return undefined;
+	}
+	const coextensive = [...requestedUnits.keys()].every((unit) => counterpartUnits.has(unit));
+	if (coextensive) {
+		return undefined;
+	}
+	const [supportingUnit] = [...requestedUnits.keys()]
+		.filter((unit) => counterpartUnits.has(unit))
+		.toSorted((left, right) => left - right);
+	const spoke = supportingUnit === undefined ? undefined : requestedUnits.get(supportingUnit);
+	return spoke === undefined
+		? undefined
+		: memberInstalment(
+				{ service: requested.service, serviceId: requested.serviceId },
+				spoke.locator,
+			);
+};
+
 const titleCounterparts = (
 	db: GatewayDb,
 	requested: TitleRow,
 	members: readonly TitleRow[],
 	source: GroupSource,
 	service: Service,
+	requestedUnits: ReadonlyMap<number, InstalmentRow>,
 ): readonly ResolvedCounterpart[] =>
 	members
 		.filter((member) => member.service === service)
 		.flatMap((member): ResolvedCounterpart[] => {
 			const identity = memberTitle({ service, serviceId: member.serviceId });
-			return identity === undefined
-				? []
-				: [{ identity, ...titleEvidence(db, source, requested.id, member.id) }];
+			if (identity === undefined) {
+				return [];
+			}
+			const counterpartUnits = new Set(titleUnitSpokes(db, member.id).keys());
+			const supporting = supportingInstalmentFor(requested, requestedUnits, counterpartUnits);
+			const base = { identity, ...titleEvidence(db, source, requested.id, member.id) };
+			return [supporting === undefined ? base : { ...base, supportingInstalment: supporting }];
 		});
 
 const titleLinks = (
@@ -168,6 +231,7 @@ const titleLinks = (
 ): { readonly links: ResolvedLinks; readonly refs: RefSink } => {
 	const links = new Map<Service, ResolvedLink>();
 	const refs: RefSink = { pendingRef: undefined, reviewRef: undefined };
+	const requestedUnits = titleUnitSpokes(db, requested.id);
 	const services = new Set<string>([
 		...members.map((member) => member.service),
 		...verdicts.keys(),
@@ -176,7 +240,7 @@ const titleLinks = (
 		if (!isIdentityService(service) || service === requested.service) {
 			continue;
 		}
-		const counterparts = titleCounterparts(db, requested, members, source, service);
+		const counterparts = titleCounterparts(db, requested, members, source, service, requestedUnits);
 		if (counterparts.length > 0) {
 			links.set(service, { counterparts, status: "matched" });
 			continue;
@@ -187,24 +251,6 @@ const titleLinks = (
 		}
 	}
 	return { links, refs };
-};
-
-const readTitle = (db: GatewayDb, identity: Identity, requested: TitleRow): GraphRead => {
-	const groupId = survivorGroupId(db, requested.groupId);
-	const group = takeFirst(db.select().from(titleGroups).where(eq(titleGroups.id, groupId)).all());
-	const source: GroupSource = group?.source ?? "release";
-	const members = db
-		.select()
-		.from(serviceTitles)
-		.where(eq(serviceTitles.groupId, groupId))
-		.all();
-	const { links, refs } = titleLinks(db, requested, members, source, coverageVerdicts(db, groupId));
-	return {
-		answer: { groupSource: source, input: identity, instalments: [], kind: "title", links },
-		found: true,
-		pendingRef: refs.pendingRef,
-		reviewRef: refs.reviewRef,
-	};
 };
 
 const instalmentEvidence = (
@@ -296,6 +342,54 @@ const instalmentLinks = (
 		}
 	}
 	return { links, refs };
+};
+
+// The requested title's own spokes, each resolved to its per-service counterparts
+// in the request direction (ADR-0002). The group source speaks for every entry,
+// the documented fallback for a position not linked on its own.
+const requestedInstalments = (
+	db: GatewayDb,
+	requested: TitleRow,
+	source: GroupSource,
+	verdicts: ReadonlyMap<string, CoverageVerdict>,
+): readonly ResolvedInstalment[] => {
+	if (!isIdentityService(requested.service)) {
+		return [];
+	}
+	const member = { service: requested.service, serviceId: requested.serviceId };
+	const spokes = db
+		.select()
+		.from(serviceInstalments)
+		.where(eq(serviceInstalments.titleId, requested.id))
+		.all();
+	return spokes.flatMap((spoke): ResolvedInstalment[] => {
+		const input = memberInstalment(member, spoke.locator);
+		if (input === undefined) {
+			return [];
+		}
+		const { links } = instalmentLinks(db, spoke.id, requested.service, verdicts);
+		return [{ input, links, source }];
+	});
+};
+
+const readTitle = (db: GatewayDb, identity: Identity, requested: TitleRow): GraphRead => {
+	const groupId = survivorGroupId(db, requested.groupId);
+	const group = takeFirst(db.select().from(titleGroups).where(eq(titleGroups.id, groupId)).all());
+	const source: GroupSource = group?.source ?? "release";
+	const members = db
+		.select()
+		.from(serviceTitles)
+		.where(eq(serviceTitles.groupId, groupId))
+		.all();
+	const verdicts = coverageVerdicts(db, groupId);
+	const { links, refs } = titleLinks(db, requested, members, source, verdicts);
+	const instalments = requestedInstalments(db, requested, source, verdicts);
+	return {
+		answer: { groupSource: source, input: identity, instalments, kind: "title", links },
+		found: true,
+		pendingRef: refs.pendingRef,
+		reviewRef: refs.reviewRef,
+	};
 };
 
 const readInstalment = (
