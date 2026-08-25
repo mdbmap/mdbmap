@@ -194,7 +194,9 @@ const relationsOf = (anchored: readonly AnchoredSegment[]): RelationAssertionPla
 // before dividing its instalments between the segments. A run only extends over
 // chain-adjacent segments: an intervening segment without the id (or with a
 // different one) closes it, so a repeat that skips a gap stays two runs and its
-// instalments are never laid end to end across the gap.
+// instalments are never laid end to end across the gap. Adjacency reads the
+// walk's emitted order (the array position), never the cached ordinal ADR-0002
+// treats as a build hint.
 interface TargetRun {
 	segments: readonly AnchoredSegment[];
 	// The target title the run is verified against, resolved once so no use site
@@ -207,22 +209,21 @@ const targetRuns = (
 	target: SimklService,
 ): TargetRun[] => {
 	const runs: TargetRun[] = [];
-	let previousOrdinal: number | undefined;
-	for (const item of anchored) {
+	let previousIndex: number | undefined;
+	for (const [index, item] of anchored.entries()) {
 		const serviceId = item.segment.externalIds[target];
 		if (serviceId === undefined || item.nativeService === target) {
-			previousOrdinal = undefined;
+			previousIndex = undefined;
 			continue;
 		}
 		const open = runs.at(-1);
-		const adjacent =
-			previousOrdinal !== undefined && item.segment.ordinal === previousOrdinal + 1;
+		const adjacent = previousIndex === index - 1;
 		if (open !== undefined && open.target.serviceId === serviceId && adjacent) {
 			open.segments = [...open.segments, item];
 		} else {
 			runs.push({ segments: [item], target: { service: target, serviceId } });
 		}
-		previousOrdinal = item.segment.ordinal;
+		previousIndex = index;
 	}
 	return runs;
 };
