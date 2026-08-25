@@ -1,5 +1,5 @@
 export type { ContinuityKey, InstalmentLocator } from "@/db/schema";
-export { formatId, parseId } from "./identity.ts";
+export { FormatError, formatId, parseId } from "./identity.ts";
 export type {
 	Identity,
 	Locator,
@@ -19,6 +19,7 @@ export type {
 	Counterpart,
 	CounterpartError,
 	InstalmentAnswer,
+	InstalmentError,
 	InstalmentMapping,
 	Link,
 	LinkedConfidence,
