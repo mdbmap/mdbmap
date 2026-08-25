@@ -52,6 +52,29 @@ type CandidateSubject =
 			subjectType: "instalment-pair";
 	  };
 
+// Canonical `subject` fingerprint: stable across JSON key order and pair id
+// order, so the open partial unique index coalesces the same subject however a
+// producer happened to serialise it. Producers must set `subjectKey` from this.
+const candidateSubjectKey = (subject: CandidateSubject): string => {
+	switch (subject.subjectType) {
+		case "title": {
+			return `title:${subject.titleId}`;
+		}
+		case "title-pair": {
+			const [low, high] = [subject.titleAId, subject.titleBId].toSorted(
+				(left, right) => left - right,
+			);
+			return `title-pair:${low},${high}`;
+		}
+		case "instalment-pair": {
+			const [low, high] = [subject.instalmentAId, subject.instalmentBId].toSorted(
+				(left, right) => left - right,
+			);
+			return `instalment-pair:${low},${high}`;
+		}
+	}
+};
+
 interface ServiceMember {
 	service: Service;
 	serviceId: string;
@@ -299,11 +322,12 @@ const pendingGroupCandidates = sqliteTable(
 		kind: text({ enum: pendingCandidateKinds }).notNull(),
 		status: text({ enum: candidateStatuses }).notNull().default("open"),
 		subject: text({ mode: "json" }).notNull().$type<CandidateSubject>(),
+		subjectKey: text("subject_key").notNull(),
 		updatedAt: timestamp("updated_at").$onUpdateFn(() => new Date()),
 	},
 	(table) => [
 		uniqueIndex("pending_group_candidates_open_idx")
-			.on(table.kind, table.subject, table.evidenceHash)
+			.on(table.kind, table.subjectKey, table.evidenceHash)
 			.where(sql`${table.status} = 'open'`),
 	],
 );
@@ -337,6 +361,7 @@ const titleGroupAliases = sqliteTable(
 export {
 	absenceAssertions,
 	candidateStatuses,
+	candidateSubjectKey,
 	contentUnits,
 	coverageStates,
 	groupSources,
