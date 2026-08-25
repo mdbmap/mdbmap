@@ -5,8 +5,7 @@ import type { RateableUnit } from "@/orpc/schema";
 
 import { serviceRatingsProvider } from "./service-ratings.ts";
 
-// The first-cour member ids the engine resolves for Spy × Family; the seam-level
-// end-to-end path is covered in orpc/router/seam.test.ts against real resolution.
+// The first-cour member ids the engine resolves for Spy × Family.
 const members: MemberTitles = {
 	anidb: "16947",
 	anilist: "140960",

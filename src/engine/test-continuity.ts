@@ -10,8 +10,7 @@ import {
 
 // Seeds Spy × Family as the engine stores it: one title group, per-cour AniDB /
 // MAL / AniList spokes plus one TMDB spoke spanning every cour, each cour anchored
-// to its own content unit so segment membership resolves through the hub. The real
-// createEngine adapter reads exactly this to reproduce the retired stub's shape.
+// to its own content unit so segment membership resolves through the hub.
 
 type SeedDb = BaseSQLiteDatabase<"sync", unknown, Record<string, unknown>>;
 
@@ -113,13 +112,16 @@ const seedTmdbContinuity = (
 	db: SeedDb,
 	namespace: "movie" | "tv",
 	tmdbId: string,
+	locators: readonly string[] = ["s1e1"],
 ): { readonly continuityId: string } => {
 	const groupId = one(
 		db.insert(titleGroups).values({ source: "release" }).returning().all(),
 	).id;
 	const unitId = one(db.insert(contentUnits).values({}).returning().all()).id;
 	const titleId = insertTitle(db, groupId, "tmdb", `${namespace}:${tmdbId}`, 0);
-	coverUnit(db, insertSpoke(db, titleId, "s1e1"), unitId);
+	for (const locator of locators) {
+		coverUnit(db, insertSpoke(db, titleId, locator), unitId);
+	}
 	return { continuityId: `group:${groupId}` };
 };
 

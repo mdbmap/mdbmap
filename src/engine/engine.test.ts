@@ -69,6 +69,18 @@ describe("createEngine.resolveContinuity", () => {
 		expect(result.segments[0]?.members).toStrictEqual({ tmdb: "1396" });
 	});
 
+	it("keeps season-0 specials out of the positional locator stream", () => {
+		const db = freshDb();
+		const { continuityId } = seedTmdbContinuity(db, "tv", "1396", [
+			"s0e1",
+			"s1e1",
+			"s1e2",
+		]);
+		const [first] = createEngine(db).resolveContinuity(continuityId).segments;
+
+		expect(first?.instalments).toEqual(["tmdb:1396#1", "tmdb:1396#2"]);
+	});
+
 	it("throws for a continuity with no group", () => {
 		const read = createEngine(freshDb());
 

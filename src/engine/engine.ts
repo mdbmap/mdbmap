@@ -8,6 +8,7 @@ import {
 } from "@/db/engine-schema";
 import type { InstalmentLocator } from "@/db/schema";
 
+import { toLocator } from "./gateway/keys.ts";
 import { survivorGroupId } from "./gateway/read.ts";
 import type { GatewayDb } from "./gateway/read.ts";
 import type {
@@ -19,8 +20,8 @@ import type {
 } from "./seam.ts";
 import { metadataProviderFor } from "./seam.ts";
 
-// The EngineRead over the hub-and-spoke graph (ADR-0002). A continuity is a title
-// group; its ordered spine (the metadata provider's own titles) gives the
+// The EngineRead over the hub-and-spoke graph (ADR-0002). The continuity key names
+// a title group; its ordered spine (the metadata provider's own titles) gives the
 // segments, and every other service's member id aligns to a segment through the
 // content units they share — no group/spoke/unit internal crosses the seam.
 
@@ -141,36 +142,49 @@ const buildMembers = (
 	return members;
 };
 
-const candidatesByService = (
+interface CandidateGraph {
+	readonly byService: ReadonlyMap<MemberService, readonly Candidate[]>;
+	readonly unitsByTitle: ReadonlyMap<number, ReadonlySet<number>>;
+}
+
+const candidateGraph = (
 	db: GatewayDb,
 	titles: readonly TitleRow[],
-): ReadonlyMap<MemberService, readonly Candidate[]> => {
+): CandidateGraph => {
 	const byService = new Map<MemberService, Candidate[]>();
+	const unitsByTitle = new Map<number, ReadonlySet<number>>();
 	for (const title of titles) {
 		if (!isMemberService(title.service)) {
 			continue;
 		}
+		const units = unitsCovered(db, title.id);
+		unitsByTitle.set(title.id, units);
 		const list = byService.get(title.service) ?? [];
-		list.push({ title, units: unitsCovered(db, title.id) });
+		list.push({ title, units });
 		byService.set(title.service, list);
 	}
-	return byService;
+	return { byService, unitsByTitle };
 };
 
+// Only main-sequence spokes are trackable episodes; season-0 specials persist as
+// spokes too (ADR-0002) and stay out of the positional locator stream.
 const segmentLocators = (
 	db: GatewayDb,
 	provider: string,
 	spine: TitleRow,
 ): InstalmentLocator[] => {
 	const spokes = db
-		.select({ id: serviceInstalments.id })
+		.select({ locator: serviceInstalments.locator })
 		.from(serviceInstalments)
 		.where(eq(serviceInstalments.titleId, spine.id))
-		.orderBy(serviceInstalments.id)
 		.all();
+	const episodes = spokes.filter((spoke) => {
+		const locator = toLocator(spoke.locator);
+		return locator !== undefined && locator.season >= 1;
+	}).length;
 	const id = memberId(spine);
 	const locators: InstalmentLocator[] = [];
-	for (let position = 1; position <= spokes.length; position += 1) {
+	for (let position = 1; position <= episodes; position += 1) {
 		locators.push(`${provider}:${id}#${position}`);
 	}
 	return locators;
@@ -202,11 +216,11 @@ const resolve = (db: GatewayDb, continuityId: string): ResolveResult => {
 	if (spine.length === 0) {
 		throw new Error(`engine: continuity ${continuityId} has no ${provider} spine`);
 	}
-	const byService = candidatesByService(db, titles);
+	const { byService, unitsByTitle } = candidateGraph(db, titles);
 	const segments: Segment[] = spine.map(
 		(title): Segment => ({
 			instalments: segmentLocators(db, provider, title),
-			members: buildMembers(byService, unitsCovered(db, title.id)),
+			members: buildMembers(byService, unitsByTitle.get(title.id) ?? new Set()),
 		}),
 	);
 	return { mediaKind, segments };
