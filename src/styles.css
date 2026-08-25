@@ -1,15 +1,102 @@
 @import "tailwindcss";
+@import "@fontsource-variable/newsreader/index.css";
+@import "@fontsource-variable/newsreader/standard-italic.css";
+@import "@fontsource/zen-maru-gothic/400.css";
+@import "@fontsource/zen-maru-gothic/500.css";
+@import "@fontsource/zen-maru-gothic/700.css";
+@import "@fontsource-variable/jetbrains-mono/index.css";
 
-* {
-	box-sizing: border-box;
+@custom-variant dark (&:where([data-theme="dark"], [data-theme="dark"] *));
+
+/* Rosé Pine — warm paper light, promoted from the direction-A prototype. */
+:root {
+	--paper: oklch(0.972 0.011 70);
+	--ink: oklch(0.3 0.028 340);
+	--accent: oklch(0.58 0.13 352);
+	--accent-strong: oklch(0.55 0.135 352);
+	--no-still: oklch(0.935 0.012 70);
+	--line: oklch(0.3 0.028 340 / 14%);
+	--still-l-a: 0.855;
+	--still-c-a: 0.048;
+	--still-l-b: 0.905;
+	--still-c-b: 0.032;
+	--poster-l-a: 0.855;
+	--poster-c-a: 0.045;
+	--poster-l-b: 0.905;
+	--poster-c-b: 0.03;
 }
 
-html,
-body,
-#app {
-	min-height: 100%;
+:root[data-theme="dark"] {
+	--paper: oklch(0.215 0.03 345);
+	--ink: oklch(0.94 0.016 350);
+	--accent: oklch(0.85 0.105 355);
+	--accent-strong: oklch(0.88 0.1 355);
+	--no-still: oklch(0.255 0.026 345);
+	--line: oklch(0.94 0.016 350 / 14%);
+	--still-l-a: 0.4;
+	--still-c-a: 0.055;
+	--still-l-b: 0.33;
+	--still-c-b: 0.048;
+	--poster-l-a: 0.36;
+	--poster-c-a: 0.05;
+	--poster-l-b: 0.3;
+	--poster-c-b: 0.042;
 }
 
-body {
-	margin: 0;
+@theme inline {
+	--font-serif: "Newsreader Variable", Georgia, serif;
+	--font-round: "Zen Maru Gothic", system-ui, sans-serif;
+	--font-mono: "JetBrains Mono Variable", ui-monospace, monospace;
+	--color-bg: var(--paper);
+	--color-ink: var(--ink);
+	--color-accent: var(--accent);
+	--color-accent-strong: var(--accent-strong);
+	--color-no-still: var(--no-still);
+	--color-line: var(--line);
+	--hue-rose: 340;
+	--hue-iris: 300;
+	--hue-pine: 225;
+	--hue-foam: 150;
+	--hue-love: 352;
+	--hue-gold: 20;
+}
+
+/* Ruled still/poster placeholders, hue-parameterised: still-340, poster-[225]. */
+@utility still-* {
+	--hue: --value(integer);
+
+	background-image: repeating-linear-gradient(
+		112deg,
+		oklch(var(--still-l-a) var(--still-c-a) var(--hue)) 0 6px,
+		oklch(var(--still-l-b) var(--still-c-b) var(--hue)) 6px 12px
+	);
+}
+
+@utility poster-* {
+	--hue: --value(integer);
+
+	background-image: repeating-linear-gradient(
+		135deg,
+		oklch(var(--poster-l-a) var(--poster-c-a) var(--hue)) 0 7px,
+		oklch(var(--poster-l-b) var(--poster-c-b) var(--hue)) 7px 14px
+	);
+}
+
+@layer base {
+	html,
+	body,
+	#app {
+		min-height: 100%;
+	}
+
+	html {
+		font-family: var(--font-round);
+		color: var(--color-ink);
+		background-color: var(--color-bg);
+	}
+
+	::selection {
+		color: oklch(1 0 0);
+		background-color: oklch(0.72 0.11 350);
+	}
 }
