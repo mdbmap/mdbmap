@@ -1,3 +1,4 @@
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 
@@ -40,7 +41,11 @@ const work: WorkView = {
 };
 
 describe("WorkPage shell", () => {
-	const html = renderToStaticMarkup(<WorkPage work={work} />);
+	const html = renderToStaticMarkup(
+		<QueryClientProvider client={new QueryClient()}>
+			<WorkPage work={work} />
+		</QueryClientProvider>,
+	);
 
 	it("renders the banner identity from the WorkView", () => {
 		expect(html).toContain("Spy × Family");
