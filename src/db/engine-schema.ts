@@ -52,6 +52,13 @@ type CandidateSubject =
 			subjectType: "instalment-pair";
 	  };
 
+// Shared by the pair subject types below: two ids, ascending, joined into a
+// single fingerprint segment regardless of the order the caller supplied them.
+const orderedPairKey = (prefix: string, first: number, second: number): string => {
+	const [low, high] = [first, second].toSorted((left, right) => left - right);
+	return `${prefix}:${low},${high}`;
+};
+
 // Canonical `subject` fingerprint: stable across JSON key order and pair id
 // order, so the open partial unique index coalesces the same subject however a
 // producer happened to serialise it. Producers must set `subjectKey` from this.
@@ -61,16 +68,14 @@ const candidateSubjectKey = (subject: CandidateSubject): string => {
 			return `title:${subject.titleId}`;
 		}
 		case "title-pair": {
-			const [low, high] = [subject.titleAId, subject.titleBId].toSorted(
-				(left, right) => left - right,
-			);
-			return `title-pair:${low},${high}`;
+			return orderedPairKey("title-pair", subject.titleAId, subject.titleBId);
 		}
 		case "instalment-pair": {
-			const [low, high] = [subject.instalmentAId, subject.instalmentBId].toSorted(
-				(left, right) => left - right,
+			return orderedPairKey(
+				"instalment-pair",
+				subject.instalmentAId,
+				subject.instalmentBId,
 			);
-			return `instalment-pair:${low},${high}`;
 		}
 	}
 };
