@@ -110,6 +110,10 @@ const buildParts = async (
 				}),
 			);
 			const communityScore = await providers.community.scoreFor(partUnit, db);
+			const ratings = await providers.serviceRatings.ratingsFor(
+				partUnit,
+				segment.members,
+			);
 			return {
 				airedFrom: segMeta?.airedFrom,
 				airedTo: segMeta?.airedTo,
@@ -119,7 +123,7 @@ const buildParts = async (
 				label: segMeta?.label ?? `Part ${index + 1}`,
 				personalRating: viewer?.personalByUnit.get(unitId(partUnit)),
 				rateableUnit: partUnit,
-				serviceRatings: [...providers.serviceRatings.ratingsFor(partUnit)],
+				serviceRatings: [...ratings],
 				year: segMeta?.year,
 			};
 		}),
