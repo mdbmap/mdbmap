@@ -6,10 +6,11 @@ CREATE TABLE `pending_group_candidates` (
 	`kind` text NOT NULL,
 	`status` text DEFAULT 'open' NOT NULL,
 	`subject` text NOT NULL,
+	`subject_key` text NOT NULL,
 	`updated_at` integer DEFAULT (unixepoch()) NOT NULL
 );
 --> statement-breakpoint
-CREATE UNIQUE INDEX `pending_group_candidates_open_idx` ON `pending_group_candidates` (`kind`,`subject`,`evidence_hash`) WHERE "pending_group_candidates"."status" = 'open';--> statement-breakpoint
+CREATE UNIQUE INDEX `pending_group_candidates_open_idx` ON `pending_group_candidates` (`kind`,`subject_key`,`evidence_hash`) WHERE "pending_group_candidates"."status" = 'open';--> statement-breakpoint
 CREATE TABLE `title_group_aliases` (
 	`created_at` integer DEFAULT (unixepoch()) NOT NULL,
 	`id` integer PRIMARY KEY AUTOINCREMENT NOT NULL,
