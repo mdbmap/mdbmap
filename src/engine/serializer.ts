@@ -14,8 +14,6 @@ import type { Identity, Service } from "./identity.ts";
 // matcher adds high and low. Completion states are never confidence (ADR-0001).
 type LinkedConfidence = AssertionConfidence | "exact";
 
-// A link with no established counterpart sits in one of these completion states,
-// separate from confidence. Mirrors coverageStates in engine-schema.
 type CompletionStatus =
 	| "conflict"
 	| "known-no-counterpart"
@@ -71,6 +69,8 @@ interface TitleAnswer {
 }
 
 // The in-memory answer #33 feeds the serializer: no DB, no IO, fully resolved.
+// Precondition: the top-level input round-trips the parsed request id and is always
+// representable. Per-instalment inputs come from the internal model and may not be.
 type ResolvedAnswer = InstalmentAnswer | TitleAnswer;
 
 // A bare counterpart with its own grade and evidence path. supportingInstalment
@@ -117,8 +117,16 @@ interface InstalmentMapping {
 	readonly source: GroupSource;
 }
 
+// A request-side instalment whose identity has no boundary id (ADR-0001); surfaced
+// so one unrepresentable instalment never aborts the whole multi-service response.
+interface InstalmentError {
+	readonly reason: string;
+	readonly source: GroupSource;
+}
+
 interface MappingResponse {
 	readonly input: string;
+	readonly instalmentErrors?: readonly InstalmentError[];
 	readonly instalments?: readonly InstalmentMapping[];
 	readonly mappings: Mappings;
 }
@@ -234,13 +242,29 @@ const serialize = (answer: ResolvedAnswer): MappingResponse => {
 	if (answer.kind === "instalment") {
 		return { input: formatId(answer.input), mappings: mappingsFor(answer.links, undefined) };
 	}
-	return {
-		input: formatId(answer.input),
-		instalments: answer.instalments.map((instalment) => ({
-			input: formatId(instalment.input),
+	const instalments: InstalmentMapping[] = [];
+	const instalmentErrors: InstalmentError[] = [];
+	for (const instalment of answer.instalments) {
+		let input: string;
+		try {
+			input = formatId(instalment.input);
+		} catch (error) {
+			if (error instanceof FormatError) {
+				instalmentErrors.push({ reason: error.message, source: instalment.source });
+				continue;
+			}
+			throw error;
+		}
+		instalments.push({
+			input,
 			mappings: mappingsFor(instalment.links, instalment.source),
 			source: instalment.source,
-		})),
+		});
+	}
+	return {
+		input: formatId(answer.input),
+		...(instalmentErrors.length > 0 ? { instalmentErrors } : {}),
+		instalments,
 		mappings: mappingsFor(answer.links, answer.groupSource),
 	};
 };
@@ -270,7 +294,9 @@ const aggregateSource = (links: readonly Link[]): GroupSource | undefined =>
 	);
 
 // Strip assertion evidence to bare counterpart ids and collapse the per-link
-// grades, statuses and sources into the single legacy triple.
+// grades, statuses and sources into the single legacy triple. A service is emitted
+// only when it resolved to ids or is a completed empty search, so [] stays reserved
+// for known-no-counterpart (ADR-0001).
 const toCompact = (response: MappingResponse): CompactResponse => {
 	const mappings: Partial<Record<Service, readonly string[]>> = {};
 	const links: Link[] = [];
@@ -279,8 +305,12 @@ const toCompact = (response: MappingResponse): CompactResponse => {
 		if (link === undefined) {
 			continue;
 		}
-		mappings[service] = link.counterparts.map((counterpart) => counterpart.id);
 		links.push(link);
+		if (link.status === "known-no-counterpart") {
+			mappings[service] = [];
+		} else if (link.status === "matched" && link.counterparts.length > 0) {
+			mappings[service] = link.counterparts.map((counterpart) => counterpart.id);
+		}
 	}
 	return {
 		confidence: aggregateConfidence(links),
@@ -299,6 +329,7 @@ export type {
 	Counterpart,
 	CounterpartError,
 	InstalmentAnswer,
+	InstalmentError,
 	InstalmentMapping,
 	Link,
 	LinkedConfidence,

@@ -226,6 +226,70 @@ describe("unrepresentable counterpart", () => {
 	});
 });
 
+describe("request-side instalment guard", () => {
+	// A title whose internal model includes a flat-service instalment numbered
+	// season 2: that instalment has no boundary id, but must not abort the title's
+	// other instalments or its top-level mappings.
+	const flatTitle: TitleIdentity = { id: "1400", service: "anilist" };
+	const answer: TitleAnswer = {
+		groupSource: "manual",
+		input: { kind: "title", title: flatTitle },
+		instalments: [
+			{
+				input: episode(flatTitle, 1, 1),
+				links: new Map<Service, ResolvedLink>([
+					[
+						"imdb",
+						{
+							counterparts: [
+								{
+									assertionPath: [{ confidence: "high", source: "t3-episode" }],
+									confidence: "exact",
+									identity: episode(imdbTitle, 1, 1),
+								},
+							],
+							status: "matched",
+						},
+					],
+				]),
+				source: "t3-episode",
+			},
+			{
+				input: episode(flatTitle, 2, 4),
+				links: new Map<Service, ResolvedLink>([["imdb", { status: "unmatched" }]]),
+				source: "release",
+			},
+		],
+		kind: "title",
+		links: new Map<Service, ResolvedLink>([
+			[
+				"imdb",
+				{
+					counterparts: [
+						{
+							assertionPath: [{ confidence: "high", source: "community" }],
+							confidence: "exact",
+							identity: { kind: "title", title: imdbTitle },
+						},
+					],
+					status: "matched",
+				},
+			],
+		]),
+	};
+
+	it("skips the unrepresentable instalment and keeps the rest of the response", () => {
+		const response = serialize(answer);
+		expect(response.instalments?.map((instalment) => instalment.input)).toStrictEqual([
+			"anilist:1400:1",
+		]);
+		expect(response.instalmentErrors).toHaveLength(1);
+		expect(response.instalmentErrors?.[0]?.reason).toContain("season 2");
+		expect(response.instalmentErrors?.[0]?.source).toBe("release");
+		expect(response.mappings.imdb?.status).toBe("matched");
+	});
+});
+
 describe("title vs instalment level", () => {
 	it("a title-level answer carries its instalments array", () => {
 		const response = serialize(titleAnswer);
@@ -308,5 +372,32 @@ describe("compact legacy shape", () => {
 		expect(compact.mappings).toStrictEqual({ tmdb: [] });
 		expect(compact.confidence).toBeUndefined();
 		expect(compact.status).toBe("known-no-counterpart");
+	});
+
+	it("omits a pending target so [] stays reserved for known no-counterpart", () => {
+		const mixed: InstalmentAnswer = {
+			input: episode(imdbTitle, 1, 1),
+			kind: "instalment",
+			links: new Map<Service, ResolvedLink>([
+				[
+					"tmdb",
+					{
+						counterparts: [
+							{
+								assertionPath: [{ confidence: "high", source: "community" }],
+								confidence: "exact",
+								identity: { kind: "title", title: { id: "603", namespace: "movie", service: "tmdb" } },
+							},
+						],
+						status: "matched",
+					},
+				],
+				["anilist", { status: "pending" }],
+			]),
+		};
+		const compact = toCompact(serialize(mixed));
+		expect(compact.status).toBe("matched");
+		expect(compact.mappings).toStrictEqual({ tmdb: ["tmdb:603"] });
+		expect("anilist" in compact.mappings).toBe(false);
 	});
 });
