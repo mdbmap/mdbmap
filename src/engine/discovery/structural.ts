@@ -216,19 +216,21 @@ const mergeFacts = (
 	return merged;
 };
 
-// The distinct `/find` candidates that are not the shared title itself.
+// The distinct `/find` candidates that are not the shared title itself. Candidate
+// lists are a handful of titles, so `sameRef` alone carries identity — no second
+// key encoding to keep in step with it.
 const uniqueCandidates = (
 	candidates: readonly ServiceRef[],
 	shared: ServiceRef,
 ): readonly ServiceRef[] => {
 	const unique: ServiceRef[] = [];
-	const seen = new Set<string>();
 	for (const candidate of candidates) {
-		const key = `${candidate.service}:${candidate.serviceId}`;
-		if (sameRef(candidate, shared) || seen.has(key)) {
+		if (
+			sameRef(candidate, shared) ||
+			unique.some((seen) => sameRef(seen, candidate))
+		) {
 			continue;
 		}
-		seen.add(key);
 		unique.push(candidate);
 	}
 	return unique;
