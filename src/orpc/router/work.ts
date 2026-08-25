@@ -117,10 +117,10 @@ const buildParts = (
 		};
 	});
 
-const get = pub.input(WorkGetInput).handler(({ context, input }): WorkView => {
+const get = pub.input(WorkGetInput).handler(async ({ context, input }): Promise<WorkView> => {
 	const { continuityId } = input;
 	const resolved = context.engine.resolveContinuity(continuityId);
-	const meta = context.providers.metadata[
+	const meta = await context.providers.metadata[
 		metadataProviderFor(resolved.mediaKind)
 	].fetchWork(resolved);
 
