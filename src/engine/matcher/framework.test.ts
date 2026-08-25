@@ -3,10 +3,8 @@ import { describe, expect, it } from "vitest";
 
 import { alignStreams } from "./framework.ts";
 import { mainSequence } from "./instalment.ts";
-import type { Instalment, InstalmentStream, StreamBoundary } from "./instalment.ts";
 import type { CandidatePairing, NonEmptyArray } from "./monotonic.ts";
-
-const locator = (raw: string): InstalmentLocator => raw;
+import { locator, regular, special, streamOf } from "./test-fixtures.ts";
 
 const locators = (
 	raws: NonEmptyArray<string>,
@@ -14,21 +12,6 @@ const locators = (
 	const [head, ...tail] = raws;
 	return [locator(head), ...tail.map((raw) => locator(raw))];
 };
-
-const regular = (raw: string): Instalment => ({
-	kind: "regular",
-	locator: locator(raw),
-});
-
-const special = (raw: string): Instalment => ({
-	kind: "special",
-	locator: locator(raw),
-});
-
-const streamOf = (
-	instalments: readonly Instalment[],
-	boundary: StreamBoundary = "complete",
-): InstalmentStream => ({ boundary, instalments });
 
 const pair = (
 	left: NonEmptyArray<string>,
@@ -135,5 +118,50 @@ describe("alignStreams", () => {
 			reason: "truncated-fetch",
 			status: "unpublishable",
 		});
+	});
+
+	it("rejects a pairing whose right locator is absent from its stream", () => {
+		const left = streamOf([regular("l#1"), regular("l#2")]);
+		const right = streamOf([regular("r#1")]);
+		const outcome = alignStreams(left, right, [
+			pair(["l#1"], ["r#1"]),
+			pair(["l#2"], ["phantom"]),
+		]);
+		expect(outcome.status).toBe("invalid");
+		if (outcome.status === "invalid") {
+			expect(outcome.strays).toStrictEqual([
+				{ locator: locator("phantom"), side: "right" },
+			]);
+		}
+	});
+
+	it("rejects a pairing whose left locator is absent from its stream", () => {
+		const left = streamOf([regular("l#1")]);
+		const right = streamOf([regular("r#1"), regular("r#2")]);
+		const outcome = alignStreams(left, right, [
+			pair(["l#1"], ["r#1"]),
+			pair(["phantom"], ["r#2"]),
+		]);
+		expect(outcome.status).toBe("invalid");
+		if (outcome.status === "invalid") {
+			expect(outcome.strays).toStrictEqual([
+				{ locator: locator("phantom"), side: "left" },
+			]);
+		}
+	});
+
+	it("publishes a pairing touching a special when its locators are all present", () => {
+		const left = streamOf([regular("l#1"), special("l#sp")]);
+		const right = streamOf([regular("r#1"), special("r#sp")]);
+		const outcome = alignStreams(left, right, [
+			pair(["l#1"], ["r#1"]),
+			pair(["l#sp"], ["r#sp"]),
+		]);
+		expect(outcome.status).toBe("published");
+		if (outcome.status === "published") {
+			expect(outcome.alignment.pairs).toHaveLength(2);
+			expect(outcome.alignment.left.noCounterpart).toStrictEqual([]);
+			expect(outcome.alignment.right.noCounterpart).toStrictEqual([]);
+		}
 	});
 });

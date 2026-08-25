@@ -1,12 +1,19 @@
 import type { InstalmentLocator } from "@/db/schema";
 
 import type { InstalmentStream } from "./instalment.ts";
-import type { CandidatePairing, Crossing } from "./monotonic.ts";
+import type { CandidatePairing, Crossing, StreamIndex } from "./monotonic.ts";
 import { checkMonotonic, indexStream } from "./monotonic.ts";
 
 interface AlignedPair {
 	readonly left: readonly InstalmentLocator[];
 	readonly right: readonly InstalmentLocator[];
+}
+
+// A tier-supplied locator that names no instalment in the stream it was proposed
+// against. Any pairing carrying one is rejected before assembly.
+interface StrayLocator {
+	readonly locator: InstalmentLocator;
+	readonly side: "left" | "right";
 }
 
 // `noCounterpart` is an explicit `[]` from a completed stream; `pending` is an
@@ -25,7 +32,32 @@ interface PublishedAlignment {
 type AlignmentOutcome =
 	| { readonly alignment: PublishedAlignment; readonly status: "published" }
 	| { readonly crossings: readonly Crossing[]; readonly status: "conflict" }
-	| { readonly reason: "truncated-fetch"; readonly status: "unpublishable" };
+	| { readonly reason: "truncated-fetch"; readonly status: "unpublishable" }
+	| { readonly status: "invalid"; readonly strays: readonly StrayLocator[] };
+
+// Locators absent from their stream never reach the crossing check: the specials
+// exemption filters them out first, so membership must be enforced here, on every
+// pairing, before anything publishes.
+const findStrays = (
+	pairings: readonly CandidatePairing[],
+	leftIndex: StreamIndex,
+	rightIndex: StreamIndex,
+): readonly StrayLocator[] => {
+	const strays: StrayLocator[] = [];
+	for (const pairing of pairings) {
+		for (const locator of pairing.left) {
+			if (!leftIndex.position.has(locator)) {
+				strays.push({ locator, side: "left" });
+			}
+		}
+		for (const locator of pairing.right) {
+			if (!rightIndex.position.has(locator)) {
+				strays.push({ locator, side: "right" });
+			}
+		}
+	}
+	return strays;
+};
 
 const disposeSide = (
 	stream: InstalmentStream,
@@ -60,6 +92,10 @@ const alignStreams = (
 	}
 	const leftIndex = indexStream(left);
 	const rightIndex = indexStream(right);
+	const strays = findStrays(pairings, leftIndex, rightIndex);
+	if (strays.length > 0) {
+		return { status: "invalid", strays };
+	}
 	const verdict = checkMonotonic(pairings, leftIndex, rightIndex);
 	if (!verdict.ok) {
 		return { crossings: verdict.crossings, status: "conflict" };
@@ -86,4 +122,10 @@ const alignStreams = (
 };
 
 export { alignStreams };
-export type { AlignedPair, AlignmentOutcome, PublishedAlignment, SideDisposition };
+export type {
+	AlignedPair,
+	AlignmentOutcome,
+	PublishedAlignment,
+	SideDisposition,
+	StrayLocator,
+};
