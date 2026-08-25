@@ -257,6 +257,42 @@ describe("pending group candidates", () => {
 		expect(db.select().from(pendingGroupCandidates).all()).toHaveLength(2);
 	});
 
+	it("names the title pair as the subject of a title-assertion conflict", () => {
+		const subject = {
+			subjectType: "title-pair" as const,
+			titleAId: 3,
+			titleBId: 8,
+		};
+		const evidence = {
+			kind: "title-assertion-conflict" as const,
+			proposed: {
+				confidence: "high" as const,
+				source: "t1-structure" as const,
+				titleAId: 3,
+				titleBId: 8,
+			},
+			published: {
+				confidence: "low" as const,
+				source: "community" as const,
+				titleAId: 3,
+				titleBId: 8,
+			},
+		};
+
+		db.insert(pendingGroupCandidates)
+			.values({
+				evidence,
+				evidenceHash: "hash-pair",
+				kind: "title-assertion-conflict",
+				subject,
+			})
+			.run();
+
+		const row = one(db.select().from(pendingGroupCandidates).all());
+		expect(row.subject).toEqual(subject);
+		expect(row.evidence).toEqual(evidence);
+	});
+
 	it("lets a resolved candidate coexist with a fresh open row for the same question", () => {
 		const subject = { subjectType: "title" as const, titleId: 7 };
 		const evidence = {
