@@ -183,6 +183,54 @@ describe("alignStreams", () => {
 		}
 	});
 
+	it("publishes an all-special left pairing that points behind an anchored one", () => {
+		const left = streamOf([regular("l#1"), special("l#sp")]);
+		const right = streamOf([regular("r#1"), regular("r#2")]);
+		// The AoT shape: a season-0 special maps to an early right instalment while
+		// the anchored left maps to a later one. The special left imposes no left
+		// order, so its earlier right span is not a crossing.
+		const outcome = alignStreams(left, right, [
+			pair(["l#1"], ["r#2"]),
+			pair(["l#sp"], ["r#1"]),
+		]);
+		expect(outcome.status).toBe("published");
+		if (outcome.status === "published") {
+			expect(outcome.alignment.pairs).toHaveLength(2);
+		}
+	});
+
+	it("reaches the same verdict for two special-left pairings in either order", () => {
+		const left = streamOf([special("l#a"), special("l#b")]);
+		const right = streamOf([regular("r#1"), regular("r#2")]);
+		const forward = alignStreams(left, right, [
+			pair(["l#a"], ["r#1"]),
+			pair(["l#b"], ["r#2"]),
+		]);
+		const reversed = alignStreams(left, right, [
+			pair(["l#b"], ["r#2"]),
+			pair(["l#a"], ["r#1"]),
+		]);
+		// Neither left side anchors, so the comparator can never subtract two
+		// sentinels: the verdict is publish regardless of proposal order.
+		expect(forward.status).toBe("published");
+		expect(reversed.status).toBe("published");
+	});
+
+	it("rejects a genuine span-bearing inversion in either order", () => {
+		const left = streamOf([regular("l#1"), regular("l#2")]);
+		const right = streamOf([regular("r#1"), regular("r#2")]);
+		const forward = alignStreams(left, right, [
+			pair(["l#1"], ["r#2"]),
+			pair(["l#2"], ["r#1"]),
+		]);
+		const reversed = alignStreams(left, right, [
+			pair(["l#2"], ["r#1"]),
+			pair(["l#1"], ["r#2"]),
+		]);
+		expect(forward.status).toBe("conflict");
+		expect(reversed.status).toBe("conflict");
+	});
+
 	it("publishes multi-coverage expressed within a single pairing", () => {
 		const left = streamOf([regular("l#1"), regular("l#2"), regular("l#3")]);
 		const right = streamOf([

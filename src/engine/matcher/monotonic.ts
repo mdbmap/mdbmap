@@ -83,65 +83,97 @@ type MonotonicVerdict =
 	| { readonly crossings: readonly Crossing[]; readonly ok: false }
 	| { readonly ok: true };
 
-interface Reach {
-	readonly max: number;
-	readonly pairing: CandidatePairing;
-}
+type SpanOrder = "after" | "before" | "overlap";
 
-const startKey = (span: Span | undefined): number =>
-	span?.min ?? Number.POSITIVE_INFINITY;
+// Two regular spans on one side sit wholly before, wholly after, or overlap.
+// Overlap means the pairings interleave that side's positions, which no
+// monotonic alignment can hold. Comparing only real positions keeps this
+// NaN-free — no sentinel ever enters the arithmetic.
+const orderSpans = (first: Span, second: Span): SpanOrder => {
+	if (first.max < second.min) {
+		return "before";
+	}
+	if (second.max < first.min) {
+		return "after";
+	}
+	return "overlap";
+};
 
-interface RankedPairing {
+interface AnchoredPairing {
 	readonly left: Span | undefined;
 	readonly pairing: CandidatePairing;
 	readonly right: Span | undefined;
 }
 
-// Sweep one side of a pairing: an empty span (all specials) is inert, otherwise
-// a start at or before the furthest end seen so far is a crossing. Returns the
-// extended reach for the next pairing.
-const sweepSide = (
-	entry: RankedPairing,
-	side: "left" | "right",
-	reach: Reach | undefined,
+// No-crossing binds a pair of pairings only where both carry a span on the same
+// side. Overlapping spans on a side interleave it; strict orders that disagree
+// across the two sides are a directional inversion, reported against the right,
+// which runs backwards relative to the left order. A side one pairing leaves
+// unanchored imposes nothing, so a special-only side never manufactures a
+// crossing.
+const collectCrossing = (
+	first: AnchoredPairing,
+	second: AnchoredPairing,
 	crossings: Crossing[],
-): Reach | undefined => {
-	const span = entry[side];
-	if (span === undefined) {
-		return reach;
+): void => {
+	const leftOrder =
+		first.left && second.left ? orderSpans(first.left, second.left) : undefined;
+	const rightOrder =
+		first.right && second.right
+			? orderSpans(first.right, second.right)
+			: undefined;
+
+	if (leftOrder === "overlap") {
+		crossings.push({
+			earlier: first.pairing,
+			later: second.pairing,
+			side: "left",
+		});
 	}
-	if (reach !== undefined && span.min <= reach.max) {
-		crossings.push({ earlier: reach.pairing, later: entry.pairing, side });
+	if (rightOrder === "overlap") {
+		crossings.push({
+			earlier: first.pairing,
+			later: second.pairing,
+			side: "right",
+		});
 	}
-	return reach === undefined || span.max > reach.max
-		? { max: span.max, pairing: entry.pairing }
-		: reach;
+	if (
+		leftOrder !== undefined &&
+		leftOrder !== "overlap" &&
+		rightOrder !== undefined &&
+		rightOrder !== "overlap" &&
+		leftOrder !== rightOrder
+	) {
+		const [earlier, later] =
+			leftOrder === "before"
+				? [first.pairing, second.pairing]
+				: [second.pairing, first.pairing];
+		crossings.push({ earlier, later, side: "right" });
+	}
 };
 
 // Legal alignments preserve both sequences' relative order: gaps and split or
-// merged runs are fine, but two pairings may never overlap or cross. Sorting by
-// left start, every later pairing must also start after the furthest right end
-// seen so far; anything else is a crossing and the whole set stays unpublished.
+// merged runs are fine, but two pairings may never overlap or cross. Every pair
+// of admitted pairings is compared directly, so a pairing anchored on only one
+// side constrains nothing on the other and cannot false-conflict.
 const checkMonotonic = (
 	pairings: readonly CandidatePairing[],
 	leftIndex: StreamIndex,
 	rightIndex: StreamIndex,
 ): MonotonicVerdict => {
-	const ranked = pairings
+	const anchored = pairings
 		.filter((pairing) => touchesMainSequence(pairing, leftIndex, rightIndex))
 		.map((pairing) => ({
 			left: spanOf(pairing.left, leftIndex, "left"),
 			pairing,
 			right: spanOf(pairing.right, rightIndex, "right"),
-		}))
-		.toSorted((first, second) => startKey(first.left) - startKey(second.left));
+		}));
 
 	const crossings: Crossing[] = [];
-	let leftReach: Reach | undefined;
-	let rightReach: Reach | undefined;
-	for (const entry of ranked) {
-		leftReach = sweepSide(entry, "left", leftReach, crossings);
-		rightReach = sweepSide(entry, "right", rightReach, crossings);
+	for (const [position, first] of anchored.entries()) {
+		for (const second of anchored.slice(position + 1)) {
+			collectCrossing(first, second, crossings);
+		}
 	}
 	return crossings.length > 0 ? { crossings, ok: false } : { ok: true };
 };
