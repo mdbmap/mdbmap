@@ -1,7 +1,4 @@
-import Database from "better-sqlite3";
 import { eq } from "drizzle-orm";
-import { drizzle } from "drizzle-orm/better-sqlite3";
-import { migrate } from "drizzle-orm/better-sqlite3/migrator";
 import { beforeEach, describe, expect, it } from "vitest";
 import {
 	contentUnits,
@@ -12,14 +9,7 @@ import {
 	titleAssertions,
 	titleGroups,
 } from "./engine-schema.ts";
-
-const freshDb = () => {
-	const sqlite = new Database(":memory:");
-	sqlite.pragma("foreign_keys = ON");
-	const db = drizzle(sqlite);
-	migrate(db, { migrationsFolder: "schemas/drizzle" });
-	return db;
-};
+import { freshDb } from "./test-helpers.ts";
 
 const one = <Row>(rows: Row[]): Row => {
 	const [row] = rows;
@@ -167,6 +157,33 @@ describe("hub-and-spoke coverage edges", () => {
 					fromTitleId: from.id,
 					source: "llm-verified",
 					toTitleId: rival.id,
+				})
+				.run(),
+		).toThrow(/unique/iu);
+	});
+
+	it("rejects a second immediate prequel for one title", () => {
+		const to = seedTitle(db, "tmdb", "to");
+		const prequel = seedTitle(db, "tmdb", "prequel");
+		const rival = seedTitle(db, "tmdb", "rival");
+
+		db.insert(relationAssertions)
+			.values({
+				confidence: "high",
+				fromTitleId: prequel.id,
+				source: "llm-verified",
+				toTitleId: to.id,
+			})
+			.run();
+
+		expect(() =>
+			db
+				.insert(relationAssertions)
+				.values({
+					confidence: "high",
+					fromTitleId: rival.id,
+					source: "llm-verified",
+					toTitleId: to.id,
 				})
 				.run(),
 		).toThrow(/unique/iu);

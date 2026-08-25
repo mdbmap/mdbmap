@@ -1,16 +1,6 @@
-import Database from "better-sqlite3";
-import { drizzle } from "drizzle-orm/better-sqlite3";
-import { migrate } from "drizzle-orm/better-sqlite3/migrator";
 import { beforeEach, describe, expect, it } from "vitest";
 import { user, watchStatus } from "./schema.ts";
-
-const freshDb = () => {
-	const sqlite = new Database(":memory:");
-	sqlite.pragma("foreign_keys = ON");
-	const db = drizzle(sqlite);
-	migrate(db, { migrationsFolder: "schemas/drizzle" });
-	return db;
-};
+import { freshDb } from "./test-helpers.ts";
 
 describe("watch_status natural key", () => {
 	let db: ReturnType<typeof freshDb>;
