@@ -14,14 +14,18 @@ export type {
 export { serialize, toCompact } from "./serializer.ts";
 export type {
 	CompactResponse,
+	CompletionLink,
+	CompletionStatus,
 	Counterpart,
+	CounterpartError,
 	InstalmentAnswer,
 	InstalmentMapping,
 	Link,
 	LinkedConfidence,
-	MappingConfidence,
+	LinkStatus,
 	MappingResponse,
 	Mappings,
+	MatchedLink,
 	PathAssertion,
 	ResolvedAnswer,
 	ResolvedCounterpart,
@@ -29,7 +33,6 @@ export type {
 	ResolvedLink,
 	ResolvedLinks,
 	TitleAnswer,
-	UnlinkedConfidence,
 } from "./serializer.ts";
 export { metadataProviderFor } from "./seam.ts";
 export type {
