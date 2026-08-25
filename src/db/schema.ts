@@ -7,6 +7,8 @@ import {
 	uniqueIndex,
 } from "drizzle-orm/sqlite-core";
 
+import { timestamp } from "./columns.ts";
+
 // Provisional opaque keys onto engine identities; #4 finalises their shapes.
 type ContinuityKey = string;
 type InstalmentLocator = string;
@@ -23,9 +25,6 @@ type WatchStatus = (typeof watchStatuses)[number];
 
 const rateableUnitKinds = ["work", "part", "episode", "movie"] as const;
 type RateableUnitKind = (typeof rateableUnitKinds)[number];
-
-const timestamp = (name: string) =>
-	integer(name, { mode: "timestamp" }).default(sql`(unixepoch())`).notNull();
 
 const todos = sqliteTable("todos", {
 	createdAt: integer("created_at", { mode: "timestamp" }).default(

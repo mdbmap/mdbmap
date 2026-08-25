@@ -14,6 +14,6 @@ export default defineConfig(
 		},
 		dialect: "sqlite",
 		out: "./schemas/drizzle",
-		schema: "./src/db/schema.ts",
+		schema: ["./src/db/schema.ts", "./src/db/engine-schema.ts"],
 	}),
 );
