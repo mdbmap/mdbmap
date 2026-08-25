@@ -64,7 +64,7 @@ describe("service ratings list", () => {
 
 	it("yields no ratings for units that are not parts", async () => {
 		const episode: RateableUnit = { key: "anidb:16947#1", kind: "episode" };
-		const work: RateableUnit = { key: "continuity:spy-x-family", kind: "work" };
+		const work: RateableUnit = { key: "group:1", kind: "work" };
 
 		expect(await serviceRatingsProvider.ratingsFor(episode, members)).toEqual([]);
 		expect(await serviceRatingsProvider.ratingsFor(work, members)).toEqual([]);
