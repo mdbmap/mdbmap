@@ -1,11 +1,7 @@
 import type { WorkView } from "@/orpc/schema";
 
-import {
-	EpisodesSlot,
-	MetadataSlot,
-	SidebarPartSlot,
-	SidebarYouSlot,
-} from "./slots";
+import { Episodes } from "./episodes";
+import { MetadataSlot, SidebarPartSlot, SidebarYouSlot } from "./slots";
 
 function Synopsis({ text }: { text: string }) {
 	return (
@@ -19,7 +15,7 @@ function MainColumn({ work }: { work: WorkView }) {
 	return (
 		<div className="flex min-w-0 flex-col gap-6 px-8 pt-6 md:border-r md:border-line">
 			<Synopsis text={work.header.synopsis} />
-			<EpisodesSlot parts={work.parts} />
+			<Episodes continuityId={work.continuityId} parts={work.parts} />
 			<MetadataSlot
 				cast={work.cast}
 				ifYouLiked={work.ifYouLiked}

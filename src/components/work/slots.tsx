@@ -4,9 +4,9 @@ import type { Credit, PartView, Similar, ViewerTracking } from "@/orpc/schema";
 
 import { totalEpisodes } from "./parts";
 
-// Placeholder regions for the sections that mount into this shell: episodes and
-// part selector (#11), main-column metadata (#12), sidebar You + this-part (#13).
-// Props mirror the WorkView fields those issues consume so they slot in cleanly.
+// Placeholder regions for the sections that mount into this shell: main-column
+// metadata (#12) and sidebar You + this-part (#13). Props mirror the WorkView
+// fields those issues consume so they slot in cleanly.
 
 function SlotRegion({ head, note }: { head: string; note: string }) {
 	return (
@@ -14,15 +14,6 @@ function SlotRegion({ head, note }: { head: string; note: string }) {
 			<SectionHead>{head}</SectionHead>
 			<p className="mt-2 font-mono text-[11px] text-ink/40">{note}</p>
 		</Section>
-	);
-}
-
-function EpisodesSlot({ parts }: { parts: PartView[] }) {
-	return (
-		<SlotRegion
-			head="Episodes"
-			note={`Part selector and episode list · ${parts.length} parts`}
-		/>
 	);
 }
 
@@ -59,4 +50,4 @@ function SidebarPartSlot({ parts }: { parts: PartView[] }) {
 	return <SlotRegion head="This part" note={first?.label ?? "No parts"} />;
 }
 
-export { EpisodesSlot, MetadataSlot, SidebarPartSlot, SidebarYouSlot };
+export { MetadataSlot, SidebarPartSlot, SidebarYouSlot };
