@@ -19,15 +19,18 @@ type SimklExternalIds = Partial<Record<SimklService, string>>;
 const mainlineRelations = ["prequel", "sequel"] as const;
 type MainlineRelation = (typeof mainlineRelations)[number];
 
-type SimklRelationKind =
-	| MainlineRelation
-	| "alternative"
-	| "character"
-	| "other"
-	| "recap"
-	| "side_story"
-	| "spin_off"
-	| "summary";
+const auxiliaryRelations = [
+	"alternative",
+	"character",
+	"other",
+	"recap",
+	"side_story",
+	"spin_off",
+	"summary",
+] as const;
+
+const knownRelationKinds = [...mainlineRelations, ...auxiliaryRelations] as const;
+type SimklRelationKind = (typeof knownRelationKinds)[number];
 
 interface SimklRelation {
 	kind: SimklRelationKind;
@@ -100,18 +103,6 @@ const externalIdsOf = (ids: RawEntry["ids"]): SimklExternalIds => {
 	}
 	return externalIds;
 };
-
-const knownRelationKinds: readonly SimklRelationKind[] = [
-	"alternative",
-	"character",
-	"other",
-	"prequel",
-	"recap",
-	"sequel",
-	"side_story",
-	"spin_off",
-	"summary",
-];
 
 const relationKindOf = (raw: string): SimklRelationKind => {
 	const normalised = raw.toLowerCase().replaceAll(" ", "_");

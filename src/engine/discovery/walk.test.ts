@@ -1,13 +1,8 @@
 import { describe, expect, it } from "vitest";
 
-import type { SimklEntry, SimklExternalIds, SimklRelation } from "./simkl.ts";
+import type { SimklEntry } from "./simkl.ts";
+import { anime } from "./test-fixtures.ts";
 import { walkContinuity } from "./walk.ts";
-
-const anime = (
-	id: string,
-	externalIds: SimklExternalIds,
-	relations: readonly SimklRelation[],
-): SimklEntry => ({ externalIds, id, relations, title: id, type: "anime" });
 
 const fetcherFor = (entries: readonly SimklEntry[]) => {
 	const byId = new Map(entries.map((entry) => [entry.id, entry]));

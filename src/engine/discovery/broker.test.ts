@@ -1,19 +1,8 @@
 import { describe, expect, it } from "vitest";
 
 import { discover } from "./broker.ts";
-import type {
-	SimklClient,
-	SimklEntry,
-	SimklExternalIds,
-	SimklRelation,
-	SimklService,
-} from "./simkl.ts";
-
-const anime = (
-	id: string,
-	externalIds: SimklExternalIds,
-	relations: readonly SimklRelation[],
-): SimklEntry => ({ externalIds, id, relations, title: id, type: "anime" });
+import type { SimklClient, SimklEntry, SimklService } from "./simkl.ts";
+import { anime } from "./test-fixtures.ts";
 
 const first = anime("a", { anidb: "1", mal: "100" }, [{ kind: "sequel", toId: "b" }]);
 const middle = anime("b", { anidb: "2", mal: "200", tmdb: "999" }, [
@@ -103,6 +92,26 @@ describe("discovery broker", () => {
 		expect(outcome.reason).toBe("ambiguous-branch");
 		expect(outcome.entryId).toBe("b");
 		expect(outcome.competing).toHaveLength(2);
+	});
+
+	it("queues a continuity-conflict when the start entry is not anime-shaped", async () => {
+		const film: SimklEntry = {
+			externalIds: { tmdb: "999" },
+			id: "film",
+			relations: [{ kind: "sequel", toId: "a" }],
+			title: "A Film",
+			type: "movie",
+		};
+		const simkl = clientOver([film, first]);
+
+		const outcome = await discover(tmdbToMal, { simkl });
+
+		expect(outcome.kind).toBe("continuity-conflict");
+		if (outcome.kind !== "continuity-conflict") {
+			throw new Error("unreachable");
+		}
+		expect(outcome.reason).toBe("non-anime-candidate");
+		expect(outcome.entryId).toBe("film");
 	});
 
 	it("falls through when SIMKL has no record for the id", async () => {

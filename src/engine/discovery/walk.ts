@@ -161,6 +161,14 @@ const walkContinuity = async (
 	start: SimklEntry,
 	deps: WalkDeps,
 ): Promise<WalkResult> => {
+	if (start.type !== "anime") {
+		return {
+			competing: [],
+			entryId: start.id,
+			kind: "continuity-conflict",
+			reason: "non-anime-candidate",
+		};
+	}
 	const startBranch = branchConflict(start);
 	if (startBranch !== undefined) {
 		return startBranch;
