@@ -58,6 +58,29 @@ describe("discovery broker", () => {
 		expect(outcome.candidates).toStrictEqual(["100", "200", "300"]);
 	});
 
+	it("re-fetches the full entry before walking so a relationless search hit still expands", async () => {
+		// The real findByExternalId answers /search/id: relations normalise to [].
+		const searchHit: SimklEntry = { ...middle, relations: [] };
+		const simkl = clientOver([first, middle, last], {
+			findByExternalId: async (service, serviceId) => {
+				await Promise.resolve();
+				return service === "tmdb" && serviceId === "999" ? searchHit : undefined;
+			},
+		});
+
+		const outcome = await discover(tmdbToMal, { simkl });
+
+		if (outcome.kind !== "brokered") {
+			throw new Error(`expected a brokered chain, got ${outcome.kind}`);
+		}
+		// Built from the re-fetched relations, not the empty search hit.
+		expect(outcome.chain.segments.map((segment) => segment.entry.id)).toStrictEqual([
+			"a",
+			"b",
+			"c",
+		]);
+	});
+
 	it("falls through to direct discovery without rebasing when SIMKL fails", async () => {
 		const simkl = clientOver([first, middle, last], {
 			findByExternalId: () => {

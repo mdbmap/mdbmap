@@ -19,7 +19,6 @@ interface DiscoveryRequest {
 	target: string;
 }
 
-// Why the broker handed the request back to direct discovery.
 type FallthroughReason =
 	| "no-record"
 	| "request-failed"
@@ -98,9 +97,28 @@ const discover = async (
 		return fallthrough(request, "no-record");
 	}
 
+	// A search hit carries no relations (searchSchema); the anime record is
+	// re-fetched in full so the walk expands the real continuity instead of
+	// collapsing to the searched entry. A non-anime hit is never walked — it
+	// reaches the walk's guard as its own start and yields the
+	// non-anime-candidate conflict without touching the anime endpoint.
+	let entry = start;
+	if (start.type === "anime") {
+		let full: SimklEntry | undefined;
+		try {
+			full = await simkl.fetchEntry(start.id);
+		} catch {
+			return fallthrough(request, "request-failed");
+		}
+		if (full === undefined) {
+			return fallthrough(request, "no-record");
+		}
+		entry = full;
+	}
+
 	let result: WalkResult;
 	try {
-		result = await walkContinuity(start, { fetchEntry: simkl.fetchEntry });
+		result = await walkContinuity(entry, { fetchEntry: simkl.fetchEntry });
 	} catch {
 		return fallthrough(request, "request-failed");
 	}
