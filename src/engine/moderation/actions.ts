@@ -36,6 +36,15 @@ const ascending = (left: number, right: number): number => left - right;
 
 const takeFirst = <Row>(rows: readonly Row[]): Row | undefined => rows[0];
 
+// Title-assertion identity is orientation-free: the pair is keyed low id first.
+const canonicalTitlePair = (
+	titleAId: number,
+	titleBId: number,
+): { readonly highId: number; readonly lowId: number } => ({
+	highId: Math.max(titleAId, titleBId),
+	lowId: Math.min(titleAId, titleBId),
+});
+
 type ConflictEvidence = Extract<
 	CandidateEvidence,
 	{
@@ -195,74 +204,98 @@ interface SettleInput {
 }
 
 type SettleOutcome =
+	| { readonly kind: "collision" }
 	| { readonly kind: "missing" }
 	| { readonly kind: "not-open" }
 	| { readonly kind: "rejected" }
 	| { readonly kind: "settled" }
 	| { readonly kind: "wrong-kind" };
 
+// Whether the proposed side actually landed: `written` when the insert wrote its
+// row, `collision` when a row already occupied the edge (nothing published), or
+// `wrong-kind` when the evidence names no edge to write.
+type ProposalWrite = "collision" | "written" | "wrong-kind";
+
+const wroteRow = (rows: readonly unknown[]): ProposalWrite =>
+	rows[0] === undefined ? "collision" : "written";
+
 // Attach the proposed side of a conflict as a `manual` assertion — the curated
 // evidence a recompute preserves. Each kind writes exactly the edge its evidence
-// describes.
+// describes, and reports whether the insert actually landed so a silent collision
+// never closes the candidate as accepted.
 const acceptProposal = (
 	db: GatewayDb,
 	evidence: ConflictEvidence,
 	relationIndex: number,
-): boolean => {
+): ProposalWrite => {
 	switch (evidence.kind) {
 		case "absence-assertion-conflict": {
-			db.insert(absenceAssertions)
-				.values({
-					coverageRevision: evidence.coverageRevision,
-					source: MANUAL,
-					targetService: evidence.targetService,
-					unitId: evidence.unitId,
-				})
-				.onConflictDoNothing()
-				.run();
-			return true;
+			return wroteRow(
+				db
+					.insert(absenceAssertions)
+					.values({
+						coverageRevision: evidence.coverageRevision,
+						source: MANUAL,
+						targetService: evidence.targetService,
+						unitId: evidence.unitId,
+					})
+					.onConflictDoNothing()
+					.returning()
+					.all(),
+			);
 		}
 		case "continuity-conflict": {
 			const relation = evidence.competingRelations[relationIndex];
 			if (relation === undefined) {
-				return false;
+				return "wrong-kind";
 			}
-			db.insert(relationAssertions)
-				.values({
-					confidence: "high",
-					fromTitleId: relation.fromTitleId,
-					source: MANUAL,
-					toTitleId: relation.toTitleId,
-				})
-				.onConflictDoNothing()
-				.run();
-			return true;
+			return wroteRow(
+				db
+					.insert(relationAssertions)
+					.values({
+						confidence: "high",
+						fromTitleId: relation.fromTitleId,
+						source: MANUAL,
+						toTitleId: relation.toTitleId,
+					})
+					.onConflictDoNothing()
+					.returning()
+					.all(),
+			);
 		}
 		case "instalment-assertion-conflict": {
-			db.insert(instalmentAssertions)
-				.values({
-					confidence: evidence.proposed.confidence,
-					instalmentId: evidence.instalmentId,
-					source: MANUAL,
-					unitId: evidence.proposed.unitId,
-				})
-				.onConflictDoNothing()
-				.run();
-			return true;
+			return wroteRow(
+				db
+					.insert(instalmentAssertions)
+					.values({
+						confidence: evidence.proposed.confidence,
+						instalmentId: evidence.instalmentId,
+						source: MANUAL,
+						unitId: evidence.proposed.unitId,
+					})
+					.onConflictDoNothing()
+					.returning()
+					.all(),
+			);
 		}
 		case "title-assertion-conflict": {
-			const lowId = Math.min(evidence.proposed.titleAId, evidence.proposed.titleBId);
-			const highId = Math.max(evidence.proposed.titleAId, evidence.proposed.titleBId);
-			db.insert(titleAssertions)
-				.values({
-					confidence: evidence.proposed.confidence,
-					source: MANUAL,
-					titleAId: lowId,
-					titleBId: highId,
-				})
-				.onConflictDoNothing()
-				.run();
-			return true;
+			const { highId, lowId } = canonicalTitlePair(
+				evidence.proposed.titleAId,
+				evidence.proposed.titleBId,
+			);
+			return wroteRow(
+				db
+					.insert(titleAssertions)
+					.values({
+						confidence: evidence.proposed.confidence,
+						source: MANUAL,
+						titleAId: lowId,
+						titleBId: highId,
+					})
+					.onConflictDoNothing()
+					.returning()
+					.all(),
+			);
 		}
 	}
 };
@@ -299,8 +332,14 @@ const settleConflict = (db: GatewayDb, input: SettleInput): SettleOutcome =>
 				.run();
 			return { kind: "rejected" };
 		}
-		if (!acceptProposal(tx, evidence, input.relationIndex ?? 0)) {
+		const write = acceptProposal(tx, evidence, input.relationIndex ?? 0);
+		if (write === "wrong-kind") {
 			return { kind: "wrong-kind" };
+		}
+		// A silent collision published nothing, so the row stays open for a moderator
+		// to settle against whatever already occupies the edge.
+		if (write === "collision") {
+			return { kind: "collision" };
 		}
 		tx.update(pendingGroupCandidates)
 			.set({ status: "accepted" })
@@ -445,8 +484,10 @@ const evidenceHashOf = (evidence: ConflictEvidence): string => {
 			return `instalment-assertion-conflict:${evidence.instalmentId}:${evidence.proposed.unitId}`;
 		}
 		case "title-assertion-conflict": {
-			const lowId = Math.min(evidence.proposed.titleAId, evidence.proposed.titleBId);
-			const highId = Math.max(evidence.proposed.titleAId, evidence.proposed.titleBId);
+			const { highId, lowId } = canonicalTitlePair(
+				evidence.proposed.titleAId,
+				evidence.proposed.titleBId,
+			);
 			return `title-assertion-conflict:${lowId},${highId}`;
 		}
 	}
@@ -465,8 +506,10 @@ const priorManualAssertion = (db: GatewayDb, evidence: ConflictEvidence): boolea
 			.some((row) => row.source === MANUAL);
 	}
 	if (evidence.kind === "title-assertion-conflict") {
-		const lowId = Math.min(evidence.proposed.titleAId, evidence.proposed.titleBId);
-		const highId = Math.max(evidence.proposed.titleAId, evidence.proposed.titleBId);
+		const { highId, lowId } = canonicalTitlePair(
+			evidence.proposed.titleAId,
+			evidence.proposed.titleBId,
+		);
 		return db
 			.select({ source: titleAssertions.source })
 			.from(titleAssertions)

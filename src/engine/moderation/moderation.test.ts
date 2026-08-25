@@ -17,6 +17,7 @@ import type { GatewayDb } from "@/engine/gateway";
 import {
 	acceptMembership,
 	clearReviewFlag,
+	keepReviewFlag,
 	listOpenCandidates,
 	manualPairing,
 	markAsMatched,
@@ -246,6 +247,39 @@ describe("moderation queue", () => {
 		expect(openRows(db)).toHaveLength(0);
 	});
 
+	it("keeps a review flag open in the queue", () => {
+		const db = freshDb();
+		const groupId = makeGroup(db);
+		const titleId = makeTitle(db, groupId, "tmdb", "1396");
+		const spokeId = makeSpoke(db, titleId, "1:1");
+		const unitId = makeUnit(db);
+
+		const subject: CandidateSubject = { subjectType: "title", titleId };
+		const evidence: CandidateEvidence = {
+			confidence: "low",
+			instalmentId: spokeId,
+			kind: "low-confidence-flag",
+			source: "t3-episode",
+			unitId,
+		};
+		const candidateId = first(
+			db
+				.insert(pendingGroupCandidates)
+				.values({
+					evidence,
+					evidenceHash: `low-confidence-flag:${spokeId}`,
+					kind: "low-confidence-flag",
+					subject,
+					subjectKey: `title:${titleId}`,
+				})
+				.returning()
+				.all(),
+		).id;
+
+		expect(keepReviewFlag(db, candidateId).kind).toBe("kept");
+		expect(openRows(db)).toHaveLength(1);
+	});
+
 	it("auto-rejects a competing proposal when a prior manual assertion stands", () => {
 		const db = freshDb();
 		const groupId = makeGroup(db);
@@ -294,6 +328,31 @@ describe("moderation queue", () => {
 			.all();
 		expect(links.some((link) => link.source === "manual" && link.unitId === proposedUnit)).toBe(true);
 		expect(openRows(db)).toHaveLength(0);
+	});
+
+	it("does not close a conflict as accepted when the proposed assertion already exists", () => {
+		const db = freshDb();
+		const groupId = makeGroup(db);
+		const titleId = makeTitle(db, groupId, "tmdb", "1396");
+		const spokeId = makeSpoke(db, titleId, "1:1");
+		const proposedUnit = makeUnit(db);
+		// A non-manual assertion already occupies the proposed edge, so the accept
+		// insert collides on instalment_assertions_instalment_unit_idx.
+		db.insert(instalmentAssertions)
+			.values({ confidence: "high", instalmentId: spokeId, source: "t3-episode", unitId: proposedUnit })
+			.run();
+
+		const subject: CandidateSubject = { subjectType: "title", titleId };
+		const evidence: CandidateEvidence = {
+			instalmentId: spokeId,
+			kind: "instalment-assertion-conflict",
+			proposed: { confidence: "high", source: "t3-episode", unitId: proposedUnit },
+			published: { confidence: "high", source: "t1-structure", unitId: makeUnit(db) },
+		};
+		const candidateId = queueAssertionConflict(db, { evidence, subject }).candidateId ?? 0;
+
+		expect(settleConflict(db, { accept: true, candidateId }).kind).toBe("collision");
+		expect(openRows(db)).toHaveLength(1);
 	});
 
 	it("pairs instalments by hand onto one content unit as manual", () => {
