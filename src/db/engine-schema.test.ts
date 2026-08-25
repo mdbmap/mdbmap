@@ -162,6 +162,22 @@ describe("hub-and-spoke coverage edges", () => {
 		).toThrow(/unique/iu);
 	});
 
+	it("rejects a relation asserting a title relates to itself", () => {
+		const title = seedTitle(db, "tmdb", "self");
+
+		expect(() =>
+			db
+				.insert(relationAssertions)
+				.values({
+					confidence: "high",
+					fromTitleId: title.id,
+					source: "llm-verified",
+					toTitleId: title.id,
+				})
+				.run(),
+		).toThrow(/constraint/iu);
+	});
+
 	it("rejects a second immediate prequel for one title", () => {
 		const to = seedTitle(db, "tmdb", "to");
 		const prequel = seedTitle(db, "tmdb", "prequel");

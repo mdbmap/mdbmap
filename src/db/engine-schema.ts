@@ -7,27 +7,18 @@ import {
 	uniqueIndex,
 } from "drizzle-orm/sqlite-core";
 
-import { timestamp } from "./columns.ts";
+import {
+	assertionAuditColumns,
+	assertionColumns,
+	assertionSources,
+	timestamp,
+} from "./columns.ts";
 import type { ContinuityKey, InstalmentLocator } from "./schema.ts";
 
 type Service = string;
 
-const assertionSources = [
-	"t1-structure",
-	"t2-pattern",
-	"t3-episode",
-	"llm-research",
-	"llm-verified",
-	"community",
-	"manual",
-] as const;
-type AssertionSource = (typeof assertionSources)[number];
-
 const groupSources = [...assertionSources, "release"] as const;
 type GroupSource = (typeof groupSources)[number];
-
-const assertionConfidences = ["high", "low"] as const;
-type AssertionConfidence = (typeof assertionConfidences)[number];
 
 const instalmentLocatorKinds = ["service-id", "position"] as const;
 type InstalmentLocatorKind = (typeof instalmentLocatorKinds)[number];
@@ -93,13 +84,10 @@ const serviceInstalments = sqliteTable(
 const instalmentAssertions = sqliteTable(
 	"instalment_assertions",
 	{
-		confidence: text({ enum: assertionConfidences }).notNull(),
-		createdAt: timestamp("created_at"),
-		id: integer({ mode: "number" }).primaryKey({ autoIncrement: true }),
+		...assertionColumns(),
 		instalmentId: integer("instalment_id")
 			.notNull()
 			.references(() => serviceInstalments.id, { onDelete: "cascade" }),
-		source: text({ enum: assertionSources }).notNull(),
 		unitId: integer("unit_id")
 			.notNull()
 			.references(() => contentUnits.id, { onDelete: "cascade" }),
@@ -115,10 +103,7 @@ const instalmentAssertions = sqliteTable(
 const titleAssertions = sqliteTable(
 	"title_assertions",
 	{
-		confidence: text({ enum: assertionConfidences }).notNull(),
-		createdAt: timestamp("created_at"),
-		id: integer({ mode: "number" }).primaryKey({ autoIncrement: true }),
-		source: text({ enum: assertionSources }).notNull(),
+		...assertionColumns(),
 		titleAId: integer("title_a_id")
 			.notNull()
 			.references(() => serviceTitles.id, { onDelete: "cascade" }),
@@ -138,18 +123,19 @@ const titleAssertions = sqliteTable(
 const relationAssertions = sqliteTable(
 	"relation_assertions",
 	{
-		confidence: text({ enum: assertionConfidences }).notNull(),
-		createdAt: timestamp("created_at"),
+		...assertionColumns(),
 		fromTitleId: integer("from_title_id")
 			.notNull()
 			.references(() => serviceTitles.id, { onDelete: "cascade" }),
-		id: integer({ mode: "number" }).primaryKey({ autoIncrement: true }),
-		source: text({ enum: assertionSources }).notNull(),
 		toTitleId: integer("to_title_id")
 			.notNull()
 			.references(() => serviceTitles.id, { onDelete: "cascade" }),
 	},
 	(table) => [
+		check(
+			"relation_assertions_no_self_edge",
+			sql`${table.fromTitleId} <> ${table.toTitleId}`,
+		),
 		uniqueIndex("relation_assertions_from_idx").on(table.fromTitleId),
 		uniqueIndex("relation_assertions_to_idx").on(table.toTitleId),
 	],
@@ -158,10 +144,8 @@ const relationAssertions = sqliteTable(
 const absenceAssertions = sqliteTable(
 	"absence_assertions",
 	{
+		...assertionAuditColumns(),
 		coverageRevision: integer("coverage_revision").notNull(),
-		createdAt: timestamp("created_at"),
-		id: integer({ mode: "number" }).primaryKey({ autoIncrement: true }),
-		source: text({ enum: assertionSources }).notNull(),
 		targetService: text("target_service").notNull().$type<Service>(),
 		unitId: integer("unit_id")
 			.notNull()
@@ -200,8 +184,6 @@ const serviceCoverages = sqliteTable(
 
 export {
 	absenceAssertions,
-	assertionConfidences,
-	assertionSources,
 	contentUnits,
 	coverageStates,
 	groupSources,
@@ -214,11 +196,6 @@ export {
 	titleAssertions,
 	titleGroups,
 };
-export type {
-	AssertionConfidence,
-	AssertionSource,
-	CoverageState,
-	GroupSource,
-	InstalmentLocatorKind,
-	Service,
-};
+export { assertionConfidences, assertionSources } from "./columns.ts";
+export type { CoverageState, GroupSource, InstalmentLocatorKind, Service };
+export type { AssertionConfidence, AssertionSource } from "./columns.ts";
