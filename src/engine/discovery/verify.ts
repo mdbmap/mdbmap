@@ -143,6 +143,21 @@ const namesEdge = (
 		(relation) => relation.kind === kind && relation.toId === toId,
 	);
 
+// The chain's neighbours, each as an [earlier, later] pair. Both callers of the
+// consecutive-pair walk — relation plans and the relation corroboration signal
+// — share this so the traversal lives in one place.
+const adjacentPairs = <Item>(items: readonly Item[]): [Item, Item][] => {
+	const pairs: [Item, Item][] = [];
+	for (let index = 1; index < items.length; index += 1) {
+		const earlier = items[index - 1];
+		const later = items[index];
+		if (earlier !== undefined && later !== undefined) {
+			pairs.push([earlier, later]);
+		}
+	}
+	return pairs;
+};
+
 // A mainline edge is confirmed only when both records name each other — the
 // earlier as sequel, the later as prequel. A one-sided edge is too weak to
 // carry high confidence anywhere it is checked.
@@ -168,23 +183,11 @@ const relationFor = (
 	};
 };
 
-const relationsOf = (
-	anchored: readonly AnchoredSegment[],
-): RelationAssertionPlan[] => {
-	const relations: RelationAssertionPlan[] = [];
-	for (let index = 1; index < anchored.length; index += 1) {
-		const earlier = anchored[index - 1];
-		const later = anchored[index];
-		if (earlier === undefined || later === undefined) {
-			continue;
-		}
+const relationsOf = (anchored: readonly AnchoredSegment[]): RelationAssertionPlan[] =>
+	adjacentPairs(anchored).flatMap(([earlier, later]) => {
 		const relation = relationFor(earlier, later);
-		if (relation !== undefined) {
-			relations.push(relation);
-		}
-	}
-	return relations;
-};
+		return relation === undefined ? [] : [relation];
+	});
 
 // A maximal run of adjacent segments that carry the same target id, kept
 // separate by SIMKL. Verification checks the target against the run as a whole
@@ -285,14 +288,11 @@ const relationVerdict = (run: TargetRun): CheckVerdict => {
 	if (run.segments.length < 2) {
 		return "unavailable";
 	}
-	for (let index = 1; index < run.segments.length; index += 1) {
-		const earlier = run.segments[index - 1]?.segment.entry;
-		const later = run.segments[index]?.segment.entry;
-		if (earlier === undefined || later === undefined || !twoSidedEdge(earlier, later)) {
-			return "unavailable";
-		}
-	}
-	return "pass";
+	const entries = run.segments.map((item) => item.segment.entry);
+	const confirmed = adjacentPairs(entries).every(([earlier, later]) =>
+		twoSidedEdge(earlier, later),
+	);
+	return confirmed ? "pass" : "unavailable";
 };
 
 // Segment sizes drive the target's instalment split, so a run only verifies

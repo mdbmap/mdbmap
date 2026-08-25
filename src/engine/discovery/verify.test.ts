@@ -40,7 +40,7 @@ const clientsFrom = (
 	return clients;
 };
 
-const title = (fields: Partial<CatalogueTitle>): CatalogueTitle => ({
+const catalogue = (fields: Partial<CatalogueTitle>): CatalogueTitle => ({
 	format: undefined,
 	instalmentCount: undefined,
 	releaseDate: undefined,
@@ -56,11 +56,11 @@ describe("simkl verification", () => {
 		]);
 		const clients = clientsFrom({
 			anidb: {
-				d2: title({ instalmentCount: 12, releaseDate: "2022-01-07", title: "Stone Ocean Part 2" }),
-				d3: title({ instalmentCount: 14, releaseDate: "2022-08-01", title: "Stone Ocean Part 3" }),
+				d2: catalogue({ instalmentCount: 12, releaseDate: "2022-01-07", title: "Stone Ocean Part 2" }),
+				d3: catalogue({ instalmentCount: 14, releaseDate: "2022-08-01", title: "Stone Ocean Part 3" }),
 			},
 			anilist: {
-				al: title({ instalmentCount: 26, releaseDate: "2022-01-07", title: "Stone Ocean Part 2" }),
+				al: catalogue({ instalmentCount: 26, releaseDate: "2022-01-07", title: "Stone Ocean Part 2" }),
 			},
 		});
 
@@ -87,7 +87,7 @@ describe("simkl verification", () => {
 			segment("b", { anidb: "2" }, [], 1),
 		]);
 		const clients = clientsFrom({
-			anidb: { 1: title({ title: "A" }), 2: title({ title: "B" }) },
+			anidb: { 1: catalogue({ title: "A" }), 2: catalogue({ title: "B" }) },
 		});
 
 		const result = await verifyChain(chain, { clients, target: "anilist" });
@@ -102,7 +102,7 @@ describe("simkl verification", () => {
 			segment("b", { anidb: "2" }, [{ kind: "prequel", toId: "a" }], 1),
 		]);
 		const clients = clientsFrom({
-			anidb: { 1: title({ title: "A" }), 2: title({ title: "B" }) },
+			anidb: { 1: catalogue({ title: "A" }), 2: catalogue({ title: "B" }) },
 		});
 
 		const result = await verifyChain(chain, { clients, target: "anilist" });
@@ -113,8 +113,8 @@ describe("simkl verification", () => {
 	it("treats a failed date check as a conflict, not a low-confidence publish", async () => {
 		const chain = chainOf([segment("x", { anidb: "dx", anilist: "alx" }, [], 0)]);
 		const clients = clientsFrom({
-			anidb: { dx: title({ instalmentCount: 12, releaseDate: "2020-01-01", title: "X" }) },
-			anilist: { alx: title({ instalmentCount: 12, releaseDate: "2023-06-01", title: "X" }) },
+			anidb: { dx: catalogue({ instalmentCount: 12, releaseDate: "2020-01-01", title: "X" }) },
+			anilist: { alx: catalogue({ instalmentCount: 12, releaseDate: "2023-06-01", title: "X" }) },
 		});
 
 		const result = await verifyChain(chain, { clients, target: "anilist" });
@@ -133,8 +133,8 @@ describe("simkl verification", () => {
 	it("treats a mismatched combined count as a conflict", async () => {
 		const chain = chainOf([segment("x", { anidb: "dx", anilist: "alx" }, [], 0)]);
 		const clients = clientsFrom({
-			anidb: { dx: title({ instalmentCount: 12, title: "X" }) },
-			anilist: { alx: title({ instalmentCount: 20, title: "X" }) },
+			anidb: { dx: catalogue({ instalmentCount: 12, title: "X" }) },
+			anilist: { alx: catalogue({ instalmentCount: 20, title: "X" }) },
 		});
 
 		const result = await verifyChain(chain, { clients, target: "anilist" });
@@ -146,8 +146,8 @@ describe("simkl verification", () => {
 	it("publishes low and flags when the count fits but nothing corroborates", async () => {
 		const chain = chainOf([segment("x", { anidb: "dx", anilist: "alx" }, [], 0)]);
 		const clients = clientsFrom({
-			anidb: { dx: title({ instalmentCount: 12, title: "Blue Lock" }) },
-			anilist: { alx: title({ instalmentCount: 12, title: "Something Unrelated" }) },
+			anidb: { dx: catalogue({ instalmentCount: 12, title: "Blue Lock" }) },
+			anilist: { alx: catalogue({ instalmentCount: 12, title: "Something Unrelated" }) },
 		});
 
 		const result = await verifyChain(chain, { clients, target: "anilist" });
@@ -163,7 +163,7 @@ describe("simkl verification", () => {
 
 	it("leaves an unconfigured target id as candidate evidence", async () => {
 		const chain = chainOf([segment("x", { anidb: "dx", mal: "m1" }, [], 0)]);
-		const clients = clientsFrom({ anidb: { dx: title({ title: "X" }) } });
+		const clients = clientsFrom({ anidb: { dx: catalogue({ title: "X" }) } });
 
 		const result = await verifyChain(chain, { clients, target: "mal" });
 
@@ -176,7 +176,7 @@ describe("simkl verification", () => {
 	it("leaves a target id the catalogue does not recognise as a candidate", async () => {
 		const chain = chainOf([segment("x", { anidb: "dx", anilist: "gone" }, [], 0)]);
 		const clients = clientsFrom({
-			anidb: { dx: title({ instalmentCount: 12, title: "X" }) },
+			anidb: { dx: catalogue({ instalmentCount: 12, title: "X" }) },
 			anilist: {},
 		});
 
@@ -191,8 +191,8 @@ describe("simkl verification", () => {
 	it("reaches high on format agreement when the title does not corroborate", async () => {
 		const chain = chainOf([segment("x", { anidb: "dx", anilist: "alx" }, [], 0)]);
 		const clients = clientsFrom({
-			anidb: { dx: title({ format: "ONA", instalmentCount: 12, title: "Blue Lock" }) },
-			anilist: { alx: title({ format: "ona", instalmentCount: 12, title: "Different Name" }) },
+			anidb: { dx: catalogue({ format: "ONA", instalmentCount: 12, title: "Blue Lock" }) },
+			anilist: { alx: catalogue({ format: "ona", instalmentCount: 12, title: "Different Name" }) },
 		});
 
 		const result = await verifyChain(chain, { clients, target: "anilist" });
@@ -208,10 +208,10 @@ describe("simkl verification", () => {
 		]);
 		const clients = clientsFrom({
 			anidb: {
-				d2: title({ instalmentCount: 12, title: "Part 2" }),
-				d3: title({ instalmentCount: 14, title: "Part 3" }),
+				d2: catalogue({ instalmentCount: 12, title: "Part 2" }),
+				d3: catalogue({ instalmentCount: 14, title: "Part 3" }),
 			},
-			anilist: { al: title({ instalmentCount: 26, title: "Wholly Different Name" }) },
+			anilist: { al: catalogue({ instalmentCount: 26, title: "Wholly Different Name" }) },
 		});
 
 		const result = await verifyChain(chain, { clients, target: "anilist" });
@@ -229,11 +229,11 @@ describe("simkl verification", () => {
 		]);
 		const clients = clientsFrom({
 			anidb: {
-				d0: title({ instalmentCount: 12, title: "A" }),
-				d1: title({ instalmentCount: 12, title: "B" }),
-				d2: title({ instalmentCount: 14, title: "C" }),
+				d0: catalogue({ instalmentCount: 12, title: "A" }),
+				d1: catalogue({ instalmentCount: 12, title: "B" }),
+				d2: catalogue({ instalmentCount: 14, title: "C" }),
 			},
-			anilist: { al: title({ instalmentCount: 26, releaseDate: "2022-01-07", title: "A" }) },
+			anilist: { al: catalogue({ instalmentCount: 26, releaseDate: "2022-01-07", title: "A" }) },
 		});
 
 		const result = await verifyChain(chain, { clients, target: "anilist" });
@@ -250,8 +250,8 @@ describe("simkl verification", () => {
 	it("keeps the ids as candidates when there is no native count to split on", async () => {
 		const chain = chainOf([segment("x", { anidb: "dx", anilist: "alx" }, [], 0)]);
 		const clients = clientsFrom({
-			anidb: { dx: title({ title: "X" }) },
-			anilist: { alx: title({ instalmentCount: 12, title: "X" }) },
+			anidb: { dx: catalogue({ title: "X" }) },
+			anilist: { alx: catalogue({ instalmentCount: 12, title: "X" }) },
 		});
 
 		const result = await verifyChain(chain, { clients, target: "anilist" });
