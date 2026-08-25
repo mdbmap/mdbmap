@@ -20,7 +20,9 @@
 		"lint:ci": "oxlint --format=github",
 		"lint:style": "stylelint --fix",
 		"lint:style:ci": "stylelint --custom-formatter @csstools/stylelint-formatter-github .",
-		"preview": "vite preview"
+		"preview": "vite preview",
+		"test": "vitest run",
+		"test:coverage": "vitest run --coverage"
 	},
 	"dependencies": {
 		"@orpc/client": "^1.13.6",
@@ -76,6 +78,7 @@
 		"@types/react": "^19.2.0",
 		"@types/react-dom": "^19.2.0",
 		"@vitejs/plugin-react": "^6.0.1",
+		"@vitest/coverage-v8": "4.1.11",
 		"babel-plugin-react-compiler": "^1.0.0",
 		"dotenv": "^17.4.2",
 		"husky": "^9.1.7",
