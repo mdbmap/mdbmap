@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import type { Identity, ParseErrorReason, Profile } from "./identity.ts";
-import { formatId, parseId } from "./identity.ts";
+import { FormatError, formatId, parseId } from "./identity.ts";
 
 // Each canonical case must both parse to its identity and format back to the
 // exact string it came from.
@@ -144,6 +144,26 @@ describe("flat-or-season-one", () => {
 		expect(parseId("anime", "anilist:140960:1:7")).toStrictEqual(
 			parseId("anime", "anilist:140960:7"),
 		);
+	});
+});
+
+describe("formatId flat-mode season guard", () => {
+	it("throws rather than dropping a non-1 season for a flat service", () => {
+		const identity: Identity = {
+			kind: "instalment",
+			locator: { episode: 5, season: 2 },
+			title: { id: "44081", service: "kitsu" },
+		};
+		expect(() => formatId(identity)).toThrow(FormatError);
+	});
+
+	it("still round-trips a valid flat-mode identity", () => {
+		const identity: Identity = {
+			kind: "instalment",
+			locator: { episode: 5, season: 1 },
+			title: { id: "44081", service: "kitsu" },
+		};
+		expect(formatId(identity)).toBe("kitsu:44081:5");
 	});
 });
 

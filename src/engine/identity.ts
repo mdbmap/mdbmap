@@ -224,18 +224,34 @@ const parseId = (profile: Profile, raw: string): ParseResult => {
 const formatTitle = (title: TitleIdentity): string =>
 	title.service === "imdb" ? title.id : `${title.service}:${title.id}`;
 
+// The Identity type cannot express "flat services carry season 1" without the
+// locator and title correlating across the parse path, so formatId guards it:
+// a flat-mode season other than 1 would silently reparse as season 1.
+class FormatError extends Error {
+	public readonly reason = "flat-season-not-one";
+
+	public constructor(service: Service, season: number) {
+		super(`${service} is a flat catalogue with no season ${season}; only season 1 is representable`);
+		this.name = "FormatError";
+	}
+}
+
 const formatId = (identity: Identity): string => {
 	const head = formatTitle(identity.title);
 	if (identity.kind === "title") {
 		return head;
 	}
 	const { locator, title } = identity;
-	return boundary[title.service].seasonMode === "flat"
-		? `${head}:${locator.episode}`
-		: `${head}:${locator.season}:${locator.episode}`;
+	if (boundary[title.service].seasonMode === "flat") {
+		if (locator.season !== 1) {
+			throw new FormatError(title.service, locator.season);
+		}
+		return `${head}:${locator.episode}`;
+	}
+	return `${head}:${locator.season}:${locator.episode}`;
 };
 
-export { formatId, parseId };
+export { FormatError, formatId, parseId };
 export type {
 	Identity,
 	Locator,
