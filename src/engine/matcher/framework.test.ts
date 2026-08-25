@@ -93,6 +93,44 @@ describe("alignStreams", () => {
 		}
 	});
 
+	it("classifies a gapped released instalment of an airing stream as no-counterpart", () => {
+		const left = streamOf(
+			[regular("l#1"), regular("l#2"), regular("l#3"), regular("l#4")],
+			"airing",
+		);
+		const right = streamOf([regular("r#1"), regular("r#3")]);
+		// l#2 sits between paired l#1 and l#3 — released and unlinked, not future.
+		// l#4 is beyond the settled prefix and remains pending.
+		const outcome = alignStreams(left, right, [
+			pair(["l#1"], ["r#1"]),
+			pair(["l#3"], ["r#3"]),
+		]);
+		expect(outcome.status).toBe("published");
+		if (outcome.status === "published") {
+			expect(outcome.alignment.left.noCounterpart).toStrictEqual([
+				locator("l#2"),
+			]);
+			expect(outcome.alignment.left.pending).toStrictEqual([locator("l#4")]);
+		}
+	});
+
+	it("detects a regular reused across a mixed and a pure pairing", () => {
+		const left = streamOf([regular("l#1"), regular("l#2")]);
+		const right = streamOf([regular("r#1"), special("r#sp")]);
+		// l#1 maps to a special on one pairing and a regular on another. The mixed
+		// pairing must not escape the sweep, or l#1 maps twice with no conflict.
+		const outcome = alignStreams(left, right, [
+			pair(["l#1"], ["r#sp"]),
+			pair(["l#1"], ["r#1"]),
+		]);
+		expect(outcome.status).toBe("conflict");
+		if (outcome.status === "conflict") {
+			expect(outcome.crossings.some((cross) => cross.side === "left")).toBe(
+				true,
+			);
+		}
+	});
+
 	it("publishes an airing prefix and leaves later positions pending", () => {
 		const left = streamOf(
 			[regular("l#1"), regular("l#2"), regular("l#3")],

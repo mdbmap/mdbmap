@@ -16,8 +16,9 @@ interface StrayLocator {
 	readonly side: "left" | "right";
 }
 
-// `noCounterpart` is an explicit `[]` from a completed stream; `pending` is an
-// airing stream's unmapped position, which never hardens into no-counterpart.
+// `noCounterpart` is an explicit `[]` for an evaluated released instalment;
+// `pending` is an airing stream's future position beyond its settled prefix,
+// which never hardens into no-counterpart.
 interface SideDisposition {
 	readonly noCounterpart: readonly InstalmentLocator[];
 	readonly pending: readonly InstalmentLocator[];
@@ -59,17 +60,27 @@ const findStrays = (
 	return strays;
 };
 
+// An airing stream's settled prefix ends at its last paired position: unpaired
+// instalments at or before it are released and evaluated (`noCounterpart`), while
+// only positions beyond it are unarrived and stay `pending`. A complete stream
+// has no future tail, so every unpaired instalment is a no-counterpart.
 const disposeSide = (
 	stream: InstalmentStream,
 	paired: ReadonlySet<InstalmentLocator>,
 ): SideDisposition => {
 	const noCounterpart: InstalmentLocator[] = [];
 	const pending: InstalmentLocator[] = [];
-	for (const instalment of stream.instalments) {
+	let lastPaired = -1;
+	for (const [index, instalment] of stream.instalments.entries()) {
+		if (paired.has(instalment.locator)) {
+			lastPaired = index;
+		}
+	}
+	for (const [index, instalment] of stream.instalments.entries()) {
 		if (paired.has(instalment.locator)) {
 			continue;
 		}
-		if (stream.boundary === "airing") {
+		if (stream.boundary === "airing" && index > lastPaired) {
 			pending.push(instalment.locator);
 		} else {
 			noCounterpart.push(instalment.locator);
