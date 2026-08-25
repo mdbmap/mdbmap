@@ -36,6 +36,8 @@ export const env = createEnv({
 	runtimeEnv: import.meta.env,
 
 	server: {
+		ANIDB_CLIENT: z.string().optional(),
+		ANIDB_CLIENT_VER: z.string().optional(),
 		DATABASE_URL: z.string().optional(),
 		SERVER_URL: z.url().optional(),
 		TMDB_API_KEY: z.string().optional(),
