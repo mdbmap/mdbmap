@@ -45,6 +45,7 @@ type CandidateStatus = (typeof candidateStatuses)[number];
 // (assertion conflicts), never inferred from `kind` alone by the schema.
 type CandidateSubject =
 	| { subjectType: "title"; titleId: number }
+	| { subjectType: "title-pair"; titleAId: number; titleBId: number }
 	| {
 			instalmentAId: number;
 			instalmentBId: number;
@@ -74,6 +75,12 @@ interface AssertionSnapshot {
 	confidence: AssertionConfidence;
 	source: AssertionSource;
 }
+
+type InstalmentConflictSide = AssertionSnapshot & { unitId: number };
+type TitleConflictSide = AssertionSnapshot & {
+	titleAId: number;
+	titleBId: number;
+};
 
 interface CompetingRelation {
 	fromTitleId: number;
@@ -105,8 +112,8 @@ type CandidateEvidence =
 	| {
 			instalmentId: number;
 			kind: "instalment-assertion-conflict";
-			proposed: AssertionSnapshot & { unitId: number };
-			published: (AssertionSnapshot & { unitId: number }) | null;
+			proposed: InstalmentConflictSide;
+			published: InstalmentConflictSide | null;
 	  }
 	| {
 			confidence: AssertionConfidence;
@@ -122,10 +129,8 @@ type CandidateEvidence =
 	  }
 	| {
 			kind: "title-assertion-conflict";
-			proposed: AssertionSnapshot & { titleAId: number; titleBId: number };
-			published:
-				| (AssertionSnapshot & { titleAId: number; titleBId: number })
-				| null;
+			proposed: TitleConflictSide;
+			published: TitleConflictSide | null;
 	  };
 
 const contentUnits = sqliteTable("content_units", {
