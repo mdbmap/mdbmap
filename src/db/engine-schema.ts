@@ -64,6 +64,12 @@ interface FuzzyMatchHit {
 	year: number | null;
 }
 
+interface FuzzySearchQuery {
+	service: Service;
+	title: string;
+	year: number | null;
+}
+
 interface AssertionSnapshot {
 	confidence: AssertionConfidence;
 	source: AssertionSource;
@@ -94,6 +100,7 @@ type CandidateEvidence =
 			kind: "fuzzy-group";
 			overCap: FuzzyMatchHit[];
 			proposedMembers: FuzzyMatchHit[];
+			queries: FuzzySearchQuery[];
 	  }
 	| {
 			instalmentId: number;
@@ -290,8 +297,6 @@ const pendingGroupCandidates = sqliteTable(
 		updatedAt: timestamp("updated_at").$onUpdateFn(() => new Date()),
 	},
 	(table) => [
-		// Coalesces repeat/concurrent discoveries of the same open question;
-		// a resolved row (accepted/rejected) never blocks a fresh proposal.
 		uniqueIndex("pending_group_candidates_open_idx")
 			.on(table.kind, table.subject, table.evidenceHash)
 			.where(sql`${table.status} = 'open'`),
