@@ -457,6 +457,61 @@ describe("mapping gateway title-level instalments", () => {
 			"tmdb:1396:1:2",
 		]);
 	});
+
+	it("names the counterpart instalment when the request is a strict subset of it", async () => {
+		const group = seedGroup(db);
+		const source = seedTitle(db, group.id, "tmdb", "tv:1396");
+		const target = seedTitle(db, group.id, "imdb", "tt0903747");
+		linkTitles(db, source.id, target.id, "t1-structure");
+		const firstUnit = seedUnit(db);
+		const secondUnit = seedUnit(db);
+		const sourceOne = seedInstalment(db, source.id, "s1e1");
+		const targetOne = seedInstalment(db, target.id, "s1e1");
+		const targetTwo = seedInstalment(db, target.id, "s1e2");
+		coverInstalment(db, sourceOne.id, firstUnit.id);
+		coverInstalment(db, targetOne.id, firstUnit.id);
+		coverInstalment(db, targetTwo.id, secondUnit.id);
+
+		const outcome = await resolveMapping(db, "series", "tmdb:1396", noColdLookup);
+
+		expect(outcome.kind).toBe("ok");
+		if (outcome.kind !== "ok") {
+			return;
+		}
+		const counterpart = outcome.body.mappings.imdb?.counterparts[0];
+		expect(counterpart?.id).toBe("tt0903747:1:1");
+		expect(counterpart?.supportingInstalment).toBeUndefined();
+	});
+
+	it("serves the derived group source and per-instalment sources with fallback", async () => {
+		const group = seedGroup(db, "t1-structure");
+		const source = seedTitle(db, group.id, "tmdb", "tv:1396");
+		const target = seedTitle(db, group.id, "imdb", "tt0903747");
+		linkTitles(db, source.id, target.id, "manual");
+		const sourceEpisode = seedInstalment(db, source.id, "s1e1");
+		const targetEpisode = seedInstalment(db, target.id, "s1e1");
+		const unit = seedUnit(db);
+		coverInstalment(db, sourceEpisode.id, unit.id);
+		coverInstalment(db, targetEpisode.id, unit.id);
+		seedInstalment(db, source.id, "s1e2");
+
+		const outcome = await resolveMapping(db, "series", "tmdb:1396", noColdLookup);
+
+		expect(outcome.kind).toBe("ok");
+		if (outcome.kind !== "ok") {
+			return;
+		}
+		const { imdb } = outcome.body.mappings;
+		expect(imdb?.status).toBe("matched");
+		if (imdb?.status !== "matched") {
+			return;
+		}
+		expect(imdb.source).toBe("manual");
+		const linked = outcome.body.instalments?.find((entry) => entry.input === "tmdb:1396:1:1");
+		const unlinked = outcome.body.instalments?.find((entry) => entry.input === "tmdb:1396:1:2");
+		expect(linked?.source).toBe("t3-episode");
+		expect(unlinked?.source).toBe("manual");
+	});
 });
 
 describe("mapping gateway assertion integrity", () => {

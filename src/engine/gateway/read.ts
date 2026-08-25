@@ -2,6 +2,7 @@ import { and, eq, inArray } from "drizzle-orm";
 import type { BaseSQLiteDatabase } from "drizzle-orm/sqlite-core";
 
 import {
+	assertionSources,
 	instalmentAssertions,
 	serviceCoverages,
 	serviceInstalments,
@@ -10,7 +11,7 @@ import {
 	titleGroupAliases,
 	titleGroups,
 } from "@/db/engine-schema";
-import type { GroupSource } from "@/db/engine-schema";
+import type { AssertionConfidence, GroupSource } from "@/db/engine-schema";
 
 import type { Identity, Service } from "@/engine/identity.ts";
 import type {
@@ -97,9 +98,34 @@ const coverageVerdicts = (
 	return verdicts;
 };
 
+// Curation precedence (ADR-0002 §Provenance): manual outranks community down to
+// the structural tiers; "release" is not curated and ranks below them all.
+const sourceRank = (source: GroupSource): number =>
+	source === "release" ? -1 : assertionSources.indexOf(source);
+
+const mostCurated = (sources: Iterable<GroupSource>): GroupSource | undefined => {
+	let best: GroupSource | undefined;
+	for (const source of sources) {
+		if (best === undefined || sourceRank(source) > sourceRank(best)) {
+			best = source;
+		}
+	}
+	return best;
+};
+
+// The assertion sources every matched counterpart in a link map carries — the
+// provenance those linked positions speak with.
+const linkSources = (links: ResolvedLinks): readonly GroupSource[] =>
+	[...links.values()].flatMap((link) =>
+		link.status === "matched"
+			? link.counterparts.flatMap((counterpart) =>
+					counterpart.assertionPath.map((assertion) => assertion.source),
+				)
+			: [],
+	);
+
 // Evidence backing one title counterpart. A direct title assertion is a one-step
-// path; absent that, the group's own provenance stands in until the ladder
-// matcher supplies the full derivation.
+// path; absent that, the group's own provenance stands in.
 const titleEvidence = (
 	db: GatewayDb,
 	source: GroupSource,
@@ -173,32 +199,55 @@ const titleUnitSpokes = (db: GatewayDb, titleId: number): Map<number, Instalment
 	return byUnit;
 };
 
-// A bare title counterpart overstates coverage when it covers only part of the
-// requested title (ADR-0001). When the counterpart misses a unit the request
-// covers, name the request-side spoke on a shared unit; a counterpart covering
-// every requested unit is coextensive and stays bare.
-const supportingInstalmentFor = (
+interface CounterpartShape {
+	readonly identity: Identity;
+	readonly supportingInstalment?: Identity;
+}
+
+// Reconciles a title-level counterpart's coverage against the request so a bare
+// title never overstates coverage (ADR-0001). A counterpart spanning units the
+// request does not is named by its own instalment on a shared unit; a counterpart
+// covering less keeps the bare title and names the request-side spoke; equal
+// coverage stays a bare title.
+const reconcileCounterpart = (
 	requested: TitleRow,
 	requestedUnits: ReadonlyMap<number, InstalmentRow>,
-	counterpartUnits: ReadonlySet<number>,
-): Identity | undefined => {
-	if (requestedUnits.size === 0 || !isIdentityService(requested.service)) {
-		return undefined;
+	member: { readonly service: Service; readonly serviceId: string },
+	memberUnits: ReadonlyMap<number, InstalmentRow>,
+	bare: Identity,
+): CounterpartShape => {
+	if (!isIdentityService(requested.service)) {
+		return { identity: bare };
 	}
-	const coextensive = [...requestedUnits.keys()].every((unit) => counterpartUnits.has(unit));
-	if (coextensive) {
-		return undefined;
-	}
-	const [supportingUnit] = [...requestedUnits.keys()]
-		.filter((unit) => counterpartUnits.has(unit))
+	const sharedUnits = [...requestedUnits.keys()]
+		.filter((unit) => memberUnits.has(unit))
 		.toSorted((left, right) => left - right);
-	const spoke = supportingUnit === undefined ? undefined : requestedUnits.get(supportingUnit);
-	return spoke === undefined
-		? undefined
-		: memberInstalment(
-				{ service: requested.service, serviceId: requested.serviceId },
-				spoke.locator,
-			);
+	const [sharedUnit] = sharedUnits;
+	const requestInsideMember = requestedUnits.size > 0 && sharedUnits.length === requestedUnits.size;
+	const memberSpansMore = [...memberUnits.keys()].some((unit) => !requestedUnits.has(unit));
+	if (requestInsideMember && memberSpansMore && sharedUnit !== undefined) {
+		const spoke = memberUnits.get(sharedUnit);
+		const instalment =
+			spoke === undefined
+				? undefined
+				: memberInstalment(
+						{ service: member.service, serviceId: member.serviceId },
+						spoke.locator,
+					);
+		return { identity: instalment ?? bare };
+	}
+	if (requestInsideMember || sharedUnit === undefined) {
+		return { identity: bare };
+	}
+	const spoke = requestedUnits.get(sharedUnit);
+	const supporting =
+		spoke === undefined
+			? undefined
+			: memberInstalment(
+					{ service: requested.service, serviceId: requested.serviceId },
+					spoke.locator,
+				);
+	return supporting === undefined ? { identity: bare } : { identity: bare, supportingInstalment: supporting };
 };
 
 const titleCounterparts = (
@@ -212,14 +261,24 @@ const titleCounterparts = (
 	members
 		.filter((member) => member.service === service)
 		.flatMap((member): ResolvedCounterpart[] => {
-			const identity = memberTitle({ service, serviceId: member.serviceId });
-			if (identity === undefined) {
+			const bare = memberTitle({ service, serviceId: member.serviceId });
+			if (bare === undefined) {
 				return [];
 			}
-			const counterpartUnits = new Set(titleUnitSpokes(db, member.id).keys());
-			const supporting = supportingInstalmentFor(requested, requestedUnits, counterpartUnits);
-			const base = { identity, ...titleEvidence(db, source, requested.id, member.id) };
-			return [supporting === undefined ? base : { ...base, supportingInstalment: supporting }];
+			const memberUnits = titleUnitSpokes(db, member.id);
+			const { identity, supportingInstalment } = reconcileCounterpart(
+				requested,
+				requestedUnits,
+				{ service, serviceId: member.serviceId },
+				memberUnits,
+				bare,
+			);
+			const evidence = titleEvidence(db, source, requested.id, member.id);
+			return [
+				supportingInstalment === undefined
+					? { identity, ...evidence }
+					: { identity, supportingInstalment, ...evidence },
+			];
 		});
 
 const titleLinks = (
@@ -253,16 +312,29 @@ const titleLinks = (
 	return { links, refs };
 };
 
+const weakerGrade = (
+	left: AssertionConfidence,
+	right: AssertionConfidence,
+): AssertionConfidence => (left === "low" || right === "low" ? "low" : "high");
+
+// A derived instalment mapping follows two accepted assertions through the shared
+// unit — the anchor's coverage and the counterpart's. Both ride the path, and the
+// mapping is only as strong as its weaker edge (ADR-0001, ADR-0002).
 const instalmentEvidence = (
-	edge: InstalmentEdge,
+	anchor: InstalmentEdge,
+	counterpart: InstalmentEdge,
 ): Pick<ResolvedCounterpart, "assertionPath" | "confidence"> => ({
-	assertionPath: [{ confidence: edge.confidence, source: edge.source }],
-	confidence: edge.confidence,
+	assertionPath: [
+		{ confidence: anchor.confidence, source: anchor.source },
+		{ confidence: counterpart.confidence, source: counterpart.source },
+	],
+	confidence: weakerGrade(anchor.confidence, counterpart.confidence),
 });
 
 const addInstalmentCounterpart = (
 	db: GatewayDb,
 	counterparts: Map<Service, ResolvedCounterpart[]>,
+	anchor: InstalmentEdge,
 	edge: InstalmentEdge,
 ): void => {
 	const spoke = takeFirst(
@@ -283,7 +355,7 @@ const addInstalmentCounterpart = (
 		return;
 	}
 	const list = counterparts.get(title.service) ?? [];
-	list.push({ identity, ...instalmentEvidence(edge) });
+	list.push({ identity, ...instalmentEvidence(anchor, edge) });
 	counterparts.set(title.service, list);
 };
 
@@ -297,19 +369,25 @@ const instalmentCounterparts = (
 		.from(instalmentAssertions)
 		.where(eq(instalmentAssertions.instalmentId, anchorId))
 		.all();
-	const unitIds = anchorEdges.map((row) => row.unitId);
-	if (unitIds.length === 0) {
+	const anchorByUnit = new Map(anchorEdges.map((row) => [row.unitId, row]));
+	if (anchorByUnit.size === 0) {
 		return counterparts;
 	}
 	const edges = db
 		.select()
 		.from(instalmentAssertions)
-		.where(inArray(instalmentAssertions.unitId, unitIds))
+		.where(inArray(instalmentAssertions.unitId, [...anchorByUnit.keys()]))
 		.all();
+	// A merged counterpart can share several units with the anchor; its spoke is one
+	// counterpart on that content unit, so the first edge wins and later ones drop.
+	const seen = new Set<number>();
 	for (const edge of edges) {
-		if (edge.instalmentId !== anchorId) {
-			addInstalmentCounterpart(db, counterparts, edge);
+		const anchor = anchorByUnit.get(edge.unitId);
+		if (edge.instalmentId === anchorId || anchor === undefined || seen.has(edge.instalmentId)) {
+			continue;
 		}
+		seen.add(edge.instalmentId);
+		addInstalmentCounterpart(db, counterparts, anchor, edge);
 	}
 	return counterparts;
 };
@@ -344,15 +422,19 @@ const instalmentLinks = (
 	return { links, refs };
 };
 
+interface RequestedInstalment {
+	readonly input: Identity;
+	readonly links: ResolvedLinks;
+}
+
 // The requested title's own spokes, each resolved to its per-service counterparts
-// in the request direction (ADR-0002). The group source speaks for every entry,
-// the documented fallback for a position not linked on its own.
+// in the request direction (ADR-0002). The serving source is decided by the caller,
+// once the derived group source is known for the unlinked fallback.
 const requestedInstalments = (
 	db: GatewayDb,
 	requested: TitleRow,
-	source: GroupSource,
 	verdicts: ReadonlyMap<string, CoverageVerdict>,
-): readonly ResolvedInstalment[] => {
+): readonly RequestedInstalment[] => {
 	if (!isIdentityService(requested.service)) {
 		return [];
 	}
@@ -362,30 +444,44 @@ const requestedInstalments = (
 		.from(serviceInstalments)
 		.where(eq(serviceInstalments.titleId, requested.id))
 		.all();
-	return spokes.flatMap((spoke): ResolvedInstalment[] => {
+	return spokes.flatMap((spoke): RequestedInstalment[] => {
 		const input = memberInstalment(member, spoke.locator);
 		if (input === undefined) {
 			return [];
 		}
 		const { links } = instalmentLinks(db, spoke.id, requested.service, verdicts);
-		return [{ input, links, source }];
+		return [{ input, links }];
 	});
 };
 
 const readTitle = (db: GatewayDb, identity: Identity, requested: TitleRow): GraphRead => {
 	const groupId = survivorGroupId(db, requested.groupId);
 	const group = takeFirst(db.select().from(titleGroups).where(eq(titleGroups.id, groupId)).all());
-	const source: GroupSource = group?.source ?? "release";
+	const rowSource: GroupSource = group?.source ?? "release";
 	const members = db
 		.select()
 		.from(serviceTitles)
 		.where(eq(serviceTitles.groupId, groupId))
+		.orderBy(serviceTitles.ordinal, serviceTitles.id)
 		.all();
 	const verdicts = coverageVerdicts(db, groupId);
-	const { links, refs } = titleLinks(db, requested, members, source, verdicts);
-	const instalments = requestedInstalments(db, requested, source, verdicts);
+	const { links, refs } = titleLinks(db, requested, members, rowSource, verdicts);
+	const resolvedInstalments = requestedInstalments(db, requested, verdicts);
+	// The served group source is the most curated across the group row and every one
+	// of its links; each entry then carries its own, the group's when unlinked.
+	const groupSource =
+		mostCurated([
+			rowSource,
+			...linkSources(links),
+			...resolvedInstalments.flatMap((entry) => linkSources(entry.links)),
+		]) ?? rowSource;
+	const instalments: readonly ResolvedInstalment[] = resolvedInstalments.map((entry) => ({
+		input: entry.input,
+		links: entry.links,
+		source: mostCurated(linkSources(entry.links)) ?? groupSource,
+	}));
 	return {
-		answer: { groupSource: source, input: identity, instalments, kind: "title", links },
+		answer: { groupSource, input: identity, instalments, kind: "title", links },
 		found: true,
 		pendingRef: refs.pendingRef,
 		reviewRef: refs.reviewRef,
