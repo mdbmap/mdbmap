@@ -210,6 +210,48 @@ describe("discoverStructuralGroup", () => {
 		});
 	});
 
+	it("orders a dateless member after every dated one", async () => {
+		// A member whose live first-air date is absent sorts last whatever `/find`
+		// order it arrived in, keeping the persisted ordinals deterministic.
+		const undatedRef = ref("tvdb", "775");
+		const undatedTitle: EnumeratedTitle = {
+			facts: factsOf([["tvdb#1", { title: "Total Drama" }]]),
+			stream: streamOf([regular("tvdb#1")]),
+		};
+		const clients: DiscoveryClients = {
+			externalIds: {
+				describe: (title) => {
+					if (title.serviceId === SHARED.serviceId) {
+						return { externalIds: [S1_REF], firstAirDate: "2007-07-08" };
+					}
+					if (title.serviceId === undatedRef.serviceId) {
+						return { externalIds: [SHARED], firstAirDate: undefined };
+					}
+					return { externalIds: [SHARED], firstAirDate: "2007-07-08" };
+				},
+			},
+			find: { find: () => [undatedRef, S1_REF] },
+			instalments: {
+				enumerate: (title) =>
+					title.serviceId === undatedRef.serviceId
+						? undatedTitle
+						: enumerateFor(title),
+			},
+		};
+
+		const outcome = await discoverStructuralGroup({
+			budget: 10,
+			clients,
+			shared: SHARED,
+		});
+		expect(outcome.kind).toBe("discovered");
+		if (outcome.kind !== "discovered") {
+			return;
+		}
+		const last = outcome.mappings.at(-1);
+		expect(last?.member).toStrictEqual(undatedRef);
+	});
+
 	it("reports no group when no candidate points back", async () => {
 		const clients: DiscoveryClients = {
 			externalIds: {

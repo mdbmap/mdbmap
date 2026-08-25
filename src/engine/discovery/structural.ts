@@ -27,7 +27,9 @@ interface TitleDescriptor {
 }
 
 // A title's instalment stream and the per-instalment facts the matcher scores
-// on. Fetching this is the "enumeration" the shared budget charges for.
+// on. Fetching this is the "enumeration" the shared budget charges for. Locators
+// must be unique across a title and the shared title it maps against — the
+// matcher's own per-alignment requirement — since facts merge by locator.
 interface EnumeratedTitle {
 	readonly facts: FactsByLocator;
 	readonly stream: InstalmentStream;
@@ -65,6 +67,8 @@ interface DiscoveryInput {
 // One pairing carried by a member's mapping: the shared title's instalments and
 // the member's instalments that cover the same content, recording which member
 // title each side belongs to (the member ref rides on the enclosing mapping).
+// Per-link confidence and provenance are out of scope here; the persistence path
+// reads them from the matcher's own per-link output.
 interface MappedPair {
 	readonly memberLocators: readonly InstalmentLocator[];
 	readonly sharedLocators: readonly InstalmentLocator[];
@@ -173,8 +177,8 @@ const matchMember = (
 	});
 
 // The placed pairs for a member, or `undefined` when the alignment could not
-// publish at all (a conflict or a truncated fetch) — which cannot be flattened to
-// "matched nothing" without turning the group partial.
+// publish at all — a conflict or a truncated fetch, distinct from a member that
+// published no pairs.
 const publishedPairs = (
 	result: LadderResult,
 ): readonly MappedPair[] | undefined => {
@@ -290,8 +294,7 @@ interface EnumerateInput {
 }
 
 // Fetch the shared title and every member once, charging each fetch to the one
-// shared budget. Refused before any fetch when the group will not fit, so a
-// partial group is never enumerated.
+// shared budget, and refuse before any fetch when the group will not fit.
 const enumerateGroup = async (
 	input: EnumerateInput,
 ): Promise<Enumeration | undefined> => {
