@@ -10,6 +10,9 @@ type Db = BaseSQLiteDatabase<"sync", unknown, Record<string, unknown>>;
 
 interface SessionUser {
 	id: string;
+	// Better-Auth admin plugin roles as its stored comma-separated string; absent
+	// when the resolver could not read one.
+	role?: string;
 }
 
 type ResolveSession = (

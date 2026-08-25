@@ -5,6 +5,7 @@ export {
 	convergeGroups,
 	planConverge,
 	readConvergeState,
+	readGroupSnapshot,
 	readRevalidationMembers,
 } from "./converge.ts";
 export type {

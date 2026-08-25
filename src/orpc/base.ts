@@ -18,7 +18,8 @@ const resolveViaBetterAuth: ResolveSession = async (headers) => {
 		if (!result) {
 			return;
 		}
-		return { id: result.user.id };
+		const role = result.user.role ?? undefined;
+		return role === undefined ? { id: result.user.id } : { id: result.user.id, role };
 	} catch {
 		// Auth is not yet wired to D1 (auth flows are outside this epic); an
 		// unavailable resolver degrades to unauthenticated rather than throwing.
@@ -50,4 +51,20 @@ const authed = pub.use(({ context, next }) => {
 	return next({ context: { user: context.user } });
 });
 
-export { authed, pub };
+const ADMIN_ROLE = "admin";
+
+// Better-Auth stores roles as a comma-separated string; the moderation surface
+// admits any user carrying the `admin` role.
+const hasAdminRole = (role: string | undefined): boolean =>
+	role !== undefined && role.split(",").some((entry) => entry.trim() === ADMIN_ROLE);
+
+const admin = authed.use(({ context, next }) => {
+	if (!hasAdminRole(context.user.role)) {
+		throw new ORPCError("FORBIDDEN", {
+			message: "Moderation is limited to administrators.",
+		});
+	}
+	return next({ context: { user: context.user } });
+});
+
+export { admin, authed, pub };

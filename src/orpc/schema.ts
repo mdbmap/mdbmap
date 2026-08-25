@@ -46,6 +46,25 @@ const SetRatingInput = z.object({
 	unit: RateableUnitInput,
 });
 
+const CandidateIdInput = z.object({
+	candidateId: z.number().int().min(1),
+});
+
+const SettleConflictInput = z.object({
+	accept: z.boolean(),
+	candidateId: z.number().int().min(1),
+	relationIndex: z.number().int().min(0).optional(),
+});
+
+const MarkMatchedInput = z.object({
+	groupId: z.number().int().min(1),
+});
+
+const ManualPairInput = z.object({
+	instalmentIds: z.array(z.number().int().min(1)).min(1),
+	unitId: z.number().int().min(1).optional(),
+});
+
 interface RateableUnit {
 	key: string;
 	kind: RateableUnitKind;
@@ -143,11 +162,15 @@ interface RatingResult {
 }
 
 export {
+	CandidateIdInput,
+	ManualPairInput,
+	MarkMatchedInput,
 	RateableUnitInput,
 	SetEpisodeWatchedInput,
 	SetRatingInput,
 	SetRewatchInput,
 	SetStatusInput,
+	SettleConflictInput,
 	TodoSchema,
 	WatchStatusSchema,
 	WorkGetInput,

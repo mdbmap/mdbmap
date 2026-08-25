@@ -36,7 +36,12 @@ const todos = sqliteTable("todos", {
 	title: text().notNull(),
 });
 
+// `role`, `banned`, `banReason` and `banExpires` back Better-Auth's admin plugin
+// (the moderation surface gates on `role` containing `admin`).
 const user = sqliteTable("user", {
+	banExpires: integer("ban_expires", { mode: "timestamp" }),
+	banReason: text("ban_reason"),
+	banned: integer({ mode: "boolean" }),
 	createdAt: timestamp("created_at"),
 	email: text().notNull().unique(),
 	emailVerified: integer("email_verified", { mode: "boolean" })
@@ -45,6 +50,7 @@ const user = sqliteTable("user", {
 	id: text().primaryKey(),
 	image: text(),
 	name: text().notNull(),
+	role: text().default("user"),
 	updatedAt: timestamp("updated_at").$onUpdateFn(() => new Date()),
 });
 
@@ -52,6 +58,7 @@ const session = sqliteTable("session", {
 	createdAt: timestamp("created_at"),
 	expiresAt: integer("expires_at", { mode: "timestamp" }).notNull(),
 	id: text().primaryKey(),
+	impersonatedBy: text("impersonated_by"),
 	ipAddress: text("ip_address"),
 	token: text().notNull().unique(),
 	updatedAt: timestamp("updated_at").$onUpdateFn(() => new Date()),
