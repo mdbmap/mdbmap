@@ -1,6 +1,7 @@
 import { eq } from "drizzle-orm";
 import { beforeEach, describe, expect, it } from "vitest";
 import {
+	candidateSubjectKey,
 	contentUnits,
 	instalmentAssertions,
 	pendingGroupCandidates,
@@ -227,7 +228,13 @@ describe("pending group candidates", () => {
 		};
 
 		db.insert(pendingGroupCandidates)
-			.values({ evidence, evidenceHash: "hash-a", kind: "structural", subject })
+			.values({
+				evidence,
+				evidenceHash: "hash-a",
+				kind: "structural",
+				subject,
+				subjectKey: candidateSubjectKey(subject),
+			})
 			.run();
 
 		expect(() =>
@@ -238,6 +245,7 @@ describe("pending group candidates", () => {
 					evidenceHash: "hash-a",
 					kind: "structural",
 					subject,
+					subjectKey: candidateSubjectKey(subject),
 				})
 				.run(),
 		).toThrow(/unique/iu);
@@ -250,6 +258,58 @@ describe("pending group candidates", () => {
 					evidenceHash: "hash-b",
 					kind: "structural",
 					subject,
+					subjectKey: candidateSubjectKey(subject),
+				})
+				.run(),
+		).not.toThrow();
+
+		expect(db.select().from(pendingGroupCandidates).all()).toHaveLength(2);
+	});
+
+	it("coalesces subjects that differ only in json key order", () => {
+		const evidence = {
+			competingGroupIds: [1, 2],
+			kind: "structural" as const,
+			proposedMembers: [{ service: "tmdb", serviceId: "1396" }],
+		};
+		const subject = { subjectType: "title" as const, titleId: 42 };
+		// Same logical subject, keys serialised in the opposite order.
+		const titleField = { titleId: 42 };
+		const reordered = { ...titleField, subjectType: "title" as const };
+
+		db.insert(pendingGroupCandidates)
+			.values({
+				evidence,
+				evidenceHash: "hash-a",
+				kind: "structural",
+				subject,
+				subjectKey: candidateSubjectKey(subject),
+			})
+			.run();
+
+		expect(() =>
+			db
+				.insert(pendingGroupCandidates)
+				.values({
+					evidence,
+					evidenceHash: "hash-a",
+					kind: "structural",
+					subject: reordered,
+					subjectKey: candidateSubjectKey(reordered),
+				})
+				.run(),
+		).toThrow(/unique/iu);
+
+		const other = { subjectType: "title" as const, titleId: 99 };
+		expect(() =>
+			db
+				.insert(pendingGroupCandidates)
+				.values({
+					evidence,
+					evidenceHash: "hash-a",
+					kind: "structural",
+					subject: other,
+					subjectKey: candidateSubjectKey(other),
 				})
 				.run(),
 		).not.toThrow();
@@ -285,6 +345,7 @@ describe("pending group candidates", () => {
 				evidenceHash: "hash-pair",
 				kind: "title-assertion-conflict",
 				subject,
+				subjectKey: candidateSubjectKey(subject),
 			})
 			.run();
 
@@ -308,6 +369,7 @@ describe("pending group candidates", () => {
 				kind: "structural",
 				status: "rejected",
 				subject,
+				subjectKey: candidateSubjectKey(subject),
 			})
 			.run();
 
@@ -319,6 +381,7 @@ describe("pending group candidates", () => {
 					evidenceHash: "hash-c",
 					kind: "structural",
 					subject,
+					subjectKey: candidateSubjectKey(subject),
 				})
 				.run(),
 		).not.toThrow();
