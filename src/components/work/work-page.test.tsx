@@ -61,6 +61,6 @@ describe("WorkPage shell", () => {
 		expect(html).toContain("Episodes");
 		expect(html).toContain("Cast");
 		expect(html).toContain("You");
-		expect(html).toContain("This part");
+		expect(html).toContain("this part");
 	});
 });

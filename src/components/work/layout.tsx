@@ -2,7 +2,7 @@ import type { WorkView } from "@/orpc/schema";
 
 import { Episodes } from "./episodes";
 import { Metadata } from "./metadata";
-import { SidebarPartSlot, SidebarYouSlot } from "./slots";
+import { PartPanel, YouBlock } from "./sidebar";
 
 function Synopsis({ text }: { text: string }) {
 	return (
@@ -30,8 +30,12 @@ function MainColumn({ work }: { work: WorkView }) {
 function Sidebar({ work }: { work: WorkView }) {
 	return (
 		<div className="flex flex-col gap-6 px-8 pt-6">
-			<SidebarYouSlot parts={work.parts} viewer={work.viewer} />
-			<SidebarPartSlot parts={work.parts} />
+			<YouBlock
+				continuityId={work.continuityId}
+				parts={work.parts}
+				viewer={work.viewer}
+			/>
+			<PartPanel continuityId={work.continuityId} parts={work.parts} />
 		</div>
 	);
 }
