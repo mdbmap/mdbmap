@@ -303,19 +303,21 @@ const aggregateSource = (links: readonly Link[]): GroupSource | undefined =>
 // Strip assertion evidence to bare counterpart ids and collapse the per-link
 // grades, statuses and sources into the single legacy triple. A service is emitted
 // only when it resolved to ids or is a completed empty search, so [] stays reserved
-// for known-no-counterpart (ADR-0001).
+// for known-no-counterpart (ADR-0001). A matched link whose spokes all failed to
+// format has no ids to emit, so it is excluded from the aggregate too: otherwise a
+// single such target would read as a success-shaped matched/exact triple.
 const toCompact = (response: MappingResponse): CompactResponse => {
 	const mappings: Partial<Record<Service, readonly string[]>> = {};
 	const links: Link[] = [];
 	for (const service of objectKeys(response.mappings)) {
 		const link = response.mappings[service];
-		if (link === undefined) {
+		if (link === undefined || (link.status === "matched" && link.counterparts.length === 0)) {
 			continue;
 		}
 		links.push(link);
 		if (link.status === "known-no-counterpart") {
 			mappings[service] = [];
-		} else if (link.status === "matched" && link.counterparts.length > 0) {
+		} else if (link.status === "matched") {
 			mappings[service] = link.counterparts.map((counterpart) => counterpart.id);
 		}
 	}
