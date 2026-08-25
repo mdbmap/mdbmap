@@ -38,6 +38,16 @@ export type {
 } from "./monotonic.ts";
 export { createT1StructureTier } from "./t1-structure.ts";
 export type { T1Input, T1Instalment, T1Segment, T1Side } from "./t1-structure.ts";
+export { createT2PatternTier } from "./t2-pattern.ts";
+export type {
+	EpisodeGroupOrdering,
+	EpisodeGroupProvider,
+	EpisodeGroupSummary,
+	T2Input,
+	T2Instalment,
+	T2Segment,
+	T2Side,
+} from "./t2-pattern.ts";
 export { createTier3, matchTier3 } from "./tier3.ts";
 export type {
 	FactsByLocator,
