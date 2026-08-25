@@ -15,6 +15,7 @@ import type {
 	CandidateSubject,
 	GroupSource,
 } from "@/db/engine-schema";
+import { survivorGroupId } from "@/engine/gateway";
 import type { GatewayDb } from "@/engine/gateway";
 import { isCuratedSource } from "@/engine/recompute";
 
@@ -128,19 +129,6 @@ const toRef = (member: ConvergeMember): ServiceRef => ({
 
 const takeFirst = <Row>(rows: readonly Row[]): Row | undefined => rows[0];
 
-// One hop to the group a retired id now resolves to (aliases are always flattened
-// on write, so a single lookup reaches a group that holds members).
-const resolveGroupId = (db: GatewayDb, groupId: number): number => {
-	const alias = takeFirst(
-		db
-			.select()
-			.from(titleGroupAliases)
-			.where(eq(titleGroupAliases.retiredGroupId, groupId))
-			.all(),
-	);
-	return alias?.survivorGroupId ?? groupId;
-};
-
 // A group is curated when a human has vouched for its membership, approved a
 // correction, or paired instalments by hand — exact evidence alone never outranks
 // any of these, so a collision with one queues a candidate instead of merging.
@@ -231,7 +219,7 @@ const readConvergeState = (
 			continue;
 		}
 		stored.push({
-			groupId: resolveGroupId(db, title.groupId),
+			groupId: survivorGroupId(db, title.groupId),
 			ordinal: member.ordinal,
 			service: member.service,
 			serviceId: member.serviceId,
@@ -288,7 +276,11 @@ const planConverge = (
 	state: ConvergeState,
 ): ConvergePlan => {
 	const { snapshots } = state.precondition;
-	if (snapshots.length === 0) {
+	// A discovery contained in a single stored group — or naming nothing stored —
+	// proposes no merge and asserts no cross-group grouping. Machine evidence that
+	// agrees with an existing grouping, curated or not, is not a collision; only a
+	// merge across two groups can contradict a human or an unnamed member.
+	if (snapshots.length < 2) {
 		return { kind: "no-op" };
 	}
 	if (snapshots.some((snapshot) => snapshot.curated)) {
@@ -301,17 +293,18 @@ const planConverge = (
 	if (holdsUnnamed) {
 		return candidatePlan(input, state, "unnamed-member");
 	}
-	if (snapshots.length === 1) {
-		return { kind: "no-op" };
-	}
 	const survivorId = Math.min(...snapshots.map((snapshot) => snapshot.groupId));
 	const retiredIds = snapshots
 		.map((snapshot) => snapshot.groupId)
 		.filter((groupId) => groupId !== survivorId)
 		.toSorted(ascending);
-	const ranked = [...state.stored].toSorted((left, right) =>
-		ascending(left.ordinal, right.ordinal),
-	);
+	// Rank the union by discovery order, breaking tied ordinals by service ref so
+	// the persisted positions are reproducible whichever member the resolve began
+	// from (ADR-0002's member-order tiebreak, applied where converge persists it).
+	const ranked = [...state.stored].toSorted((left, right) => {
+		const byOrdinal = ascending(left.ordinal, right.ordinal);
+		return byOrdinal === 0 ? byServiceRef(left, right) : byOrdinal;
+	});
 	const reassignments = ranked.map((member, index) => ({
 		ordinal: index,
 		titleId: member.titleId,
@@ -342,44 +335,28 @@ const reReadPrecondition = (
 });
 
 // Queue the collision, coalescing on the open partial unique index: a repeat or
-// concurrent discovery of the same subject and evidence finds the open row and
-// inserts nothing, so an admin reviews one question rather than a pile.
+// concurrent discovery of the same subject and evidence inserts nothing and the
+// outcome stays total, so an admin reviews one question rather than a pile.
 const commitCandidate = (
 	db: GatewayDb,
 	plan: Extract<ConvergePlan, { kind: "candidate" }>,
-): ConvergeOutcome =>
-	db.transaction((tx): ConvergeOutcome => {
-		const openDuplicate = and(
-			eq(pendingGroupCandidates.kind, "structural"),
-			eq(pendingGroupCandidates.subjectKey, plan.subjectKey),
-			eq(pendingGroupCandidates.evidenceHash, plan.evidenceHash),
-			eq(pendingGroupCandidates.status, "open"),
-		);
-		const existing = takeFirst(
-			tx
-				.select({ id: pendingGroupCandidates.id })
-				.from(pendingGroupCandidates)
-				.where(openDuplicate)
-				.all(),
-		);
-		if (existing !== undefined) {
-			return { candidateId: undefined, kind: "candidate" };
-		}
-		const inserted = takeFirst(
-			tx
-				.insert(pendingGroupCandidates)
-				.values({
-					evidence: plan.evidence,
-					evidenceHash: plan.evidenceHash,
-					kind: "structural",
-					subject: plan.subject,
-					subjectKey: plan.subjectKey,
-				})
-				.returning()
-				.all(),
-		);
-		return { candidateId: inserted?.id, kind: "candidate" };
-	});
+): ConvergeOutcome => {
+	const inserted = takeFirst(
+		db
+			.insert(pendingGroupCandidates)
+			.values({
+				evidence: plan.evidence,
+				evidenceHash: plan.evidenceHash,
+				kind: "structural",
+				subject: plan.subject,
+				subjectKey: plan.subjectKey,
+			})
+			.onConflictDoNothing()
+			.returning()
+			.all(),
+	);
+	return { candidateId: inserted?.id, kind: "candidate" };
+};
 
 const commitMerge = (
 	db: GatewayDb,

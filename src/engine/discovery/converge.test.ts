@@ -267,6 +267,24 @@ describe("converge with stored groups", () => {
 		expect(db.select().from(titleGroupAliases).all()).toEqual([]);
 	});
 
+	it("does nothing when the discovery agrees with a single curated group", () => {
+		// Machine evidence that lands exactly on a human's grouping is agreement, not
+		// a collision — it must not re-raise a candidate on every rediscovery.
+		const group = seedGroup(db, "manual");
+		seedTitle(db, group.id, "tmdb", "1", 0);
+		seedTitle(db, group.id, "imdb", "tt2", 1);
+
+		const outcome = convergeGroups(db, {
+			members: [
+				{ ordinal: 0, service: "tmdb", serviceId: "1" },
+				{ ordinal: 1, service: "imdb", serviceId: "tt2" },
+			],
+		});
+
+		expect(outcome).toEqual({ kind: "no-op" });
+		expect(db.select().from(pendingGroupCandidates).all()).toEqual([]);
+	});
+
 	it("does nothing when no named member is stored", () => {
 		const outcome = convergeGroups(db, {
 			members: [{ ordinal: 0, service: "tmdb", serviceId: "404" }],

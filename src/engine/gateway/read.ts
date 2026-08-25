@@ -531,5 +531,5 @@ const readGraph = (db: GatewayDb, identity: Identity): GraphRead => {
 		: readTitle(db, identity, requested);
 };
 
-export { readGraph };
+export { readGraph, survivorGroupId };
 export type { GatewayDb, GraphRead };
