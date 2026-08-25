@@ -401,3 +401,36 @@ describe("compact legacy shape", () => {
 		expect("anilist" in compact.mappings).toBe(false);
 	});
 });
+
+describe("compact aggregate excludes non-emittable links", () => {
+	// A single matched target whose one spoke is a flat-service instalment with a
+	// season number: formatId rejects it, so counterparts is empty and errors holds
+	// the failure. Nothing else backs the aggregate, so it must not compact to a
+	// success-shaped matched/exact triple with empty mappings.
+	const allSpokesErrored: InstalmentAnswer = {
+		input: episode(imdbTitle, 1, 1),
+		kind: "instalment",
+		links: new Map<Service, ResolvedLink>([
+			[
+				"anilist",
+				{
+					counterparts: [
+						{
+							assertionPath: [{ confidence: "high", source: "t3-episode" }],
+							confidence: "exact",
+							identity: episode({ id: "1400", service: "anilist" }, 2, 4),
+						},
+					],
+					status: "matched",
+				},
+			],
+		]),
+	};
+
+	it("never reads as a success when the only target's spokes all fail to format", () => {
+		const compact = toCompact(serialize(allSpokesErrored));
+		expect(compact.mappings).toStrictEqual({});
+		expect(compact.confidence).toBeUndefined();
+		expect(compact.status).toBe("unmatched");
+	});
+});
