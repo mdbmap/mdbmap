@@ -132,8 +132,9 @@ const timeOf = (date: string | undefined): number | undefined => {
 };
 
 // Member order: live first-air date ascending, dateless last, ties broken by
-// service then service id — so every member derives the same order whichever one
-// the resolve started from, and the persisted ordinals never depend on the dates.
+// service id (ADR-0002), then by service so a cross-service id collision still
+// resolves — so every member derives the same order whichever one the resolve
+// started from, and the persisted ordinals never depend on the dates.
 const byMemberOrder = (first: OrderedMember, second: OrderedMember): number => {
 	const firstTime = timeOf(first.firstAirDate);
 	const secondTime = timeOf(second.firstAirDate);
@@ -146,11 +147,11 @@ const byMemberOrder = (first: OrderedMember, second: OrderedMember): number => {
 		}
 		return firstTime - secondTime;
 	}
-	if (first.ref.service !== second.ref.service) {
-		return first.ref.service < second.ref.service ? -1 : 1;
-	}
 	if (first.ref.serviceId !== second.ref.serviceId) {
 		return first.ref.serviceId < second.ref.serviceId ? -1 : 1;
+	}
+	if (first.ref.service !== second.ref.service) {
+		return first.ref.service < second.ref.service ? -1 : 1;
 	}
 	return 0;
 };

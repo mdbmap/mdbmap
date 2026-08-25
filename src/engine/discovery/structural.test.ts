@@ -136,11 +136,12 @@ describe("discoverStructuralGroup", () => {
 			S2_REF,
 		]);
 		// The anchor is a member too: it shares season one's 2007 date and, tying,
-		// sorts first by service (imdb < tmdb), taking ordinal 0 — so the group's
-		// whole order is reproducible from ordinals with no stored dates.
-		expect(outcome.anchorOrdinal).toBe(0);
+		// sorts by service id (imdb's "tt0495146" after tmdb's "40733"), so season
+		// one takes ordinal 0 and the anchor 1 — the whole order is reproducible
+		// from ordinals with no stored dates.
+		expect(outcome.anchorOrdinal).toBe(1);
 		expect(outcome.mappings.map((mapping) => mapping.ordinal)).toStrictEqual([
-			1, 2,
+			0, 2,
 		]);
 
 		const [first, second] = outcome.mappings;
