@@ -35,7 +35,7 @@ const resolveMapping = async (
 	if (!parsed.ok) {
 		return { expected: parsed.error.expected, kind: "malformed" };
 	}
-	const read = readGraph(db, parsed.identity);
+	const read = await readGraph(db, parsed.identity);
 	if (!read.found) {
 		const cold = await coldLookup.begin(parsed.identity, profile);
 		return cold.kind === "miss"

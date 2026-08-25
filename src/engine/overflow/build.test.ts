@@ -87,7 +87,7 @@ describe("runOverflowBuild", () => {
 	});
 
 	it("publishes healthy services while an outage leaves its service pending", async () => {
-		const db = freshDb();
+		const db = await freshDb();
 		const continuity: ContinuityKey = "simkl:anime:42";
 		const revision = 1;
 
@@ -97,12 +97,8 @@ describe("runOverflowBuild", () => {
 			align: () => "aligned",
 			discover: () => "chain",
 			fetchTarget: (chain) => chain,
-			publish: () => {
-				completeCoverage(db, continuity, revision, service);
-			},
-			seedPending: () => {
-				seedPendingCoverage(db, continuity, revision, service);
-			},
+			publish: async () => completeCoverage(db, continuity, revision, service),
+			seedPending: async () => seedPendingCoverage(db, continuity, revision, service),
 		});
 		const kitsuDeps: BuildDeps<string, string, string> = {
 			align: () => "aligned",
@@ -110,12 +106,8 @@ describe("runOverflowBuild", () => {
 			fetchTarget: () => {
 				throw new Error("kitsu upstream unavailable");
 			},
-			publish: () => {
-				completeCoverage(db, continuity, revision, "kitsu");
-			},
-			seedPending: () => {
-				seedPendingCoverage(db, continuity, revision, "kitsu");
-			},
+			publish: async () => completeCoverage(db, continuity, revision, "kitsu"),
+			seedPending: async () => seedPendingCoverage(db, continuity, revision, "kitsu"),
 		};
 
 		await runOverflowBuild(
@@ -132,7 +124,7 @@ describe("runOverflowBuild", () => {
 			runOverflowBuild(workFor("kitsu"), kitsuDeps, recordingStep().step),
 		).rejects.toThrow("kitsu upstream unavailable");
 
-		const states = coverageStatesFor(db, continuity, revision);
+		const states = await coverageStatesFor(db, continuity, revision);
 		expect(states.get("anilist")).toBe("complete");
 		expect(states.get("mal")).toBe("complete");
 		expect(states.get("kitsu")).toBe("pending");

@@ -34,6 +34,15 @@ export default defineConfig({
 				"eslint/max-lines-per-function": "off",
 			},
 		},
+		{
+			// Node-only test harness: builds throwaway SQLite files for the async
+			// driver, so the Workers-runtime import ban does not apply.
+			files: ["src/db/test-helpers.ts"],
+			rules: {
+				"import/no-nodejs-modules": "off",
+				"node/no-sync": "off",
+			},
+		},
 	],
 	plugins: [
 		"eslint",

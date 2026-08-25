@@ -132,32 +132,32 @@ const takeFirst = <Row>(rows: readonly Row[]): Row | undefined => rows[0];
 // A group is curated when a human has vouched for its membership, approved a
 // correction, or paired instalments by hand — exact evidence alone never outranks
 // any of these, so a collision with one queues a candidate instead of merging.
-const isGroupCurated = (
+const isGroupCurated = async (
 	db: GatewayDb,
 	source: GroupSource,
 	memberTitleIds: readonly number[],
-): boolean => {
+): Promise<boolean> => {
 	if (source === "manual") {
 		return true;
 	}
 	if (memberTitleIds.length === 0) {
 		return false;
 	}
-	const spokeIds = db
+	const spokeRows = await db
 		.select({ id: serviceInstalments.id })
 		.from(serviceInstalments)
 		.where(inArray(serviceInstalments.titleId, [...memberTitleIds]))
-		.all()
-		.map((row) => row.id);
-	const curatedSpoke =
-		spokeIds.length > 0 &&
-		db
-			.select({ source: instalmentAssertions.source })
-			.from(instalmentAssertions)
-			.where(inArray(instalmentAssertions.instalmentId, spokeIds))
-			.all()
-			.some((row) => isCuratedSource(row.source));
-	if (curatedSpoke) {
+		.all();
+	const spokeIds = spokeRows.map((row) => row.id);
+	const spokeAssertions =
+		spokeIds.length === 0
+			? []
+			: await db
+					.select({ source: instalmentAssertions.source })
+					.from(instalmentAssertions)
+					.where(inArray(instalmentAssertions.instalmentId, spokeIds))
+					.all();
+	if (spokeAssertions.some((row) => isCuratedSource(row.source))) {
 		return true;
 	}
 	const titles = [...memberTitleIds];
@@ -165,33 +165,32 @@ const isGroupCurated = (
 		inArray(titleAssertions.titleAId, titles),
 		inArray(titleAssertions.titleBId, titles),
 	);
-	return db
+	const titleTouches = await db
 		.select({ source: titleAssertions.source })
 		.from(titleAssertions)
 		.where(touchesMember)
-		.all()
-		.some((row) => isCuratedSource(row.source));
+		.all();
+	return titleTouches.some((row) => isCuratedSource(row.source));
 };
 
-const readGroupSnapshot = (
+const readGroupSnapshot = async (
 	db: GatewayDb,
 	groupId: number,
-): GroupSnapshot | undefined => {
+): Promise<GroupSnapshot | undefined> => {
 	const group = takeFirst(
-		db.select().from(titleGroups).where(eq(titleGroups.id, groupId)).all(),
+		await db.select().from(titleGroups).where(eq(titleGroups.id, groupId)).all(),
 	);
 	if (group === undefined) {
 		return undefined;
 	}
-	const memberTitleIds = db
+	const memberRows = await db
 		.select({ id: serviceTitles.id })
 		.from(serviceTitles)
 		.where(eq(serviceTitles.groupId, groupId))
-		.all()
-		.map((row) => row.id)
-		.toSorted(ascending);
+		.all();
+	const memberTitleIds = memberRows.map((row) => row.id).toSorted(ascending);
 	return {
-		curated: isGroupCurated(db, group.source, memberTitleIds),
+		curated: await isGroupCurated(db, group.source, memberTitleIds),
 		groupId,
 		ladderComplete: group.ladderComplete,
 		memberTitleIds,
@@ -202,36 +201,44 @@ const readGroupSnapshot = (
 // Resolve every named member to its stored title and the group it now lives in,
 // then snapshot each involved group. Members with no stored title drop out — a
 // group is only involved through a member that already exists.
-const readConvergeState = (
+const resolveStoredMember = async (
+	db: GatewayDb,
+	member: ConvergeMember,
+): Promise<StoredMember | undefined> => {
+	const match = and(
+		eq(serviceTitles.service, member.service),
+		eq(serviceTitles.serviceId, member.serviceId),
+	);
+	const title = takeFirst(await db.select().from(serviceTitles).where(match).all());
+	if (title === undefined) {
+		return undefined;
+	}
+	return {
+		groupId: await survivorGroupId(db, title.groupId),
+		ordinal: member.ordinal,
+		service: member.service,
+		serviceId: member.serviceId,
+		titleId: title.id,
+	};
+};
+
+const readConvergeState = async (
 	db: GatewayDb,
 	input: ConvergeInput,
-): ConvergeState => {
-	const stored: StoredMember[] = [];
-	for (const member of input.members) {
-		const match = and(
-			eq(serviceTitles.service, member.service),
-			eq(serviceTitles.serviceId, member.serviceId),
-		);
-		const title = takeFirst(
-			db.select().from(serviceTitles).where(match).all(),
-		);
-		if (title === undefined) {
-			continue;
-		}
-		stored.push({
-			groupId: survivorGroupId(db, title.groupId),
-			ordinal: member.ordinal,
-			service: member.service,
-			serviceId: member.serviceId,
-			titleId: title.id,
-		});
-	}
+): Promise<ConvergeState> => {
+	const resolved = await Promise.all(
+		input.members.map(async (member) => resolveStoredMember(db, member)),
+	);
+	const stored = resolved.filter((member): member is StoredMember => member !== undefined);
 	const involvedIds = [...new Set(stored.map((member) => member.groupId))].toSorted(
 		ascending,
 	);
-	const snapshots = involvedIds
-		.map((groupId) => readGroupSnapshot(db, groupId))
-		.filter((snapshot): snapshot is GroupSnapshot => snapshot !== undefined);
+	const snapshotRows = await Promise.all(
+		involvedIds.map(async (groupId) => readGroupSnapshot(db, groupId)),
+	);
+	const snapshots = snapshotRows.filter(
+		(snapshot): snapshot is GroupSnapshot => snapshot !== undefined,
+	);
 	return { precondition: { snapshots }, stored };
 };
 
@@ -325,24 +332,30 @@ const canonical = (precondition: ConvergePrecondition): string =>
 // assumption. A concurrent converge that got there first has moved a membership or
 // curated a group, so the canonical mismatch aborts this batch untouched and the
 // next request re-plans against the winner.
-const reReadPrecondition = (
+const reReadPrecondition = async (
 	db: GatewayDb,
 	plan: Extract<ConvergePlan, { kind: "merge" }>,
-): ConvergePrecondition => ({
-	snapshots: plan.precondition.snapshots
-		.map((snapshot) => readGroupSnapshot(db, snapshot.groupId))
-		.filter((snapshot): snapshot is GroupSnapshot => snapshot !== undefined),
-});
+): Promise<ConvergePrecondition> => {
+	const snapshotRows = await Promise.all(
+		plan.precondition.snapshots.map(async (snapshot) =>
+			readGroupSnapshot(db, snapshot.groupId),
+		),
+	);
+	const snapshots = snapshotRows.filter(
+		(snapshot): snapshot is GroupSnapshot => snapshot !== undefined,
+	);
+	return { snapshots };
+};
 
 // Queue the collision, coalescing on the open partial unique index: a repeat or
 // concurrent discovery of the same subject and evidence inserts nothing and the
 // outcome stays total, so an admin reviews one question rather than a pile.
-const commitCandidate = (
+const commitCandidate = async (
 	db: GatewayDb,
 	plan: Extract<ConvergePlan, { kind: "candidate" }>,
-): ConvergeOutcome => {
+): Promise<ConvergeOutcome> => {
 	const inserted = takeFirst(
-		db
+		await db
 			.insert(pendingGroupCandidates)
 			.values({
 				evidence: plan.evidence,
@@ -358,16 +371,20 @@ const commitCandidate = (
 	return { candidateId: inserted?.id, kind: "candidate" };
 };
 
-const commitMerge = (
+const commitMerge = async (
 	db: GatewayDb,
 	plan: Extract<ConvergePlan, { kind: "merge" }>,
-): ConvergeOutcome =>
-	db.transaction((tx): ConvergeOutcome => {
-		if (canonical(reReadPrecondition(tx, plan)) !== canonical(plan.precondition)) {
+): Promise<ConvergeOutcome> => {
+	const outcome = await db.transaction(async (tx): Promise<ConvergeOutcome> => {
+		if (canonical(await reReadPrecondition(tx, plan)) !== canonical(plan.precondition)) {
 			return { kind: "aborted" };
 		}
+		// Statements run in series: concurrent writes on a single transaction
+		// connection corrupt it, so no-await-in-loop is waived inside the write.
 		for (const reassignment of plan.reassignments) {
-			tx.update(serviceTitles)
+			// oxlint-disable-next-line eslint/no-await-in-loop
+			await tx
+				.update(serviceTitles)
 				.set({ groupId: plan.survivorId, ordinal: reassignment.ordinal })
 				.where(eq(serviceTitles.id, reassignment.titleId))
 				.run();
@@ -376,18 +393,25 @@ const commitMerge = (
 		// re-pointed to the survivor, and each retired group aliases the survivor —
 		// one hop always reaches a group that holds members.
 		if (plan.retiredIds.length > 0) {
-			tx.update(titleGroupAliases)
+			await tx
+				.update(titleGroupAliases)
 				.set({ survivorGroupId: plan.survivorId })
 				.where(inArray(titleGroupAliases.survivorGroupId, [...plan.retiredIds]))
 				.run();
-			for (const retiredId of plan.retiredIds) {
-				tx.insert(titleGroupAliases)
-					.values({ retiredGroupId: retiredId, survivorGroupId: plan.survivorId })
-					.run();
-			}
+			await tx
+				.insert(titleGroupAliases)
+				.values(
+					plan.retiredIds.map((retiredId) => ({
+						retiredGroupId: retiredId,
+						survivorGroupId: plan.survivorId,
+					})),
+				)
+				.run();
 		}
 		return { kind: "merged", retiredIds: plan.retiredIds, survivorId: plan.survivorId };
 	});
+	return outcome;
+};
 
 // One stored member as a revalidation sees it: its title and the spokes it owns,
 // read in stored ordinal order. Revalidation never rediscovers — there is no find
@@ -404,38 +428,41 @@ interface RevalidationMember {
 // Read a stored group's exact membership in its stored ordinal order (ties by id),
 // each member carrying its spokes so a caller can remap without re-enumerating the
 // group from a shared external id.
-const readRevalidationMembers = (
+const readRevalidationMembers = async (
 	db: GatewayDb,
 	groupId: number,
-): readonly RevalidationMember[] => {
-	const titles = db
+): Promise<readonly RevalidationMember[]> => {
+	const titles = await db
 		.select()
 		.from(serviceTitles)
 		.where(eq(serviceTitles.groupId, groupId))
 		.orderBy(serviceTitles.ordinal, serviceTitles.id)
 		.all();
-	return titles.map((title) => ({
-		ordinal: title.ordinal,
-		service: title.service,
-		serviceId: title.serviceId,
-		spokeIds: db
-			.select({ id: serviceInstalments.id })
-			.from(serviceInstalments)
-			.where(eq(serviceInstalments.titleId, title.id))
-			.all()
-			.map((row) => row.id)
-			.toSorted(ascending),
-		titleId: title.id,
-	}));
+	return Promise.all(
+		titles.map(async (title) => {
+			const spokeRows = await db
+				.select({ id: serviceInstalments.id })
+				.from(serviceInstalments)
+				.where(eq(serviceInstalments.titleId, title.id))
+				.all();
+			return {
+				ordinal: title.ordinal,
+				service: title.service,
+				serviceId: title.serviceId,
+				spokeIds: spokeRows.map((row) => row.id).toSorted(ascending),
+				titleId: title.id,
+			};
+		}),
+	);
 };
 
 // Read, plan and commit a convergence in one pass. The read and plan stay exposed
 // so a caller can interleave its own reads before committing.
-const convergeGroups = (
+const convergeGroups = async (
 	db: GatewayDb,
 	input: ConvergeInput,
-): ConvergeOutcome => {
-	const plan = planConverge(input, readConvergeState(db, input));
+): Promise<ConvergeOutcome> => {
+	const plan = planConverge(input, await readConvergeState(db, input));
 	switch (plan.kind) {
 		case "candidate": {
 			return commitCandidate(db, plan);

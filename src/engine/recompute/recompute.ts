@@ -103,33 +103,35 @@ const takeFirst = <Row>(rows: readonly Row[]): Row | undefined => rows[0];
 
 // Read the group's stamp, membership and every assertion on its spokes, splitting
 // curated provenance from algorithmic so the plan can preserve the former.
-const readGroupState = (db: GatewayDb, groupId: number): GroupState | undefined => {
+const readGroupState = async (
+	db: GatewayDb,
+	groupId: number,
+): Promise<GroupState | undefined> => {
 	const group = takeFirst(
-		db.select().from(titleGroups).where(eq(titleGroups.id, groupId)).all(),
+		await db.select().from(titleGroups).where(eq(titleGroups.id, groupId)).all(),
 	);
 	if (group === undefined) {
 		return undefined;
 	}
-	const memberTitleIds = db
+	const memberRows = await db
 		.select({ id: serviceTitles.id })
 		.from(serviceTitles)
 		.where(eq(serviceTitles.groupId, groupId))
-		.all()
-		.map((row) => row.id)
-		.toSorted(ascending);
-	const spokeIds =
+		.all();
+	const memberTitleIds = memberRows.map((row) => row.id).toSorted(ascending);
+	const spokeRows =
 		memberTitleIds.length === 0
 			? []
-			: db
+			: await db
 					.select({ id: serviceInstalments.id })
 					.from(serviceInstalments)
 					.where(inArray(serviceInstalments.titleId, memberTitleIds))
-					.all()
-					.map((row) => row.id);
+					.all();
+	const spokeIds = spokeRows.map((row) => row.id);
 	const assertions =
 		spokeIds.length === 0
 			? []
-			: db
+			: await db
 					.select()
 					.from(instalmentAssertions)
 					.where(inArray(instalmentAssertions.instalmentId, spokeIds))
@@ -140,7 +142,7 @@ const readGroupState = (db: GatewayDb, groupId: number): GroupState | undefined 
 	const absences =
 		coveredUnitIds.length === 0
 			? []
-			: db
+			: await db
 					.select()
 					.from(absenceAssertions)
 					.where(inArray(absenceAssertions.unitId, coveredUnitIds))
@@ -203,9 +205,12 @@ const canonical = (precondition: RecomputePrecondition): string =>
 // Compare-and-set: re-read the group inside the write and abort untouched if any
 // precondition moved since the plan was made. Otherwise drop the algorithmic
 // links, write the surviving pairings as fresh units, and restamp the group.
-const commitRecompute = (db: GatewayDb, plan: RecomputePlan): RecomputeOutcome =>
-	db.transaction((tx): RecomputeOutcome => {
-		const current = readGroupState(tx, plan.precondition.groupId);
+const commitRecompute = async (
+	db: GatewayDb,
+	plan: RecomputePlan,
+): Promise<RecomputeOutcome> => {
+	const outcome = await db.transaction(async (tx): Promise<RecomputeOutcome> => {
+		const current = await readGroupState(tx, plan.precondition.groupId);
 		if (
 			current === undefined ||
 			canonical(current.precondition) !== canonical(plan.precondition)
@@ -213,42 +218,55 @@ const commitRecompute = (db: GatewayDb, plan: RecomputePlan): RecomputeOutcome =
 			return { kind: "aborted" };
 		}
 		if (plan.deleteAssertionIds.length > 0) {
-			tx.delete(instalmentAssertions)
+			await tx
+				.delete(instalmentAssertions)
 				.where(inArray(instalmentAssertions.id, [...plan.deleteAssertionIds]))
 				.run();
 		}
+		// Each unit is created before its links reference the new id, so the writes
+		// run in series: concurrent statements on a transaction connection corrupt
+		// it, and no-await-in-loop is waived inside the write.
 		for (const unit of plan.newUnits) {
-			const created = takeFirst(tx.insert(contentUnits).values({}).returning().all());
+			// oxlint-disable-next-line eslint/no-await-in-loop
+			const created = takeFirst(await tx.insert(contentUnits).values({}).returning().all());
 			if (created === undefined) {
 				throw new Error("content unit insert returned no row");
 			}
-			for (const link of unit.links) {
-				tx.insert(instalmentAssertions)
-					.values({
-						confidence: link.confidence,
-						instalmentId: link.spokeId,
-						source: link.source,
-						unitId: created.id,
-					})
+			const unitId = created.id;
+			if (unit.links.length > 0) {
+				// oxlint-disable-next-line eslint/no-await-in-loop
+				await tx
+					.insert(instalmentAssertions)
+					.values(
+						unit.links.map((link) => ({
+							confidence: link.confidence,
+							instalmentId: link.spokeId,
+							source: link.source,
+							unitId,
+						})),
+					)
 					.run();
 			}
 		}
 		if (plan.stamp !== undefined) {
-			tx.update(titleGroups)
+			await tx
+				.update(titleGroups)
 				.set({ ladderComplete: plan.stamp.ladderComplete, source: plan.stamp.source })
 				.where(eq(titleGroups.id, plan.precondition.groupId))
 				.run();
 		}
 		return { kind: "applied", plan };
 	});
+	return outcome;
+};
 
 // Read, plan and commit in one pass for callers with no correction window to
 // model. The plan and commit stay separate so a caller can interleave reads.
-const recomputeGroup = (
+const recomputeGroup = async (
 	db: GatewayDb,
 	input: RecomputeInput,
-): RecomputeOutcome => {
-	const state = readGroupState(db, input.groupId);
+): Promise<RecomputeOutcome> => {
+	const state = await readGroupState(db, input.groupId);
 	if (state === undefined) {
 		return { kind: "aborted" };
 	}

@@ -5,8 +5,9 @@ import type { EngineRead } from "@/engine";
 
 import type { Providers } from "./providers";
 
-// Accepts both the schema-typed production db and a schemaless in-memory db.
-type Db = BaseSQLiteDatabase<"sync", unknown, Record<string, unknown>>;
+// The runtime db is async (D1 in production, an in-memory libsql db in tests).
+// The union stays permissive so any schema-typed or schemaless driver assigns.
+type Db = BaseSQLiteDatabase<"sync" | "async", unknown, Record<string, unknown>>;
 
 interface SessionUser {
 	id: string;

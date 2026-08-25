@@ -18,7 +18,7 @@ import type { ColdLookup } from "./cold-lookup.ts";
 import { runMapping } from "./handler.ts";
 import { resolveMapping } from "./resolve.ts";
 
-type Db = ReturnType<typeof freshDb>;
+type Db = Awaited<ReturnType<typeof freshDb>>;
 
 const one = <Row>(rows: readonly Row[]): Row => {
 	const [row] = rows;
@@ -28,16 +28,17 @@ const one = <Row>(rows: readonly Row[]): Row => {
 	return row;
 };
 
-const seedGroup = (db: Db, source: GroupSource = "t1-structure") =>
-	one(db.insert(titleGroups).values({ source }).returning().all());
+const seedGroup = async (db: Db, source: GroupSource = "t1-structure") =>
+	one(await db.insert(titleGroups).values({ source }).returning().all());
 
-const seedTitle = (db: Db, groupId: number, service: string, serviceId: string) =>
+const seedTitle = async (db: Db, groupId: number, service: string, serviceId: string) =>
 	one(
-		db.insert(serviceTitles).values({ groupId, service, serviceId }).returning().all(),
+		await db.insert(serviceTitles).values({ groupId, service, serviceId }).returning().all(),
 	);
 
-const linkTitles = (db: Db, firstId: number, secondId: number, source: GroupSource) => {
-	db.insert(titleAssertions)
+const linkTitles = async (db: Db, firstId: number, secondId: number, source: GroupSource) => {
+	await db
+		.insert(titleAssertions)
 		.values({
 			confidence: "high",
 			source: source === "release" ? "t1-structure" : source,
@@ -47,8 +48,14 @@ const linkTitles = (db: Db, firstId: number, secondId: number, source: GroupSour
 		.run();
 };
 
-const seedCoverage = (db: Db, groupId: number, targetService: string, state: CoverageState) => {
-	db.insert(serviceCoverages)
+const seedCoverage = async (
+	db: Db,
+	groupId: number,
+	targetService: string,
+	state: CoverageState,
+) => {
+	await db
+		.insert(serviceCoverages)
 		.values({
 			baselineContinuity: `group:${groupId}`,
 			revision: 1,
@@ -58,19 +65,21 @@ const seedCoverage = (db: Db, groupId: number, targetService: string, state: Cov
 		.run();
 };
 
-const seedInstalment = (db: Db, titleId: number, locator: string) =>
+const seedInstalment = async (db: Db, titleId: number, locator: string) =>
 	one(
-		db
+		await db
 			.insert(serviceInstalments)
 			.values({ locator, locatorKind: "position", titleId })
 			.returning()
 			.all(),
 	);
 
-const seedUnit = (db: Db) => one(db.insert(contentUnits).values({}).returning().all());
+const seedUnit = async (db: Db) =>
+	one(await db.insert(contentUnits).values({}).returning().all());
 
-const coverInstalment = (db: Db, instalmentId: number, unitId: number) => {
-	db.insert(instalmentAssertions)
+const coverInstalment = async (db: Db, instalmentId: number, unitId: number) => {
+	await db
+		.insert(instalmentAssertions)
 		.values({ confidence: "high", instalmentId, source: "t3-episode", unitId })
 		.run();
 };
@@ -78,15 +87,15 @@ const coverInstalment = (db: Db, instalmentId: number, unitId: number) => {
 describe("mapping gateway resolution", () => {
 	let db: Db;
 
-	beforeEach(() => {
-		db = freshDb();
+	beforeEach(async () => {
+		db = await freshDb();
 	});
 
 	it("returns 200 with counterpart arrays for a known id", async () => {
-		const group = seedGroup(db);
-		const source = seedTitle(db, group.id, "tmdb", "movie:603");
-		const target = seedTitle(db, group.id, "imdb", "tt0133093");
-		linkTitles(db, source.id, target.id, "t1-structure");
+		const group = await seedGroup(db);
+		const source = await seedTitle(db, group.id, "tmdb", "movie:603");
+		const target = await seedTitle(db, group.id, "imdb", "tt0133093");
+		await linkTitles(db, source.id, target.id, "t1-structure");
 
 		const outcome = await resolveMapping(db, "movie", "tmdb:603", noColdLookup);
 
@@ -101,10 +110,10 @@ describe("mapping gateway resolution", () => {
 	});
 
 	it("maps in the reverse direction from the same graph", async () => {
-		const group = seedGroup(db);
-		const source = seedTitle(db, group.id, "tmdb", "movie:603");
-		const target = seedTitle(db, group.id, "imdb", "tt0133093");
-		linkTitles(db, source.id, target.id, "t1-structure");
+		const group = await seedGroup(db);
+		const source = await seedTitle(db, group.id, "tmdb", "movie:603");
+		const target = await seedTitle(db, group.id, "imdb", "tt0133093");
+		await linkTitles(db, source.id, target.id, "t1-structure");
 
 		const outcome = await resolveMapping(db, "movie", "tt0133093", noColdLookup);
 
@@ -118,8 +127,8 @@ describe("mapping gateway resolution", () => {
 	});
 
 	it("treats a known id with no counterpart as a successful empty result", async () => {
-		const group = seedGroup(db);
-		seedTitle(db, group.id, "tmdb", "movie:603");
+		const group = await seedGroup(db);
+		await seedTitle(db, group.id, "tmdb", "movie:603");
 
 		const outcome = await resolveMapping(db, "movie", "tmdb:603", noColdLookup);
 
@@ -171,9 +180,9 @@ describe("mapping gateway resolution", () => {
 	});
 
 	it("returns 409 with an opaque review reference for a blocking conflict", async () => {
-		const group = seedGroup(db);
-		seedTitle(db, group.id, "tmdb", "movie:603");
-		seedCoverage(db, group.id, "imdb", "conflict");
+		const group = await seedGroup(db);
+		await seedTitle(db, group.id, "tmdb", "movie:603");
+		await seedCoverage(db, group.id, "imdb", "conflict");
 
 		const outcome = await resolveMapping(db, "movie", "tmdb:603", noColdLookup);
 
@@ -186,9 +195,9 @@ describe("mapping gateway resolution", () => {
 	});
 
 	it("returns 202 with a status URL for a seeded pending build", async () => {
-		const group = seedGroup(db);
-		seedTitle(db, group.id, "tmdb", "movie:603");
-		seedCoverage(db, group.id, "imdb", "pending");
+		const group = await seedGroup(db);
+		await seedTitle(db, group.id, "tmdb", "movie:603");
+		await seedCoverage(db, group.id, "imdb", "pending");
 
 		const outcome = await resolveMapping(db, "movie", "tmdb:603", noColdLookup);
 
@@ -202,11 +211,11 @@ describe("mapping gateway resolution", () => {
 	});
 
 	it("serves a usable target at 200 while another target is still pending", async () => {
-		const group = seedGroup(db);
-		const source = seedTitle(db, group.id, "tmdb", "movie:603");
-		const target = seedTitle(db, group.id, "imdb", "tt0133093");
-		linkTitles(db, source.id, target.id, "t1-structure");
-		seedCoverage(db, group.id, "tvdb", "pending");
+		const group = await seedGroup(db);
+		const source = await seedTitle(db, group.id, "tmdb", "movie:603");
+		const target = await seedTitle(db, group.id, "imdb", "tt0133093");
+		await linkTitles(db, source.id, target.id, "t1-structure");
+		await seedCoverage(db, group.id, "tvdb", "pending");
 
 		const outcome = await resolveMapping(db, "movie", "tmdb:603", noColdLookup);
 
@@ -219,12 +228,13 @@ describe("mapping gateway resolution", () => {
 	});
 
 	it("serves a stale complete revision even while a replacement build runs", async () => {
-		const group = seedGroup(db);
-		const source = seedTitle(db, group.id, "tmdb", "movie:603");
-		const target = seedTitle(db, group.id, "imdb", "tt0133093");
-		linkTitles(db, source.id, target.id, "t1-structure");
-		seedCoverage(db, group.id, "imdb", "complete");
-		db.insert(serviceCoverages)
+		const group = await seedGroup(db);
+		const source = await seedTitle(db, group.id, "tmdb", "movie:603");
+		const target = await seedTitle(db, group.id, "imdb", "tt0133093");
+		await linkTitles(db, source.id, target.id, "t1-structure");
+		await seedCoverage(db, group.id, "imdb", "complete");
+		await db
+			.insert(serviceCoverages)
 			.values({
 				baselineContinuity: `group:${group.id}`,
 				revision: 2,
@@ -239,12 +249,13 @@ describe("mapping gateway resolution", () => {
 	});
 
 	it("follows a group alias to the survivor's members", async () => {
-		const survivor = seedGroup(db);
-		const retired = seedGroup(db);
-		const source = seedTitle(db, retired.id, "tmdb", "movie:603");
-		const target = seedTitle(db, survivor.id, "imdb", "tt0133093");
-		linkTitles(db, source.id, target.id, "t1-structure");
-		db.insert(titleGroupAliases)
+		const survivor = await seedGroup(db);
+		const retired = await seedGroup(db);
+		const source = await seedTitle(db, retired.id, "tmdb", "movie:603");
+		const target = await seedTitle(db, survivor.id, "imdb", "tt0133093");
+		await linkTitles(db, source.id, target.id, "t1-structure");
+		await db
+			.insert(titleGroupAliases)
 			.values({ retiredGroupId: retired.id, survivorGroupId: survivor.id })
 			.run();
 
@@ -263,15 +274,15 @@ describe("mapping gateway resolution", () => {
 describe("mapping gateway HTTP responses", () => {
 	let db: Db;
 
-	beforeEach(() => {
-		db = freshDb();
+	beforeEach(async () => {
+		db = await freshDb();
 	});
 
 	it("answers a known movie id with a 200 JSON body", async () => {
-		const group = seedGroup(db);
-		const source = seedTitle(db, group.id, "tmdb", "movie:603");
-		const target = seedTitle(db, group.id, "imdb", "tt0133093");
-		linkTitles(db, source.id, target.id, "t1-structure");
+		const group = await seedGroup(db);
+		const source = await seedTitle(db, group.id, "tmdb", "movie:603");
+		const target = await seedTitle(db, group.id, "imdb", "tt0133093");
+		await linkTitles(db, source.id, target.id, "t1-structure");
 
 		const response = await runMapping("movie", "tmdb:603", { db });
 
@@ -280,9 +291,9 @@ describe("mapping gateway HTTP responses", () => {
 	});
 
 	it("sets Retry-After and 202 for a pending build", async () => {
-		const group = seedGroup(db);
-		seedTitle(db, group.id, "tmdb", "movie:603");
-		seedCoverage(db, group.id, "imdb", "pending");
+		const group = await seedGroup(db);
+		await seedTitle(db, group.id, "tmdb", "movie:603");
+		await seedCoverage(db, group.id, "imdb", "pending");
 
 		const response = await runMapping("movie", "tmdb:603", { db });
 
@@ -291,9 +302,9 @@ describe("mapping gateway HTTP responses", () => {
 	});
 
 	it("omits Retry-After and returns 409 for a conflict", async () => {
-		const group = seedGroup(db);
-		seedTitle(db, group.id, "tmdb", "movie:603");
-		seedCoverage(db, group.id, "imdb", "conflict");
+		const group = await seedGroup(db);
+		await seedTitle(db, group.id, "tmdb", "movie:603");
+		await seedCoverage(db, group.id, "imdb", "conflict");
 
 		const response = await runMapping("movie", "tmdb:603", { db });
 
@@ -313,31 +324,32 @@ describe("mapping gateway HTTP responses", () => {
 describe("mapping gateway instalment resolution", () => {
 	let db: Db;
 
-	beforeEach(() => {
-		db = freshDb();
+	beforeEach(async () => {
+		db = await freshDb();
 	});
 
 	it("maps an episode to its counterpart instalment through a shared content unit", async () => {
-		const group = seedGroup(db);
-		const source = seedTitle(db, group.id, "tmdb", "tv:1396");
-		const target = seedTitle(db, group.id, "imdb", "tt0903747");
-		linkTitles(db, source.id, target.id, "t1-structure");
+		const group = await seedGroup(db);
+		const source = await seedTitle(db, group.id, "tmdb", "tv:1396");
+		const target = await seedTitle(db, group.id, "imdb", "tt0903747");
+		await linkTitles(db, source.id, target.id, "t1-structure");
 		const sourceEpisode = one(
-			db
+			await db
 				.insert(serviceInstalments)
 				.values({ locator: "s1e1", locatorKind: "position", titleId: source.id })
 				.returning()
 				.all(),
 		);
 		const targetEpisode = one(
-			db
+			await db
 				.insert(serviceInstalments)
 				.values({ locator: "s1e1", locatorKind: "position", titleId: target.id })
 				.returning()
 				.all(),
 		);
-		const unit = one(db.insert(contentUnits).values({}).returning().all());
-		db.insert(instalmentAssertions)
+		const unit = one(await db.insert(contentUnits).values({}).returning().all());
+		await db
+			.insert(instalmentAssertions)
 			.values(
 				[sourceEpisode, targetEpisode].map((episode) => ({
 					confidence: "high" as const,
@@ -361,12 +373,13 @@ describe("mapping gateway instalment resolution", () => {
 	});
 
 	it("returns 202 for an episodic id whose anchor group has a pending target", async () => {
-		const group = seedGroup(db);
-		const source = seedTitle(db, group.id, "tmdb", "tv:1396");
-		db.insert(serviceInstalments)
+		const group = await seedGroup(db);
+		const source = await seedTitle(db, group.id, "tmdb", "tv:1396");
+		await db
+			.insert(serviceInstalments)
 			.values({ locator: "s1e1", locatorKind: "position", titleId: source.id })
 			.run();
-		seedCoverage(db, group.id, "imdb", "pending");
+		await seedCoverage(db, group.id, "imdb", "pending");
 
 		const outcome = await resolveMapping(db, "series", "tmdb:1396:1:1", noColdLookup);
 
@@ -379,12 +392,13 @@ describe("mapping gateway instalment resolution", () => {
 	});
 
 	it("returns 409 for an episodic id whose anchor group has a blocking conflict", async () => {
-		const group = seedGroup(db);
-		const source = seedTitle(db, group.id, "tmdb", "tv:1396");
-		db.insert(serviceInstalments)
+		const group = await seedGroup(db);
+		const source = await seedTitle(db, group.id, "tmdb", "tv:1396");
+		await db
+			.insert(serviceInstalments)
 			.values({ locator: "s1e1", locatorKind: "position", titleId: source.id })
 			.run();
-		seedCoverage(db, group.id, "imdb", "conflict");
+		await seedCoverage(db, group.id, "imdb", "conflict");
 
 		const outcome = await resolveMapping(db, "series", "tmdb:1396:1:1", noColdLookup);
 
@@ -400,20 +414,20 @@ describe("mapping gateway instalment resolution", () => {
 describe("mapping gateway title-level instalments", () => {
 	let db: Db;
 
-	beforeEach(() => {
-		db = freshDb();
+	beforeEach(async () => {
+		db = await freshDb();
 	});
 
 	it("carries the requested title's instalments with per-instalment mappings", async () => {
-		const group = seedGroup(db);
-		const source = seedTitle(db, group.id, "tmdb", "tv:1396");
-		const target = seedTitle(db, group.id, "imdb", "tt0903747");
-		linkTitles(db, source.id, target.id, "t1-structure");
-		const sourceEpisode = seedInstalment(db, source.id, "s1e1");
-		const targetEpisode = seedInstalment(db, target.id, "s1e1");
-		const unit = seedUnit(db);
-		coverInstalment(db, sourceEpisode.id, unit.id);
-		coverInstalment(db, targetEpisode.id, unit.id);
+		const group = await seedGroup(db);
+		const source = await seedTitle(db, group.id, "tmdb", "tv:1396");
+		const target = await seedTitle(db, group.id, "imdb", "tt0903747");
+		await linkTitles(db, source.id, target.id, "t1-structure");
+		const sourceEpisode = await seedInstalment(db, source.id, "s1e1");
+		const targetEpisode = await seedInstalment(db, target.id, "s1e1");
+		const unit = await seedUnit(db);
+		await coverInstalment(db, sourceEpisode.id, unit.id);
+		await coverInstalment(db, targetEpisode.id, unit.id);
 
 		const outcome = await resolveMapping(db, "series", "tmdb:1396", noColdLookup);
 
@@ -430,18 +444,18 @@ describe("mapping gateway title-level instalments", () => {
 	});
 
 	it("names the supporting instalment for a non-coextensive counterpart", async () => {
-		const group = seedGroup(db);
-		const source = seedTitle(db, group.id, "tmdb", "tv:1396");
-		const target = seedTitle(db, group.id, "imdb", "tt0903747");
-		linkTitles(db, source.id, target.id, "t1-structure");
-		const firstUnit = seedUnit(db);
-		const secondUnit = seedUnit(db);
-		const sourceOne = seedInstalment(db, source.id, "s1e1");
-		const sourceTwo = seedInstalment(db, source.id, "s1e2");
-		const targetOne = seedInstalment(db, target.id, "s1e1");
-		coverInstalment(db, sourceOne.id, firstUnit.id);
-		coverInstalment(db, sourceTwo.id, secondUnit.id);
-		coverInstalment(db, targetOne.id, firstUnit.id);
+		const group = await seedGroup(db);
+		const source = await seedTitle(db, group.id, "tmdb", "tv:1396");
+		const target = await seedTitle(db, group.id, "imdb", "tt0903747");
+		await linkTitles(db, source.id, target.id, "t1-structure");
+		const firstUnit = await seedUnit(db);
+		const secondUnit = await seedUnit(db);
+		const sourceOne = await seedInstalment(db, source.id, "s1e1");
+		const sourceTwo = await seedInstalment(db, source.id, "s1e2");
+		const targetOne = await seedInstalment(db, target.id, "s1e1");
+		await coverInstalment(db, sourceOne.id, firstUnit.id);
+		await coverInstalment(db, sourceTwo.id, secondUnit.id);
+		await coverInstalment(db, targetOne.id, firstUnit.id);
 
 		const outcome = await resolveMapping(db, "series", "tmdb:1396", noColdLookup);
 
@@ -459,18 +473,18 @@ describe("mapping gateway title-level instalments", () => {
 	});
 
 	it("names the counterpart instalment when the request is a strict subset of it", async () => {
-		const group = seedGroup(db);
-		const source = seedTitle(db, group.id, "tmdb", "tv:1396");
-		const target = seedTitle(db, group.id, "imdb", "tt0903747");
-		linkTitles(db, source.id, target.id, "t1-structure");
-		const firstUnit = seedUnit(db);
-		const secondUnit = seedUnit(db);
-		const sourceOne = seedInstalment(db, source.id, "s1e1");
-		const targetOne = seedInstalment(db, target.id, "s1e1");
-		const targetTwo = seedInstalment(db, target.id, "s1e2");
-		coverInstalment(db, sourceOne.id, firstUnit.id);
-		coverInstalment(db, targetOne.id, firstUnit.id);
-		coverInstalment(db, targetTwo.id, secondUnit.id);
+		const group = await seedGroup(db);
+		const source = await seedTitle(db, group.id, "tmdb", "tv:1396");
+		const target = await seedTitle(db, group.id, "imdb", "tt0903747");
+		await linkTitles(db, source.id, target.id, "t1-structure");
+		const firstUnit = await seedUnit(db);
+		const secondUnit = await seedUnit(db);
+		const sourceOne = await seedInstalment(db, source.id, "s1e1");
+		const targetOne = await seedInstalment(db, target.id, "s1e1");
+		const targetTwo = await seedInstalment(db, target.id, "s1e2");
+		await coverInstalment(db, sourceOne.id, firstUnit.id);
+		await coverInstalment(db, targetOne.id, firstUnit.id);
+		await coverInstalment(db, targetTwo.id, secondUnit.id);
 
 		const outcome = await resolveMapping(db, "series", "tmdb:1396", noColdLookup);
 
@@ -484,16 +498,16 @@ describe("mapping gateway title-level instalments", () => {
 	});
 
 	it("serves the derived group source and per-instalment sources with fallback", async () => {
-		const group = seedGroup(db, "t1-structure");
-		const source = seedTitle(db, group.id, "tmdb", "tv:1396");
-		const target = seedTitle(db, group.id, "imdb", "tt0903747");
-		linkTitles(db, source.id, target.id, "manual");
-		const sourceEpisode = seedInstalment(db, source.id, "s1e1");
-		const targetEpisode = seedInstalment(db, target.id, "s1e1");
-		const unit = seedUnit(db);
-		coverInstalment(db, sourceEpisode.id, unit.id);
-		coverInstalment(db, targetEpisode.id, unit.id);
-		seedInstalment(db, source.id, "s1e2");
+		const group = await seedGroup(db, "t1-structure");
+		const source = await seedTitle(db, group.id, "tmdb", "tv:1396");
+		const target = await seedTitle(db, group.id, "imdb", "tt0903747");
+		await linkTitles(db, source.id, target.id, "manual");
+		const sourceEpisode = await seedInstalment(db, source.id, "s1e1");
+		const targetEpisode = await seedInstalment(db, target.id, "s1e1");
+		const unit = await seedUnit(db);
+		await coverInstalment(db, sourceEpisode.id, unit.id);
+		await coverInstalment(db, targetEpisode.id, unit.id);
+		await seedInstalment(db, source.id, "s1e2");
 
 		const outcome = await resolveMapping(db, "series", "tmdb:1396", noColdLookup);
 
@@ -517,14 +531,14 @@ describe("mapping gateway title-level instalments", () => {
 describe("mapping gateway assertion integrity", () => {
 	let db: Db;
 
-	beforeEach(() => {
-		db = freshDb();
+	beforeEach(async () => {
+		db = await freshDb();
 	});
 
 	it("does not fabricate a high assertion for a group-co-membership-only counterpart", async () => {
-		const group = seedGroup(db, "t1-structure");
-		seedTitle(db, group.id, "tmdb", "movie:603");
-		seedTitle(db, group.id, "imdb", "tt0133093");
+		const group = await seedGroup(db, "t1-structure");
+		await seedTitle(db, group.id, "tmdb", "movie:603");
+		await seedTitle(db, group.id, "imdb", "tt0133093");
 
 		const outcome = await resolveMapping(db, "movie", "tmdb:603", noColdLookup);
 

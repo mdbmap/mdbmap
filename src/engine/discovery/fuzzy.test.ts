@@ -17,7 +17,7 @@ import type {
 	FuzzySearchResult,
 } from "./fuzzy.ts";
 
-type Db = ReturnType<typeof freshDb>;
+type Db = Awaited<ReturnType<typeof freshDb>>;
 
 const one = <Row>(rows: readonly Row[]): Row => {
 	const [row] = rows;
@@ -27,12 +27,22 @@ const one = <Row>(rows: readonly Row[]): Row => {
 	return row;
 };
 
-const seedGroup = (db: Db, source: GroupSource = "t1-structure") =>
-	one(db.insert(titleGroups).values({ source }).returning().all());
+const seedGroup = async (db: Db, source: GroupSource = "t1-structure") =>
+	one(await db.insert(titleGroups).values({ source }).returning().all());
 
-const seedTitle = (db: Db, groupId: number, service: string, serviceId: string, ordinal = 0) =>
+const seedTitle = async (
+	db: Db,
+	groupId: number,
+	service: string,
+	serviceId: string,
+	ordinal = 0,
+) =>
 	one(
-		db.insert(serviceTitles).values({ groupId, ordinal, service, serviceId }).returning().all(),
+		await db
+			.insert(serviceTitles)
+			.values({ groupId, ordinal, service, serviceId })
+			.returning()
+			.all(),
 	);
 
 // A stub client that answers every search with the same fixed result set: the
@@ -43,10 +53,12 @@ const clientOf = (results: readonly FuzzySearchResult[]): FuzzySearchClient => (
 
 const bebop = "Cowboy Bebop";
 
-const candidates = (db: Db) => db.select().from(pendingGroupCandidates).all();
+const candidates = async (db: Db) => db.select().from(pendingGroupCandidates).all();
 
-const groupSource = (db: Db, groupId: number): GroupSource =>
-	one(db.select().from(titleGroups).where(eq(titleGroups.id, groupId)).all()).source;
+const groupSource = async (db: Db, groupId: number): Promise<GroupSource> => {
+	const row = one(await db.select().from(titleGroups).where(eq(titleGroups.id, groupId)).all());
+	return row.source;
+};
 
 const openCandidate = (outcome: FuzzyDiscoveryOutcome): number => {
 	if (outcome.kind !== "queued" || outcome.candidateId === undefined) {
@@ -58,13 +70,13 @@ const openCandidate = (outcome: FuzzyDiscoveryOutcome): number => {
 describe("fuzzy candidates", () => {
 	let db: Db;
 
-	beforeEach(() => {
-		db = freshDb();
+	beforeEach(async () => {
+		db = await freshDb();
 	});
 
 	it("queues a fuzzy-group with three buckets and leaves membership unchanged", async () => {
-		const group = seedGroup(db);
-		const subject = seedTitle(db, group.id, "tmdb", "1");
+		const group = await seedGroup(db);
+		const subject = await seedTitle(db, group.id, "tmdb", "1");
 		const clients: FuzzySearchClients = {
 			imdb: clientOf([
 				{ serviceId: "tt10", title: bebop, year: 1998 },
@@ -90,7 +102,7 @@ describe("fuzzy candidates", () => {
 		);
 
 		expect(outcome.kind).toBe("queued");
-		const rows = candidates(db);
+		const rows = await candidates(db);
 		expect(rows).toHaveLength(1);
 		const row = one(rows);
 		expect(row.kind).toBe("fuzzy-group");
@@ -111,13 +123,13 @@ describe("fuzzy candidates", () => {
 
 		// The resolve is unchanged: no title joined the group, nothing was written
 		// beyond the candidate row.
-		expect(db.select().from(serviceTitles).all()).toHaveLength(1);
-		expect(groupSource(db, group.id)).toBe("t1-structure");
+		expect(await db.select().from(serviceTitles).all()).toHaveLength(1);
+		expect(await groupSource(db, group.id)).toBe("t1-structure");
 	});
 
 	it("queues nothing when no hit clears the bar", async () => {
-		const group = seedGroup(db);
-		const subject = seedTitle(db, group.id, "tmdb", "1");
+		const group = await seedGroup(db);
+		const subject = await seedTitle(db, group.id, "tmdb", "1");
 		const clients: FuzzySearchClients = {
 			imdb: clientOf([{ serviceId: "tt10", title: "Space Dandy", year: 2014 }]),
 		};
@@ -132,12 +144,12 @@ describe("fuzzy candidates", () => {
 		);
 
 		expect(outcome.kind).toBe("no-proposal");
-		expect(candidates(db)).toHaveLength(0);
+		expect(await candidates(db)).toHaveLength(0);
 	});
 
 	it("accepts through the curated attach path with stored-first, scored ordinals", async () => {
-		const group = seedGroup(db);
-		const subject = seedTitle(db, group.id, "tmdb", "1");
+		const group = await seedGroup(db);
+		const subject = await seedTitle(db, group.id, "tmdb", "1");
 		const clients: FuzzySearchClients = {
 			imdb: clientOf([
 				// Lower title similarity, so it scores below the exact match and attaches second.
@@ -156,7 +168,7 @@ describe("fuzzy candidates", () => {
 			),
 		);
 
-		const outcome = acceptFuzzyCandidate(db, candidateId);
+		const outcome = await acceptFuzzyCandidate(db, candidateId);
 
 		if (outcome.kind !== "accepted") {
 			throw new Error(`expected an accepted outcome, got ${outcome.kind}`);
@@ -166,28 +178,28 @@ describe("fuzzy candidates", () => {
 		expect(outcome.attachedTitleIds).toHaveLength(2);
 		// Stored member keeps ordinal 0; the proposal follows in scored order
 		// (the exact match tt11 outscores tt10).
-		const ordered = db
+		const orderedRows = await db
 			.select()
 			.from(serviceTitles)
 			.where(eq(serviceTitles.groupId, group.id))
 			.orderBy(serviceTitles.ordinal)
-			.all()
-			.map((row) => ({ ordinal: row.ordinal, serviceId: row.serviceId }));
+			.all();
+		const ordered = orderedRows.map((row) => ({ ordinal: row.ordinal, serviceId: row.serviceId }));
 		expect(ordered).toEqual([
 			{ ordinal: 0, serviceId: "1" },
 			{ ordinal: 1, serviceId: "tt11" },
 			{ ordinal: 2, serviceId: "tt10" },
 		]);
 		// The vouch turns the group curated so a later recompute preserves it.
-		expect(groupSource(db, group.id)).toBe("manual");
-		expect(one(candidates(db)).status).toBe("accepted");
+		expect(await groupSource(db, group.id)).toBe("manual");
+		expect(one(await candidates(db)).status).toBe("accepted");
 	});
 
 	it("refuses a proposed title already stored under another group", async () => {
-		const group = seedGroup(db);
-		const subject = seedTitle(db, group.id, "tmdb", "1");
-		const other = seedGroup(db);
-		seedTitle(db, other.id, "imdb", "tt99");
+		const group = await seedGroup(db);
+		const subject = await seedTitle(db, group.id, "tmdb", "1");
+		const other = await seedGroup(db);
+		await seedTitle(db, other.id, "imdb", "tt99");
 		const clients: FuzzySearchClients = {
 			imdb: clientOf([{ serviceId: "tt99", title: bebop, year: 1998 }]),
 		};
@@ -202,7 +214,7 @@ describe("fuzzy candidates", () => {
 			),
 		);
 
-		const outcome = acceptFuzzyCandidate(db, candidateId);
+		const outcome = await acceptFuzzyCandidate(db, candidateId);
 
 		expect(outcome).toEqual({
 			attachedTitleIds: [],
@@ -211,14 +223,17 @@ describe("fuzzy candidates", () => {
 			refused: [{ service: "imdb", serviceId: "tt99" }],
 		});
 		// tt99 stays in its own group; it was refused, not moved.
-		expect(
-			db.select().from(serviceTitles).where(eq(serviceTitles.serviceId, "tt99")).all().at(0)?.groupId,
-		).toBe(other.id);
+		const stored = await db
+			.select()
+			.from(serviceTitles)
+			.where(eq(serviceTitles.serviceId, "tt99"))
+			.all();
+		expect(stored.at(0)?.groupId).toBe(other.id);
 	});
 
 	it("queues nothing on a re-proposal after rejection, and reopens on a changed member", async () => {
-		const group = seedGroup(db);
-		const subject = seedTitle(db, group.id, "tmdb", "1");
+		const group = await seedGroup(db);
+		const subject = await seedTitle(db, group.id, "tmdb", "1");
 		const query = {
 			queries: [{ service: "imdb", title: bebop, year: 1998 }],
 			subjectTitleId: subject.id,
@@ -231,12 +246,12 @@ describe("fuzzy candidates", () => {
 		};
 
 		const candidateId = openCandidate(await runFuzzyDiscovery(db, { clients: twoHits }, query));
-		expect(rejectFuzzyCandidate(db, candidateId)).toEqual({ candidateId, kind: "rejected" });
+		expect(await rejectFuzzyCandidate(db, candidateId)).toEqual({ candidateId, kind: "rejected" });
 
 		// The identical proposal finds the rejection and queues nothing.
 		const repeat = await runFuzzyDiscovery(db, { clients: twoHits }, query);
 		expect(repeat.kind).toBe("suppressed");
-		expect(candidates(db)).toHaveLength(1);
+		expect(await candidates(db)).toHaveLength(1);
 
 		// Dropping a member hashes differently and reopens the question.
 		const oneHit: FuzzySearchClients = {
@@ -244,15 +259,16 @@ describe("fuzzy candidates", () => {
 		};
 		const reopened = await runFuzzyDiscovery(db, { clients: oneHit }, query);
 		expect(reopened.kind).toBe("queued");
-		const statuses = candidates(db)
+		const rows = await candidates(db);
+		const statuses = rows
 			.map((row) => row.status)
 			.toSorted((left, right) => left.localeCompare(right));
 		expect(statuses).toEqual(["open", "rejected"]);
 	});
 
 	it("coalesces a repeat discovery onto one open row", async () => {
-		const group = seedGroup(db);
-		const subject = seedTitle(db, group.id, "tmdb", "1");
+		const group = await seedGroup(db);
+		const subject = await seedTitle(db, group.id, "tmdb", "1");
 		const clients: FuzzySearchClients = {
 			imdb: clientOf([{ serviceId: "tt10", title: bebop, year: 1998 }]),
 		};
@@ -271,6 +287,6 @@ describe("fuzzy candidates", () => {
 		// The repeat coalesced onto the open row: nothing new was inserted.
 		expect(second.candidateId).toBeUndefined();
 		expect(second.evidence.kind).toBe("fuzzy-group");
-		expect(candidates(db)).toHaveLength(1);
+		expect(await candidates(db)).toHaveLength(1);
 	});
 });

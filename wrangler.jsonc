@@ -14,6 +14,10 @@
 			"name": "overflow-build",
 		},
 	],
+	// Set `database_id` to the real database before deploy: `wrangler d1 create mdbmap`.
+	"d1_databases": [
+		{ "binding": "DB", "database_name": "mdbmap", "database_id": "REPLACE_WITH_D1_DATABASE_ID" },
+	],
 	"observability": {
 		"enabled": true,
 	},

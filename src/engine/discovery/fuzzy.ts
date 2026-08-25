@@ -277,9 +277,12 @@ interface QueuePlan {
 // re-raise a proposal an admin already rejected. A repeat or concurrent discovery
 // of the same subject and proposal inserts nothing; a matching rejection queues
 // nothing at all.
-const queueCandidate = (db: GatewayDb, plan: QueuePlan): FuzzyDiscoveryOutcome =>
-	db.transaction((tx): FuzzyDiscoveryOutcome => {
-		const rejected = tx
+const queueCandidate = async (
+	db: GatewayDb,
+	plan: QueuePlan,
+): Promise<FuzzyDiscoveryOutcome> => {
+	const outcome = await db.transaction(async (tx): Promise<FuzzyDiscoveryOutcome> => {
+		const rejected = await tx
 			.select({ id: pendingGroupCandidates.id })
 			.from(pendingGroupCandidates)
 			.where(
@@ -295,7 +298,7 @@ const queueCandidate = (db: GatewayDb, plan: QueuePlan): FuzzyDiscoveryOutcome =
 			return { evidence: plan.evidence, kind: "suppressed" };
 		}
 		const inserted = takeFirst(
-			tx
+			await tx
 				.insert(pendingGroupCandidates)
 				.values({
 					evidence: plan.evidence,
@@ -310,18 +313,22 @@ const queueCandidate = (db: GatewayDb, plan: QueuePlan): FuzzyDiscoveryOutcome =
 		);
 		return { candidateId: inserted?.id, evidence: plan.evidence, kind: "queued" };
 	});
+	return outcome;
+};
 
 // The service/id pairs already in the subject's group — the subject among them —
 // so a search hit that is already a member is never re-proposed.
-const existingMembers = (db: GatewayDb, groupId: number): ReadonlySet<string> =>
-	new Set(
-		db
-			.select({ service: serviceTitles.service, serviceId: serviceTitles.serviceId })
-			.from(serviceTitles)
-			.where(eq(serviceTitles.groupId, groupId))
-			.all()
-			.map((row) => refKey(row)),
-	);
+const existingMembers = async (
+	db: GatewayDb,
+	groupId: number,
+): Promise<ReadonlySet<string>> => {
+	const rows = await db
+		.select({ service: serviceTitles.service, serviceId: serviceTitles.serviceId })
+		.from(serviceTitles)
+		.where(eq(serviceTitles.groupId, groupId))
+		.all();
+	return new Set(rows.map((row) => refKey(row)));
+};
 
 // The background closure. Search both services by the subject's title and year,
 // bucket the hits, and queue a `fuzzy-group` candidate for whatever clears the
@@ -333,13 +340,13 @@ const runFuzzyDiscovery = async (
 	input: FuzzyDiscoveryInput,
 ): Promise<FuzzyDiscoveryOutcome> => {
 	const subjectTitle = takeFirst(
-		db.select().from(serviceTitles).where(eq(serviceTitles.id, input.subjectTitleId)).all(),
+		await db.select().from(serviceTitles).where(eq(serviceTitles.id, input.subjectTitleId)).all(),
 	);
 	if (subjectTitle === undefined) {
 		return { kind: "no-subject" };
 	}
-	const groupId = survivorGroupId(db, subjectTitle.groupId);
-	const scored = await gatherHits(deps, input, existingMembers(db, groupId));
+	const groupId = await survivorGroupId(db, subjectTitle.groupId);
+	const scored = await gatherHits(deps, input, await existingMembers(db, groupId));
 	const buckets = bucketHits(scored);
 	if (buckets.proposedMembers.length === 0) {
 		return { kind: "no-proposal" };
@@ -364,12 +371,16 @@ const runFuzzyDiscovery = async (
 
 type FuzzyCandidateRow = typeof pendingGroupCandidates.$inferSelect;
 
-const loadFuzzyCandidate = (
+const loadFuzzyCandidate = async (
 	db: GatewayDb,
 	candidateId: number,
-): FuzzyCandidateRow | undefined => {
+): Promise<FuzzyCandidateRow | undefined> => {
 	const row = takeFirst(
-		db.select().from(pendingGroupCandidates).where(eq(pendingGroupCandidates.id, candidateId)).all(),
+		await db
+			.select()
+			.from(pendingGroupCandidates)
+			.where(eq(pendingGroupCandidates.id, candidateId))
+			.all(),
 	);
 	return row === undefined || row.kind !== "fuzzy-group" ? undefined : row;
 };
@@ -383,68 +394,83 @@ interface AcceptPlan {
 
 // Re-rank the group densely — stored members keep the first positions in stored
 // order, then the proposal follows in scored order — and return the ids attached.
-const attachProposal = (
+const attachProposal = async (
 	tx: GatewayDb,
 	groupId: number,
 	toAttach: readonly ServiceRef[],
-): readonly number[] => {
-	const members = tx
+): Promise<readonly number[]> => {
+	const members = await tx
 		.select({ id: serviceTitles.id })
 		.from(serviceTitles)
 		.where(eq(serviceTitles.groupId, groupId))
 		.orderBy(serviceTitles.ordinal, serviceTitles.id)
 		.all();
+	// Ordinals are re-stamped one row at a time: concurrent writes on a transaction
+	// connection corrupt it, so no-await-in-loop is waived inside the write.
 	let ordinal = 0;
 	for (const member of members) {
-		tx.update(serviceTitles).set({ ordinal }).where(eq(serviceTitles.id, member.id)).run();
+		// oxlint-disable-next-line eslint/no-await-in-loop
+		await tx.update(serviceTitles).set({ ordinal }).where(eq(serviceTitles.id, member.id)).run();
 		ordinal += 1;
 	}
-	const attachedTitleIds: number[] = [];
-	for (const ref of toAttach) {
-		const created = takeFirst(
-			tx
-				.insert(serviceTitles)
-				.values({ groupId, ordinal, service: ref.service, serviceId: ref.serviceId })
-				.returning()
-				.all(),
-		);
-		if (created === undefined) {
-			throw new Error("service title insert returned no row");
-		}
-		attachedTitleIds.push(created.id);
-		ordinal += 1;
+	if (toAttach.length === 0) {
+		return [];
 	}
-	return attachedTitleIds;
+	const created = await tx
+		.insert(serviceTitles)
+		.values(
+			toAttach.map((ref, index) => ({
+				groupId,
+				ordinal: ordinal + index,
+				service: ref.service,
+				serviceId: ref.serviceId,
+			})),
+		)
+		.returning()
+		.all();
+	if (created.length !== toAttach.length) {
+		throw new Error("service title insert returned no row");
+	}
+	return created.map((row) => row.id);
 };
 
 // Attach the proposal to the subject's group through the curated path. The accept
 // is a human vouch, so the group turns curated and a later recompute preserves
 // this membership.
-const commitAccept = (db: GatewayDb, plan: AcceptPlan): FuzzyAcceptOutcome =>
-	db.transaction((tx): FuzzyAcceptOutcome => {
-		const current = loadFuzzyCandidate(tx, plan.candidateId);
+const commitAccept = async (db: GatewayDb, plan: AcceptPlan): Promise<FuzzyAcceptOutcome> => {
+	const outcome = await db.transaction(async (tx): Promise<FuzzyAcceptOutcome> => {
+		const current = await loadFuzzyCandidate(tx, plan.candidateId);
 		if (current === undefined) {
 			return { kind: "missing" };
 		}
 		if (current.status !== "open") {
 			return { kind: "not-open" };
 		}
-		const attachedTitleIds = attachProposal(tx, plan.groupId, plan.toAttach);
-		tx.update(titleGroups).set({ source: "manual" }).where(eq(titleGroups.id, plan.groupId)).run();
-		tx
+		const attachedTitleIds = await attachProposal(tx, plan.groupId, plan.toAttach);
+		await tx
+			.update(titleGroups)
+			.set({ source: "manual" })
+			.where(eq(titleGroups.id, plan.groupId))
+			.run();
+		await tx
 			.update(pendingGroupCandidates)
 			.set({ status: "accepted" })
 			.where(eq(pendingGroupCandidates.id, plan.candidateId))
 			.run();
 		return { attachedTitleIds, groupId: plan.groupId, kind: "accepted", refused: plan.refused };
 	});
+	return outcome;
+};
 
 // Accept a queued proposal through the curated attach path. A proposed title with
 // no stored record is attached to the subject's group; one already stored under
 // another group is refused rather than moved; one already in the subject's group
 // is a no-op.
-const acceptFuzzyCandidate = (db: GatewayDb, candidateId: number): FuzzyAcceptOutcome => {
-	const candidate = loadFuzzyCandidate(db, candidateId);
+const acceptFuzzyCandidate = async (
+	db: GatewayDb,
+	candidateId: number,
+): Promise<FuzzyAcceptOutcome> => {
+	const candidate = await loadFuzzyCandidate(db, candidateId);
 	if (candidate === undefined) {
 		return { kind: "missing" };
 	}
@@ -456,25 +482,34 @@ const acceptFuzzyCandidate = (db: GatewayDb, candidateId: number): FuzzyAcceptOu
 		return { kind: "missing" };
 	}
 	const subjectTitle = takeFirst(
-		db.select().from(serviceTitles).where(eq(serviceTitles.id, subject.titleId)).all(),
+		await db.select().from(serviceTitles).where(eq(serviceTitles.id, subject.titleId)).all(),
 	);
 	if (subjectTitle === undefined) {
 		return { kind: "no-subject" };
 	}
-	const groupId = survivorGroupId(db, subjectTitle.groupId);
+	const groupId = await survivorGroupId(db, subjectTitle.groupId);
+	const classified = await Promise.all(
+		evidence.proposedMembers.map(async (member) => {
+			const ref: ServiceRef = { service: member.service, serviceId: member.serviceId };
+			const match = and(
+				eq(serviceTitles.service, ref.service),
+				eq(serviceTitles.serviceId, ref.serviceId),
+			);
+			const stored = takeFirst(await db.select().from(serviceTitles).where(match).all());
+			if (stored === undefined) {
+				return { kind: "attach" as const, ref };
+			}
+			const survivor = await survivorGroupId(db, stored.groupId);
+			return { kind: survivor === groupId ? ("member" as const) : ("refuse" as const), ref };
+		}),
+	);
 	const refused: ServiceRef[] = [];
 	const toAttach: ServiceRef[] = [];
-	for (const member of evidence.proposedMembers) {
-		const ref: ServiceRef = { service: member.service, serviceId: member.serviceId };
-		const match = and(
-			eq(serviceTitles.service, ref.service),
-			eq(serviceTitles.serviceId, ref.serviceId),
-		);
-		const stored = takeFirst(db.select().from(serviceTitles).where(match).all());
-		if (stored === undefined) {
-			toAttach.push(ref);
-		} else if (survivorGroupId(db, stored.groupId) !== groupId) {
-			refused.push(ref);
+	for (const entry of classified) {
+		if (entry.kind === "attach") {
+			toAttach.push(entry.ref);
+		} else if (entry.kind === "refuse") {
+			refused.push(entry.ref);
 		}
 	}
 	return commitAccept(db, { candidateId, groupId, refused, toAttach });
@@ -483,22 +518,27 @@ const acceptFuzzyCandidate = (db: GatewayDb, candidateId: number): FuzzyAcceptOu
 // Record a rejection. Its `evidence_hash` (the proposed membership) is already on
 // the row, so a later discovery of the same proposal finds it and queues nothing;
 // a proposal that adds or removes a member hashes differently and reopens.
-const rejectFuzzyCandidate = (db: GatewayDb, candidateId: number): FuzzyRejectOutcome =>
-	db.transaction((tx): FuzzyRejectOutcome => {
-		const candidate = loadFuzzyCandidate(tx, candidateId);
+const rejectFuzzyCandidate = async (
+	db: GatewayDb,
+	candidateId: number,
+): Promise<FuzzyRejectOutcome> => {
+	const outcome = await db.transaction(async (tx): Promise<FuzzyRejectOutcome> => {
+		const candidate = await loadFuzzyCandidate(tx, candidateId);
 		if (candidate === undefined) {
 			return { kind: "missing" };
 		}
 		if (candidate.status !== "open") {
 			return { kind: "not-open" };
 		}
-		tx
+		await tx
 			.update(pendingGroupCandidates)
 			.set({ status: "rejected" })
 			.where(eq(pendingGroupCandidates.id, candidateId))
 			.run();
 		return { candidateId, kind: "rejected" };
 	});
+	return outcome;
+};
 
 export {
 	acceptFuzzyCandidate,

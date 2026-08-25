@@ -19,17 +19,17 @@ import {
 } from "@/orpc/schema";
 
 // All instalments watched ⇒ completed; any progress ⇒ watching.
-const deriveWholeSeriesStatus = (
+const deriveWholeSeriesStatus = async (
 	db: Db,
 	engine: EngineRead,
 	userId: string,
 	continuityId: string,
-): EpisodeWatchedResult => {
+): Promise<EpisodeWatchedResult> => {
 	const locators = instalmentsOf(engine.resolveContinuity(continuityId));
 	const rows =
 		locators.length === 0
 			? []
-			: db
+			: await db
 					.select({ locator: episodeProgress.instalmentLocator })
 					.from(episodeProgress)
 					.where(
@@ -47,7 +47,7 @@ const deriveWholeSeriesStatus = (
 	return { status, watched: [...watchedSet] };
 };
 
-const readSummary = (db: Db, userId: string, continuityKey: string) =>
+const readSummary = async (db: Db, userId: string, continuityKey: string) =>
 	db
 		.select()
 		.from(watchStatus)
@@ -61,9 +61,9 @@ const readSummary = (db: Db, userId: string, continuityKey: string) =>
 
 const setStatus = authed
 	.input(SetStatusInput)
-	.handler(({ context, input }): TrackingSummary => {
+	.handler(async ({ context, input }): Promise<TrackingSummary> => {
 		const userId = context.user.id;
-		context.db
+		await context.db
 			.insert(watchStatus)
 			.values({ continuityKey: input.continuityId, status: input.status, userId })
 			.onConflictDoUpdate({
@@ -71,7 +71,7 @@ const setStatus = authed
 				target: [watchStatus.userId, watchStatus.continuityKey],
 			})
 			.run();
-		const row = readSummary(context.db, userId, input.continuityId);
+		const row = await readSummary(context.db, userId, input.continuityId);
 		return {
 			rewatchCount: row?.rewatchCount ?? 0,
 			status: row?.status ?? input.status,
@@ -80,9 +80,9 @@ const setStatus = authed
 
 const setRewatch = authed
 	.input(SetRewatchInput)
-	.handler(({ context, input }): TrackingSummary => {
+	.handler(async ({ context, input }): Promise<TrackingSummary> => {
 		const userId = context.user.id;
-		context.db
+		await context.db
 			.insert(watchStatus)
 			.values({
 				continuityKey: input.continuityId,
@@ -95,7 +95,7 @@ const setRewatch = authed
 				target: [watchStatus.userId, watchStatus.continuityKey],
 			})
 			.run();
-		const row = readSummary(context.db, userId, input.continuityId);
+		const row = await readSummary(context.db, userId, input.continuityId);
 		return {
 			rewatchCount: row?.rewatchCount ?? input.count,
 			status: row?.status,
@@ -104,36 +104,33 @@ const setRewatch = authed
 
 const setEpisodeWatched = authed
 	.input(SetEpisodeWatchedInput)
-	.handler(({ context, input }): EpisodeWatchedResult => {
+	.handler(async ({ context, input }): Promise<EpisodeWatchedResult> => {
 		const userId = context.user.id;
-		if (input.watched) {
-			context.db
-				.insert(episodeProgress)
-				.values({ instalmentLocator: input.instalmentLocator, userId })
-				.onConflictDoNothing({
-					target: [episodeProgress.userId, episodeProgress.instalmentLocator],
-				})
-				.run();
-		} else {
-			context.db
-				.delete(episodeProgress)
-				.where(
-					and(
-						eq(episodeProgress.userId, userId),
-						eq(episodeProgress.instalmentLocator, input.instalmentLocator),
-					),
-				)
-				.run();
-		}
+		await (input.watched
+			? context.db
+					.insert(episodeProgress)
+					.values({ instalmentLocator: input.instalmentLocator, userId })
+					.onConflictDoNothing({
+						target: [episodeProgress.userId, episodeProgress.instalmentLocator],
+					})
+			: context.db
+					.delete(episodeProgress)
+					.where(
+						and(
+							eq(episodeProgress.userId, userId),
+							eq(episodeProgress.instalmentLocator, input.instalmentLocator),
+						),
+					)
+		).run();
 
-		const derived = deriveWholeSeriesStatus(
+		const derived = await deriveWholeSeriesStatus(
 			context.db,
 			context.engine,
 			userId,
 			input.continuityId,
 		);
 
-		context.db
+		await context.db
 			.insert(watchStatus)
 			.values({ continuityKey: input.continuityId, status: derived.status, userId })
 			.onConflictDoUpdate({
@@ -147,38 +144,35 @@ const setEpisodeWatched = authed
 
 const setRating = authed
 	.input(SetRatingInput)
-	.handler(({ context, input }): RatingResult => {
+	.handler(async ({ context, input }): Promise<RatingResult> => {
 		const userId = context.user.id;
-		if (input.score === undefined) {
-			context.db
-				.delete(personalRating)
-				.where(
-					and(
-						eq(personalRating.userId, userId),
-						eq(personalRating.unitKind, input.unit.kind),
-						eq(personalRating.unitKey, input.unit.key),
-					),
-				)
-				.run();
-		} else {
-			context.db
-				.insert(personalRating)
-				.values({
-					score: input.score,
-					unitKey: input.unit.key,
-					unitKind: input.unit.kind,
-					userId,
-				})
-				.onConflictDoUpdate({
-					set: { score: input.score },
-					target: [
-						personalRating.userId,
-						personalRating.unitKind,
-						personalRating.unitKey,
-					],
-				})
-				.run();
-		}
+		await (input.score === undefined
+			? context.db
+					.delete(personalRating)
+					.where(
+						and(
+							eq(personalRating.userId, userId),
+							eq(personalRating.unitKind, input.unit.kind),
+							eq(personalRating.unitKey, input.unit.key),
+						),
+					)
+			: context.db
+					.insert(personalRating)
+					.values({
+						score: input.score,
+						unitKey: input.unit.key,
+						unitKind: input.unit.kind,
+						userId,
+					})
+					.onConflictDoUpdate({
+						set: { score: input.score },
+						target: [
+							personalRating.userId,
+							personalRating.unitKind,
+							personalRating.unitKey,
+						],
+					})
+		).run();
 		return { score: input.score, unit: input.unit };
 	});
 
