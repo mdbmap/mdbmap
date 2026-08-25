@@ -29,8 +29,8 @@ const one = <Row>(rows: readonly Row[]): Row => {
 	return row;
 };
 
-const seedGroup = (db: Db, source: GroupSource = "t1-structure") =>
-	one(db.insert(titleGroups).values({ source }).returning().all());
+const seedGroup = (db: Db, source: GroupSource = "t1-structure", ladderComplete = false) =>
+	one(db.insert(titleGroups).values({ ladderComplete, source }).returning().all());
 
 const seedTitle = (db: Db, groupId: number, service: string, serviceId: string) =>
 	one(db.insert(serviceTitles).values({ groupId, service, serviceId }).returning().all());
@@ -236,7 +236,9 @@ describe("curated-preserving recompute", () => {
 	});
 
 	it("preserves the stamp of a vouched group but still re-derives its links", () => {
-		const group = seedGroup(db, "manual");
+		// Vouched and ladder-complete, against an input that disagrees on both, so a
+		// stamp written wholesale would flip source and ladder_complete.
+		const group = seedGroup(db, "manual", true);
 		const titleA = seedTitle(db, group.id, "tmdb", "603");
 		const titleB = seedTitle(db, group.id, "imdb", "tt0133093");
 		const a1 = seedSpoke(db, titleA.id, "1:1");
@@ -260,6 +262,7 @@ describe("curated-preserving recompute", () => {
 		expect(commitRecompute(db, plan).kind).toBe("applied");
 		const stamped = one(db.select().from(titleGroups).where(eq(titleGroups.id, group.id)).all());
 		expect(stamped.source).toBe("manual");
+		expect(stamped.ladderComplete).toBe(true);
 		// The links are re-derived onto a fresh unit regardless of the vouch.
 		const rederived = assertionsForSpoke(db, a1);
 		expect(rederived).toHaveLength(1);

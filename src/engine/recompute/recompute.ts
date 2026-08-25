@@ -13,7 +13,7 @@ import type {
 	AssertionSource,
 	GroupSource,
 } from "@/db/engine-schema";
-import type { GatewayDb } from "@/engine/gateway/index.ts";
+import type { GatewayDb } from "@/engine/gateway";
 import { tierIds } from "@/engine/matcher";
 import type { TierId } from "@/engine/matcher";
 
