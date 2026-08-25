@@ -74,48 +74,56 @@ const loadViewerState = (
 	return { personalByUnit, statusRow, watchedSet };
 };
 
-const buildParts = (
+const buildParts = async (
 	resolved: ResolveResult,
 	meta: WorkMetadata,
 	providers: Providers,
+	db: Db,
 	continuityId: string,
 	viewer: ViewerState | undefined,
-): PartView[] =>
-	resolved.segments.map((segment, index) => {
-		const segMeta = meta.segments[index];
-		const partUnit: RateableUnit = {
-			key: partKeyFor(continuityId, index),
-			kind: "part",
-		};
-		const episodes: EpisodeView[] = segment.instalments.map(
-			(locator, position) => {
-				const epMeta = segMeta?.episodes[position];
-				const episodeUnit: RateableUnit = { key: locator, kind: "episode" };
-				return {
-					airDate: epMeta?.airDate,
-					communityScore: providers.community.scoreFor(episodeUnit),
-					instalmentLocator: locator,
-					number: epMeta?.number ?? position + 1,
-					personalRating: viewer?.personalByUnit.get(unitId(episodeUnit)),
-					rateableUnit: episodeUnit,
-					title: epMeta?.title ?? `Episode ${position + 1}`,
-					watched: viewer?.watchedSet.has(locator) ?? false,
-				};
-			},
-		);
-		return {
-			airedFrom: segMeta?.airedFrom,
-			airedTo: segMeta?.airedTo,
-			communityScore: providers.community.scoreFor(partUnit),
-			episodeCount: segment.instalments.length,
-			episodes,
-			label: segMeta?.label ?? `Part ${index + 1}`,
-			personalRating: viewer?.personalByUnit.get(unitId(partUnit)),
-			rateableUnit: partUnit,
-			serviceRatings: [...providers.serviceRatings.ratingsFor(partUnit)],
-			year: segMeta?.year,
-		};
-	});
+): Promise<PartView[]> =>
+	Promise.all(
+		resolved.segments.map(async (segment, index) => {
+			const segMeta = meta.segments[index];
+			const partUnit: RateableUnit = {
+				key: partKeyFor(continuityId, index),
+				kind: "part",
+			};
+			const episodes: EpisodeView[] = await Promise.all(
+				segment.instalments.map(async (locator, position) => {
+					const epMeta = segMeta?.episodes[position];
+					const episodeUnit: RateableUnit = { key: locator, kind: "episode" };
+					const communityScore = await providers.community.scoreFor(
+						episodeUnit,
+						db,
+					);
+					return {
+						airDate: epMeta?.airDate,
+						communityScore,
+						instalmentLocator: locator,
+						number: epMeta?.number ?? position + 1,
+						personalRating: viewer?.personalByUnit.get(unitId(episodeUnit)),
+						rateableUnit: episodeUnit,
+						title: epMeta?.title ?? `Episode ${position + 1}`,
+						watched: viewer?.watchedSet.has(locator) ?? false,
+					};
+				}),
+			);
+			const communityScore = await providers.community.scoreFor(partUnit, db);
+			return {
+				airedFrom: segMeta?.airedFrom,
+				airedTo: segMeta?.airedTo,
+				communityScore,
+				episodeCount: segment.instalments.length,
+				episodes,
+				label: segMeta?.label ?? `Part ${index + 1}`,
+				personalRating: viewer?.personalByUnit.get(unitId(partUnit)),
+				rateableUnit: partUnit,
+				serviceRatings: [...providers.serviceRatings.ratingsFor(partUnit)],
+				year: segMeta?.year,
+			};
+		}),
+	);
 
 const get = pub.input(WorkGetInput).handler(async ({ context, input }): Promise<WorkView> => {
 	const { continuityId } = input;
@@ -146,6 +154,15 @@ const get = pub.input(WorkGetInput).handler(async ({ context, input }): Promise<
 		};
 	}
 
+	const parts = await buildParts(
+		resolved,
+		meta,
+		context.providers,
+		context.db,
+		continuityId,
+		viewerState,
+	);
+
 	return {
 		cast: [...meta.cast],
 		continuityId,
@@ -159,7 +176,7 @@ const get = pub.input(WorkGetInput).handler(async ({ context, input }): Promise<
 		},
 		ifYouLiked: [...meta.ifYouLiked],
 		mediaKind: resolved.mediaKind,
-		parts: buildParts(resolved, meta, context.providers, continuityId, viewerState),
+		parts,
 		staff: [...meta.staff],
 		studios: [...meta.studios],
 		viewer,

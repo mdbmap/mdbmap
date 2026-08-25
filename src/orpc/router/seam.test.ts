@@ -75,6 +75,15 @@ describe("tracking + work.get seam", () => {
 		const db = freshDb();
 		const client = clientFor(db, undefined);
 
+		db.insert(personalRating)
+			.values({
+				score: 9,
+				unitKey: `part:${CONTINUITY}:0`,
+				unitKind: "part",
+				userId: "user-1",
+			})
+			.run();
+
 		const view = await client.work.get({ continuityId: CONTINUITY });
 		expect(view.viewer).toBeUndefined();
 		expect(view.header.title).toBe("Spy × Family");
