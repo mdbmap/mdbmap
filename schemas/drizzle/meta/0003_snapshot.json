@@ -1,7 +1,7 @@
 {
   "version": "6",
   "dialect": "sqlite",
-  "id": "db972f30-7936-48a8-bfbe-b81cd5d5e405",
+  "id": "b3ebba8e-7279-4c4f-84f3-1e015185b4ab",
   "prevId": "b7b104a9-f838-4236-b052-b912569242a7",
   "tables": {
     "account": {
@@ -849,6 +849,13 @@
           "notNull": true,
           "autoincrement": false
         },
+        "subject_key": {
+          "name": "subject_key",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
         "updated_at": {
           "name": "updated_at",
           "type": "integer",
@@ -863,7 +870,7 @@
           "name": "pending_group_candidates_open_idx",
           "columns": [
             "kind",
-            "subject",
+            "subject_key",
             "evidence_hash"
           ],
           "isUnique": true,
