@@ -21,18 +21,21 @@ const one = <Row>(rows: Row[]): Row => {
 	return row;
 };
 
-const seedTitle = (
-	db: ReturnType<typeof freshDb>,
-	service: string,
-	serviceId: string,
-) => {
-	const group = one(
+const seedGroup = (db: ReturnType<typeof freshDb>) =>
+	one(
 		db
 			.insert(titleGroups)
 			.values({ ladderComplete: false, source: "t1-structure" })
 			.returning()
 			.all(),
 	);
+
+const seedTitle = (
+	db: ReturnType<typeof freshDb>,
+	service: string,
+	serviceId: string,
+) => {
+	const group = seedGroup(db);
 	return one(
 		db
 			.insert(serviceTitles)
@@ -207,15 +210,6 @@ describe("hub-and-spoke coverage edges", () => {
 		).toThrow(/unique/iu);
 	});
 });
-
-const seedGroup = (db: ReturnType<typeof freshDb>) =>
-	one(
-		db
-			.insert(titleGroups)
-			.values({ ladderComplete: false, source: "t1-structure" })
-			.returning()
-			.all(),
-	);
 
 describe("pending group candidates", () => {
 	let db: ReturnType<typeof freshDb>;
