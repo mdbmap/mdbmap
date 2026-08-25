@@ -141,6 +141,12 @@ const namesEdge = (
 		(relation) => relation.kind === kind && relation.toId === toId,
 	);
 
+// A mainline edge is confirmed only when both records name each other — the
+// earlier as sequel, the later as prequel. A one-sided edge is too weak to
+// carry high confidence anywhere it is checked.
+const twoSidedEdge = (earlier: SimklEntry, later: SimklEntry): boolean =>
+	namesEdge(earlier, "sequel", later.id) && namesEdge(later, "prequel", earlier.id);
+
 // Adjacent chain segments are joined by a mainline edge the walk already
 // followed. The edge is high only when both records confirm it; a one-sided
 // edge publishes low and is flagged.
@@ -151,9 +157,7 @@ const relationFor = (
 	if (earlier.anchor === undefined || later.anchor === undefined) {
 		return undefined;
 	}
-	const twoSided =
-		namesEdge(earlier.segment.entry, "sequel", later.segment.entry.id) &&
-		namesEdge(later.segment.entry, "prequel", earlier.segment.entry.id);
+	const twoSided = twoSidedEdge(earlier.segment.entry, later.segment.entry);
 	return {
 		confidence: twoSided ? "high" : "low",
 		flagged: !twoSided,
@@ -277,12 +281,7 @@ const relationVerdict = (run: TargetRun): CheckVerdict => {
 	for (let index = 1; index < run.segments.length; index += 1) {
 		const earlier = run.segments[index - 1]?.segment.entry;
 		const later = run.segments[index]?.segment.entry;
-		if (earlier === undefined || later === undefined) {
-			return "unavailable";
-		}
-		const twoSided =
-			namesEdge(earlier, "sequel", later.id) && namesEdge(later, "prequel", earlier.id);
-		if (!twoSided) {
+		if (earlier === undefined || later === undefined || !twoSidedEdge(earlier, later)) {
 			return "unavailable";
 		}
 	}
