@@ -204,6 +204,37 @@ describe("curated-preserving recompute", () => {
 		]);
 	});
 
+	it("aborts when a concurrent recompute already re-derived the same links", () => {
+		const group = seedGroup(db);
+		const titleA = seedTitle(db, group.id, "tmdb", "603");
+		const titleB = seedTitle(db, group.id, "imdb", "tt0133093");
+		const a1 = seedSpoke(db, titleA.id, "1:1");
+		const b1 = seedSpoke(db, titleB.id, "1:1");
+		const staleUnit = seedUnit(db);
+		cover(db, a1, staleUnit, "t3-episode");
+		cover(db, b1, staleUnit, "t3-episode");
+
+		const state = readGroupState(db, group.id);
+		if (state === undefined) {
+			throw new Error("expected a group state");
+		}
+		const input = {
+			groupId: group.id,
+			ladderComplete: true,
+			pairings: [{ confidence: "high", source: "t3-episode", spokeIds: [a1, b1] }],
+			triedSource: "t3-episode",
+		} as const;
+		const plan = planRecompute(state, input);
+
+		// A second recompute with an identical stamp gets there first.
+		expect(recomputeGroup(db, input).kind).toBe("applied");
+
+		// The first plan's commit sees a moved algorithmic set and lands nothing, so
+		// the spoke keeps a single coverage unit rather than a duplicate.
+		expect(commitRecompute(db, plan).kind).toBe("aborted");
+		expect(assertionsForSpoke(db, a1)).toHaveLength(1);
+	});
+
 	it("preserves the stamp of a vouched group but still re-derives its links", () => {
 		const group = seedGroup(db, "manual");
 		const titleA = seedTitle(db, group.id, "tmdb", "603");

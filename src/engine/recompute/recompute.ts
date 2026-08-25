@@ -17,13 +17,16 @@ import type { GatewayDb } from "@/engine/gateway/index.ts";
 import { tierIds } from "@/engine/matcher";
 import type { TierId } from "@/engine/matcher";
 
-// The tiers the deterministic matcher stamps. Anything else — a research pass or
-// a human's curation — is preserved across a recompute rather than re-derived.
+// The tiers the deterministic matcher stamps. A recompute re-runs only that
+// matcher (ADR-0004), so anything else — a research pass (`llm-research`,
+// `llm-verified`) or a human's curation (`community`, `manual`) — cannot be
+// re-derived and is preserved rather than dropped, consistent with all four
+// outranking the tiers in the serializer's precedence.
 const algorithmicSources: ReadonlySet<AssertionSource> = new Set<AssertionSource>(
 	tierIds,
 );
 
-// Curation is every provenance the matcher does not itself produce. A recompute
+// Every provenance the deterministic matcher does not itself produce. A recompute
 // re-derives the algorithmic links and merges around these (ADR-0002).
 const isCuratedSource = (source: AssertionSource): boolean =>
 	!algorithmicSources.has(source);
@@ -48,9 +51,12 @@ interface RecomputeInput {
 }
 
 // The exact reads the merge plan assumed: the group's stamp and source, its
-// membership, and the assertions curation owns. The commit is a compare-and-set
-// on this — a correction approved in the window changes it and aborts the batch.
+// membership, the assertions curation owns, and the algorithmic links this plan
+// will delete. The commit is a compare-and-set on this — a correction approved in
+// the window, or a concurrent recompute that already re-derived the links, moves
+// it and aborts the batch untouched.
 interface RecomputePrecondition {
+	readonly algorithmicAssertionIds: readonly number[];
 	readonly curatedAbsenceIds: readonly number[];
 	readonly curatedAssertionIds: readonly number[];
 	readonly groupId: number;
@@ -60,10 +66,8 @@ interface RecomputePrecondition {
 }
 
 // A read of everything the recompute needs: the compare-and-set precondition plus
-// the working sets the plan derives from — the algorithmic links to drop and the
-// spokes curation holds, which a fresh pairing may not take.
+// the spokes curation holds, which a fresh pairing may not take.
 interface GroupState {
-	readonly algorithmicAssertionIds: readonly number[];
 	readonly curatedSpokeIds: ReadonlySet<number>;
 	readonly precondition: RecomputePrecondition;
 }
@@ -146,9 +150,9 @@ const readGroupState = (db: GatewayDb, groupId: number): GroupState | undefined 
 		.map((row) => row.id)
 		.toSorted(ascending);
 	return {
-		algorithmicAssertionIds: algorithmic.map((row) => row.id).toSorted(ascending),
 		curatedSpokeIds: new Set(curated.map((row) => row.instalmentId)),
 		precondition: {
+			algorithmicAssertionIds: algorithmic.map((row) => row.id).toSorted(ascending),
 			curatedAbsenceIds,
 			curatedAssertionIds: curated.map((row) => row.id).toSorted(ascending),
 			groupId,
@@ -183,7 +187,7 @@ const planRecompute = (state: GroupState, input: RecomputeInput): RecomputePlan 
 	}
 	const vouched = state.precondition.source === "manual";
 	return {
-		deleteAssertionIds: state.algorithmicAssertionIds,
+		deleteAssertionIds: state.precondition.algorithmicAssertionIds,
 		droppedPairings,
 		newUnits,
 		precondition: state.precondition,
