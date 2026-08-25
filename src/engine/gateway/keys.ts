@@ -81,5 +81,6 @@ export {
 	memberTitle,
 	toGraphLocator,
 	toGraphMember,
+	toLocator,
 };
 export type { GraphMember };

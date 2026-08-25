@@ -1,18 +1,19 @@
 import { describe, expect, it } from "vitest";
 
-import { stubEngine } from "@/engine";
+import type { MemberTitles } from "@/engine";
 import type { RateableUnit } from "@/orpc/schema";
 
 import { serviceRatingsProvider } from "./service-ratings.ts";
 
-const resolved = stubEngine.resolveContinuity("continuity:spy-x-family");
-const [cour] = resolved.segments;
-if (cour === undefined) {
-	throw new Error("sample continuity resolved with no segments");
-}
-const { members } = cour;
+// The first-cour member ids the engine resolves for Spy × Family.
+const members: MemberTitles = {
+	anidb: "16947",
+	anilist: "140960",
+	mal: "50265",
+	tmdb: "120089",
+};
 
-const part: RateableUnit = { key: "part:continuity:spy-x-family:0", kind: "part" };
+const part: RateableUnit = { key: "part:group:1:0", kind: "part" };
 
 describe("service ratings list", () => {
 	it("returns a per-service list, each in its native scale, never merged", async () => {
@@ -63,7 +64,7 @@ describe("service ratings list", () => {
 
 	it("yields no ratings for units that are not parts", async () => {
 		const episode: RateableUnit = { key: "anidb:16947#1", kind: "episode" };
-		const work: RateableUnit = { key: "continuity:spy-x-family", kind: "work" };
+		const work: RateableUnit = { key: "group:1", kind: "work" };
 
 		expect(await serviceRatingsProvider.ratingsFor(episode, members)).toEqual([]);
 		expect(await serviceRatingsProvider.ratingsFor(work, members)).toEqual([]);
