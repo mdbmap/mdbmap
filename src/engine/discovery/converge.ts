@@ -455,6 +455,7 @@ export {
 	convergeGroups,
 	planConverge,
 	readConvergeState,
+	readGroupSnapshot,
 	readRevalidationMembers,
 };
 export type {
