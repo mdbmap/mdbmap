@@ -1,4 +1,5 @@
 import type { MetadataProvider as MetadataProviderKind, ResolveResult } from "@/engine";
+import type { Db } from "@/orpc/context";
 import type {
 	CommunityScore,
 	Credit,
@@ -50,9 +51,10 @@ interface ServiceRatingsProvider {
 	ratingsFor: (unit: RateableUnit) => readonly ServiceRating[];
 }
 
-// mdbmap's own mean + count over personal ratings (#8).
+// mdbmap's own mean + count over personal ratings (#8). Async because it
+// queries D1; the request-scoped db is threaded in at the call site.
 interface CommunityScoreProvider {
-	scoreFor: (unit: RateableUnit) => CommunityScore;
+	scoreFor: (unit: RateableUnit, db: Db) => Promise<CommunityScore>;
 }
 
 interface Providers {
