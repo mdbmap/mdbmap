@@ -3,6 +3,7 @@ import { createRootRouteWithContext } from "@tanstack/react-router";
 
 import { getLocale } from "#/paraglide/runtime";
 import { RootDocument } from "@/components/root-document";
+import { themeInitScript } from "@/lib/design/theme";
 
 import appCss from "@/styles.css?url";
 
@@ -36,6 +37,11 @@ export const Route = createRootRouteWithContext<MyRouterContext>()({
 			},
 			{
 				title: "TanStack Start Starter",
+			},
+		],
+		scripts: [
+			{
+				children: themeInitScript,
 			},
 		],
 	}),
