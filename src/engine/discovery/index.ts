@@ -27,6 +27,23 @@ export type {
 	FallthroughReason,
 	RequestCursor,
 } from "./broker.ts";
+export {
+	acceptFuzzyCandidate,
+	rejectFuzzyCandidate,
+	runFuzzyDiscovery,
+	scoreHit,
+} from "./fuzzy.ts";
+export type {
+	FuzzyAcceptOutcome,
+	FuzzyDiscoveryDeps,
+	FuzzyDiscoveryInput,
+	FuzzyDiscoveryOutcome,
+	FuzzyQuery,
+	FuzzyRejectOutcome,
+	FuzzySearchClient,
+	FuzzySearchClients,
+	FuzzySearchResult,
+} from "./fuzzy.ts";
 export { createSimklClient, simklServices } from "./simkl.ts";
 export type {
 	MainlineRelation,
