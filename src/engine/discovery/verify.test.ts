@@ -1,7 +1,8 @@
 import { describe, expect, it } from "vitest";
 
-import type { SimklEntry, SimklExternalIds, SimklRelation, SimklService } from "./simkl.ts";
+import type { SimklExternalIds, SimklRelation, SimklService } from "./simkl.ts";
 import { simklServices } from "./simkl.ts";
+import { anime } from "./test-fixtures.ts";
 import type { ChainSegment, ContinuityChain } from "./walk.ts";
 import type { CatalogueTitle, VerificationClients } from "./verify.ts";
 import { verifyChain } from "./verify.ts";
@@ -11,10 +12,12 @@ const segment = (
 	externalIds: SimklExternalIds,
 	relations: readonly SimklRelation[],
 	ordinal: number,
-): ChainSegment => {
-	const entry: SimklEntry = { externalIds, id, relations, title: id, type: "anime" };
-	return { entry, externalIds, nativeAnidbId: externalIds.anidb, ordinal };
-};
+): ChainSegment => ({
+	entry: anime(id, externalIds, relations),
+	externalIds,
+	nativeAnidbId: externalIds.anidb,
+	ordinal,
+});
 
 const chainOf = (segments: readonly ChainSegment[]): ContinuityChain => {
 	const [rebase] = segments;
@@ -182,6 +185,45 @@ describe("simkl verification", () => {
 		expect(result.titleAssertions).toStrictEqual([]);
 		expect(result.candidates).toStrictEqual([
 			{ segmentOrdinal: 0, service: "anilist", serviceId: "gone" },
+		]);
+	});
+
+	it("reaches high on format agreement when the title does not corroborate", async () => {
+		const chain = chainOf([segment("x", { anidb: "dx", anilist: "alx" }, [], 0)]);
+		const clients = clientsFrom({
+			anidb: { dx: title({ format: "ONA", instalmentCount: 12, title: "Blue Lock" }) },
+			anilist: { alx: title({ format: "ona", instalmentCount: 12, title: "Different Name" }) },
+		});
+
+		const result = await verifyChain(chain, { clients, target: "anilist" });
+
+		expect(result.conflicts).toStrictEqual([]);
+		expect(result.titleAssertions[0]).toMatchObject({ confidence: "high", flagged: false });
+	});
+
+	it("does not bridge a repeated id across a segment that lacks it", async () => {
+		const chain = chainOf([
+			segment("a", { anidb: "d0", anilist: "al" }, [], 0),
+			segment("b", { anidb: "d1" }, [], 1),
+			segment("c", { anidb: "d2", anilist: "al" }, [], 2),
+		]);
+		const clients = clientsFrom({
+			anidb: {
+				d0: title({ instalmentCount: 12, title: "A" }),
+				d1: title({ instalmentCount: 12, title: "B" }),
+				d2: title({ instalmentCount: 14, title: "C" }),
+			},
+			anilist: { al: title({ instalmentCount: 26, releaseDate: "2022-01-07", title: "A" }) },
+		});
+
+		const result = await verifyChain(chain, { clients, target: "anilist" });
+
+		// Two independent runs, each verified against the whole 26-ep target on its
+		// own count — 12 and 14 both miss 26, so neither combines into a split.
+		expect(result.titleAssertions).toStrictEqual([]);
+		expect(result.conflicts.map((conflict) => conflict.reason)).toStrictEqual([
+			"count-mismatch",
+			"count-mismatch",
 		]);
 	});
 

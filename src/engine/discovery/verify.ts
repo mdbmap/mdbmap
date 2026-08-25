@@ -182,7 +182,10 @@ const relationsOf = (
 
 // A maximal run of adjacent segments that carry the same target id, kept
 // separate by SIMKL. Verification checks the target against the run as a whole
-// before dividing its instalments between the segments.
+// before dividing its instalments between the segments. A run only extends over
+// chain-adjacent segments: an intervening segment without the id (or with a
+// different one) closes it, so a repeat that skips a gap stays two runs and its
+// instalments are never laid end to end across the gap.
 interface TargetRun {
 	segments: readonly AnchoredSegment[];
 	targetId: string;
@@ -193,18 +196,23 @@ const targetRuns = (
 	target: SimklService,
 ): TargetRun[] => {
 	const runs: TargetRun[] = [];
+	let previousOrdinal: number | undefined;
 	for (const item of anchored) {
 		const service = nativeServiceFor(item.segment.entry.type);
 		const targetId = item.segment.externalIds[target];
 		if (targetId === undefined || service === target) {
+			previousOrdinal = undefined;
 			continue;
 		}
 		const open = runs.at(-1);
-		if (open !== undefined && open.targetId === targetId) {
+		const adjacent =
+			previousOrdinal !== undefined && item.segment.ordinal === previousOrdinal + 1;
+		if (open !== undefined && open.targetId === targetId && adjacent) {
 			open.segments = [...open.segments, item];
-			continue;
+		} else {
+			runs.push({ segments: [item], targetId });
 		}
-		runs.push({ segments: [item], targetId });
+		previousOrdinal = item.segment.ordinal;
 	}
 	return runs;
 };
@@ -246,6 +254,18 @@ const titleVerdict = (run: TargetRun, targetTitle: string): CheckVerdict => {
 	return best >= TITLE_AGREEMENT ? "pass" : "unavailable";
 };
 
+// Format is corroboration, never contradiction: a shared shape (both `tv`, both
+// `ona`) supports the alignment, but a mismatch across catalogues that name
+// shapes differently is absent evidence, not a conflict.
+const formatVerdict = (run: TargetRun, targetFormat: string | undefined): CheckVerdict => {
+	if (targetFormat === undefined) {
+		return "unavailable";
+	}
+	const wanted = targetFormat.toLowerCase();
+	const agrees = run.segments.some((item) => item.native?.format?.toLowerCase() === wanted);
+	return agrees ? "pass" : "unavailable";
+};
+
 // Segment sizes drive the target's instalment split, so a run only verifies
 // structurally when every segment has a native count and they sum to the
 // target's own count. A sum that disagrees is a conflict, not weak evidence.
@@ -272,11 +292,11 @@ const sumOf = (sizes: readonly (number | undefined)[]): number | undefined => {
 
 // Lays the run's segments end to end across the target's instalments. Only
 // called once the counts verify, so the ranges partition [1, total] exactly.
-const rangesOf = (sizes: readonly number[]): TitleAssertionPlan["targetRange"][] => {
+const rangesOf = (sizes: readonly number[]): InstalmentRange[] => {
 	let cursor = 1;
-	return sizes.map((size, index) => {
+	return sizes.map((size) => {
 		const from = cursor;
-		const to = index === sizes.length - 1 ? cursor + size - 1 : from + size - 1;
+		const to = from + size - 1;
 		cursor = to + 1;
 		return { from, to };
 	});
@@ -360,9 +380,12 @@ const verifyRun = async (
 	}
 
 	// Structural fit is evidence, not proof: an exact combined count reaches
-	// high only with an independent signal agreeing. Without one the alignment
-	// still publishes, but low and flagged for review.
-	const corroborated = dates === "pass" || titleVerdict(run, targetTitle.title) === "pass";
+	// high only with an independent signal — title, date or format — agreeing.
+	// Without one the alignment still publishes, but low and flagged for review.
+	const corroborated =
+		dates === "pass" ||
+		titleVerdict(run, targetTitle.title) === "pass" ||
+		formatVerdict(run, targetTitle.format) === "pass";
 	const ranges = rangesOf(sizes.filter((size) => size !== undefined));
 	return {
 		...empty(),
