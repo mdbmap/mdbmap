@@ -68,7 +68,7 @@ interface TitleAnswer {
 	readonly links: ResolvedLinks;
 }
 
-// The in-memory answer #33 feeds the serializer: no DB, no IO, fully resolved.
+// The in-memory answer the serializer consumes: no DB, no IO, fully resolved.
 // Precondition: the top-level input round-trips the parsed request id and is always
 // representable. Per-instalment inputs come from the internal model and may not be.
 type ResolvedAnswer = InstalmentAnswer | TitleAnswer;
@@ -184,6 +184,18 @@ const ownSource = (
 		(assertion) => sourceRank(assertion.source),
 	)?.source;
 
+// formatId, but surfacing a FormatError as a value instead of throwing it.
+const tryFormatId = (identity: Identity): FormatError | string => {
+	try {
+		return formatId(identity);
+	} catch (error) {
+		if (error instanceof FormatError) {
+			return error;
+		}
+		throw error;
+	}
+};
+
 const formatCounterpart = (
 	counterpart: ResolvedCounterpart,
 ): Counterpart | { readonly error: CounterpartError } => {
@@ -191,18 +203,18 @@ const formatCounterpart = (
 		assertionPath: counterpart.assertionPath,
 		confidence: counterpart.confidence,
 	};
-	try {
-		const id = formatId(counterpart.identity);
-		if (counterpart.supportingInstalment === undefined) {
-			return { ...evidence, id };
-		}
-		return { ...evidence, id, supportingInstalment: formatId(counterpart.supportingInstalment) };
-	} catch (error) {
-		if (error instanceof FormatError) {
-			return { error: { ...evidence, reason: error.message } };
-		}
-		throw error;
+	const id = tryFormatId(counterpart.identity);
+	if (id instanceof FormatError) {
+		return { error: { ...evidence, reason: id.message } };
 	}
+	if (counterpart.supportingInstalment === undefined) {
+		return { ...evidence, id };
+	}
+	const supportingInstalment = tryFormatId(counterpart.supportingInstalment);
+	if (supportingInstalment instanceof FormatError) {
+		return { error: { ...evidence, reason: supportingInstalment.message } };
+	}
+	return { ...evidence, id, supportingInstalment };
 };
 
 // A title-level answer serves the derived group source; an instalment-level one
@@ -245,15 +257,10 @@ const serialize = (answer: ResolvedAnswer): MappingResponse => {
 	const instalments: InstalmentMapping[] = [];
 	const instalmentErrors: InstalmentError[] = [];
 	for (const instalment of answer.instalments) {
-		let input: string;
-		try {
-			input = formatId(instalment.input);
-		} catch (error) {
-			if (error instanceof FormatError) {
-				instalmentErrors.push({ reason: error.message, source: instalment.source });
-				continue;
-			}
-			throw error;
+		const input = tryFormatId(instalment.input);
+		if (input instanceof FormatError) {
+			instalmentErrors.push({ reason: input.message, source: instalment.source });
+			continue;
 		}
 		instalments.push({
 			input,
