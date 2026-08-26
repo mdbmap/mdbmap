@@ -20,9 +20,12 @@ describe("api key admin gate", () => {
 
 		for (const user of deniedUsers) {
 			const client = await clientFor(user);
-			await expect(client.apiKeys.list()).rejects.toThrow();
-			await expect(client.apiKeys.mint({ label: "ci" })).rejects.toThrow();
-			await expect(client.apiKeys.revoke({ id: "key-1" })).rejects.toThrow();
+			const results = await Promise.allSettled([
+				client.apiKeys.list(),
+				client.apiKeys.mint({ label: "ci" }),
+				client.apiKeys.revoke({ id: "key-1" }),
+			]);
+			expect(results.every(({ status }) => status === "rejected")).toBe(true);
 		}
 	});
 });
