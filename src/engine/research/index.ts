@@ -18,6 +18,13 @@ export {
 	isOfficialOperatorUrl,
 	officialOperatorHosts,
 } from "./domains.ts";
+export { listResearchAssertions, RESEARCH } from "./assertions.ts";
+export type {
+	InstalmentResearchAssertion,
+	RelationResearchAssertion,
+	ResearchAssertion,
+	TitleResearchAssertion,
+} from "./assertions.ts";
 export { runResearchPass } from "./orchestrate.ts";
 export type {
 	ResearchAgent,
@@ -37,6 +44,14 @@ export type {
 	ReviewEnqueue,
 	TitleProposal,
 } from "./publish.ts";
+export {
+	fetchCostFor,
+	FETCH_COST,
+	recheckAssertion,
+	sampleResearchRecheck,
+	TITLE_AGREEMENT,
+} from "./recheck.ts";
+export type { RecheckVerdict, ResearchRecheckOutcome } from "./recheck.ts";
 export { resolveResearchSchedule } from "./schedule.ts";
 export type { ResearchSchedule } from "./schedule.ts";
 export {

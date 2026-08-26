@@ -1,0 +1,333 @@
+import { eq } from "drizzle-orm";
+
+import type { Db } from "@/db";
+import { ascendingPair } from "@/db";
+import type {
+	CandidateEvidence,
+	CandidateSubject,
+} from "@/db/engine-schema";
+import {
+	candidateSubjectKey,
+	instalmentAssertions,
+	pendingGroupCandidates,
+	relationAssertions,
+	titleAssertions,
+} from "@/db/engine-schema";
+import { titleSimilarity } from "@/engine/matcher";
+import type { BudgetLedger } from "@/engine/matcher";
+
+import type { ResearchAssertion } from "./assertions.ts";
+import { listResearchAssertions, RESEARCH } from "./assertions.ts";
+import {
+	parseResearchCatalogue,
+	researchCatalogueSchema,
+	toCatalogueTitle,
+} from "./catalogue.ts";
+import type { ResearchCatalogueRecord } from "./catalogue.ts";
+import type { ResearchCatalogueClients } from "./tools.ts";
+
+const FETCH_COST = 1;
+const TITLE_AGREEMENT = 0.5;
+
+type RecheckVerdict = "agrees" | "disagrees" | "unavailable";
+
+interface ResearchRecheckOutcome {
+	readonly checked: number;
+	readonly flagged: number;
+	readonly remainingBudget: number;
+}
+
+type LowConfidenceEvidence = Extract<
+	CandidateEvidence,
+	{ kind: "low-confidence-flag" }
+>;
+
+const flagEvidenceHash = (evidence: LowConfidenceEvidence): string => {
+	switch (evidence.target) {
+		case "instalment": {
+			return `low-confidence-flag:instalment:${evidence.instalmentId}:${evidence.unitId}`;
+		}
+		case "title": {
+			return `low-confidence-flag:title:${evidence.titleAId}:${evidence.titleBId}`;
+		}
+		case "relation": {
+			return `low-confidence-flag:relation:${evidence.fromTitleId}->${evidence.toTitleId}`;
+		}
+	}
+};
+
+const queueFlag = async (
+	db: Db,
+	input: {
+		readonly evidence: LowConfidenceEvidence;
+		readonly subject: CandidateSubject;
+	},
+): Promise<void> => {
+	await db
+		.insert(pendingGroupCandidates)
+		.values({
+			evidence: input.evidence,
+			evidenceHash: flagEvidenceHash(input.evidence),
+			kind: "low-confidence-flag",
+			subject: input.subject,
+			subjectKey: candidateSubjectKey(input.subject),
+		})
+		.onConflictDoNothing()
+		.run();
+};
+
+const fetchLiveCatalogue = async (
+	clients: ResearchCatalogueClients,
+	service: string,
+	serviceId: string,
+): Promise<ResearchCatalogueRecord | undefined> => {
+	const client = clients[service];
+	if (client === undefined) {
+		return undefined;
+	}
+	let raw: unknown;
+	try {
+		raw =
+			client.fetchCatalogue === undefined
+				? await client.fetchTitle(serviceId)
+				: await client.fetchCatalogue(serviceId);
+	} catch {
+		return undefined;
+	}
+	if (raw === undefined) {
+		return undefined;
+	}
+	const parsed = researchCatalogueSchema.safeParse(raw);
+	return parsed.success ? parsed.data : undefined;
+};
+
+const fetchPair = async (
+	clients: ResearchCatalogueClients,
+	left: { readonly service: string; readonly serviceId: string },
+	right: { readonly service: string; readonly serviceId: string },
+	budget: BudgetLedger,
+): Promise<
+	| { readonly kind: "pair"; readonly left: ResearchCatalogueRecord; readonly right: ResearchCatalogueRecord }
+	| { readonly kind: "unavailable" }
+> => {
+	if (!budget.spend(FETCH_COST)) {
+		return { kind: "unavailable" };
+	}
+	const leftRecord = await fetchLiveCatalogue(
+		clients,
+		left.service,
+		left.serviceId,
+	);
+	if (!budget.spend(FETCH_COST)) {
+		return { kind: "unavailable" };
+	}
+	const rightRecord = await fetchLiveCatalogue(
+		clients,
+		right.service,
+		right.serviceId,
+	);
+	if (leftRecord === undefined || rightRecord === undefined) {
+		return { kind: "unavailable" };
+	}
+	return { kind: "pair", left: leftRecord, right: rightRecord };
+};
+
+const recheckTitle = async (
+	assertion: Extract<ResearchAssertion, { kind: "title" }>,
+	clients: ResearchCatalogueClients,
+	budget: BudgetLedger,
+): Promise<RecheckVerdict> => {
+	const fetched = await fetchPair(clients, assertion.left, assertion.right, budget);
+	if (fetched.kind === "unavailable") {
+		return "unavailable";
+	}
+	const leftTitle = toCatalogueTitle(fetched.left).title;
+	const rightTitle = toCatalogueTitle(fetched.right).title;
+	return titleSimilarity(leftTitle, rightTitle) >= TITLE_AGREEMENT
+		? "agrees"
+		: "disagrees";
+};
+
+const recheckRelation = async (
+	assertion: Extract<ResearchAssertion, { kind: "relation" }>,
+	clients: ResearchCatalogueClients,
+	budget: BudgetLedger,
+): Promise<RecheckVerdict> => {
+	const fetched = await fetchPair(clients, assertion.from, assertion.to, budget);
+	if (fetched.kind === "unavailable") {
+		return "unavailable";
+	}
+	return "agrees";
+};
+
+const recheckInstalment = async (
+	assertion: Extract<ResearchAssertion, { kind: "instalment" }>,
+	clients: ResearchCatalogueClients,
+	budget: BudgetLedger,
+): Promise<RecheckVerdict> => {
+	if (!budget.spend(FETCH_COST)) {
+		return "unavailable";
+	}
+	const record = await fetchLiveCatalogue(
+		clients,
+		assertion.ref.service,
+		assertion.ref.serviceId,
+	);
+	if (record === undefined) {
+		return "unavailable";
+	}
+	const present = record.instalments.some(
+		(instalment) => instalment.locator === assertion.locator,
+	);
+	return present ? "agrees" : "disagrees";
+};
+
+const fetchCostFor = (assertion: ResearchAssertion): number =>
+	assertion.kind === "instalment" ? FETCH_COST : FETCH_COST * 2;
+
+const recheckAssertion = async (
+	assertion: ResearchAssertion,
+	clients: ResearchCatalogueClients,
+	budget: BudgetLedger,
+): Promise<RecheckVerdict> => {
+	switch (assertion.kind) {
+		case "title": {
+			return recheckTitle(assertion, clients, budget);
+		}
+		case "relation": {
+			return recheckRelation(assertion, clients, budget);
+		}
+		case "instalment": {
+			return recheckInstalment(assertion, clients, budget);
+		}
+		default: {
+			const _exhaustive: never = assertion;
+			return _exhaustive;
+		}
+	}
+};
+
+const demoteAndFlag = async (
+	db: Db,
+	assertion: ResearchAssertion,
+): Promise<void> => {
+	switch (assertion.kind) {
+		case "title": {
+			await db
+				.update(titleAssertions)
+				.set({ confidence: "low" })
+				.where(eq(titleAssertions.id, assertion.id))
+				.run();
+			await queueFlag(db, {
+				evidence: {
+					confidence: assertion.confidence,
+					kind: "low-confidence-flag",
+					source: RESEARCH,
+					target: "title",
+					titleAId: assertion.titleAId,
+					titleBId: assertion.titleBId,
+				},
+				subject: {
+					subjectType: "title-pair",
+					titleAId: assertion.titleAId,
+					titleBId: assertion.titleBId,
+				},
+			});
+			return;
+		}
+		case "relation": {
+			await db
+				.update(relationAssertions)
+				.set({ confidence: "low" })
+				.where(eq(relationAssertions.id, assertion.id))
+				.run();
+			await queueFlag(db, {
+				evidence: {
+					confidence: assertion.confidence,
+					fromTitleId: assertion.fromTitleId,
+					kind: "low-confidence-flag",
+					source: RESEARCH,
+					target: "relation",
+					toTitleId: assertion.toTitleId,
+				},
+				subject: {
+					subjectType: "title-pair",
+					titleAId: assertion.fromTitleId,
+					titleBId: assertion.toTitleId,
+				},
+			});
+			return;
+		}
+		case "instalment": {
+			await db
+				.update(instalmentAssertions)
+				.set({ confidence: "low" })
+				.where(eq(instalmentAssertions.id, assertion.id))
+				.run();
+			await queueFlag(db, {
+				evidence: {
+					confidence: assertion.confidence,
+					instalmentId: assertion.instalmentId,
+					kind: "low-confidence-flag",
+					source: RESEARCH,
+					target: "instalment",
+					unitId: assertion.unitId,
+				},
+				subject: {
+					subjectType: "title",
+					titleId: assertion.titleId,
+				},
+			});
+			return;
+		}
+		default: {
+			const _exhaustive: never = assertion;
+			return _exhaustive;
+		}
+	}
+};
+
+const sampleResearchRecheck = async (
+	db: Db,
+	input: {
+		readonly budget: BudgetLedger;
+		readonly clients: ResearchCatalogueClients;
+		readonly groupId: number;
+	},
+): Promise<ResearchRecheckOutcome> => {
+	const candidates = await listResearchAssertions(db, input.groupId);
+	let checked = 0;
+	let flagged = 0;
+
+	for (const assertion of candidates) {
+		const snapshot = input.budget.snapshot();
+		if (snapshot.remaining < fetchCostFor(assertion)) {
+			break;
+		}
+		const verdict = await recheckAssertion(
+			assertion,
+			input.clients,
+			input.budget,
+		);
+		checked += 1;
+		if (verdict === "disagrees" || verdict === "unavailable") {
+			await demoteAndFlag(db, assertion);
+			flagged += 1;
+		}
+	}
+
+	return {
+		checked,
+		flagged,
+		remainingBudget: input.budget.snapshot().remaining,
+	};
+};
+
+export {
+	fetchCostFor,
+	FETCH_COST,
+	recheckAssertion,
+	sampleResearchRecheck,
+	TITLE_AGREEMENT,
+};
+export type { RecheckVerdict, ResearchRecheckOutcome };

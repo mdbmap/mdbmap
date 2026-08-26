@@ -5,6 +5,7 @@ export {
 	readGroupState,
 	recomputeGroup,
 } from "./recompute.ts";
+export { revalidateGroup } from "./revalidate.ts";
 export type {
 	FreshPairing,
 	GroupState,
@@ -14,3 +15,7 @@ export type {
 	RecomputePlan,
 	RecomputePrecondition,
 } from "./recompute.ts";
+export type {
+	RevalidateGroupInput,
+	RevalidateGroupOutcome,
+} from "./revalidate.ts";
