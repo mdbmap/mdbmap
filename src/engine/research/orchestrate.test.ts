@@ -742,8 +742,8 @@ describe("runResearchPass publish path", () => {
 		expect(flags[0]?.subject).toMatchObject({ subjectType: "title-pair" });
 	});
 
-	it("wires the #61 reviewer when only judge/escalate deps are supplied", async () => {
-		const judged: string[] = [];
+	it("enqueues published proposals for the #61 reviewer without adjudicating inline", async () => {
+		const enqueued: string[] = [];
 		const outcome = await runResearchPass(continuity, "after-residue", {
 			agent: singleSourceAgent,
 			clients: {
@@ -755,29 +755,17 @@ describe("runResearchPass publish path", () => {
 				}),
 			},
 			db,
+			enqueueReview: async (proposal) => {
+				await Promise.resolve();
+				enqueued.push(proposal.claim);
+			},
 			masterKey,
 			providerId,
-			review: {
-				escalate: async () => {
-					await Promise.resolve();
-				},
-				judge: async (proposal) => {
-					await Promise.resolve();
-					judged.push(proposal.claim);
-					return {
-						rationale: "not enough evidence",
-						verdict: "unable-to-tell",
-					};
-				},
-			},
 			timing: createMemoryTimingStore("after-residue"),
 		});
 
 		expect(outcome.kind).toBe("completed");
-		for (let spins = 0; spins < 50 && judged.length === 0; spins += 1) {
-			await Promise.resolve();
-		}
-		expect(judged).toEqual(["weak single-source claim"]);
+		expect(enqueued).toEqual(["weak single-source claim"]);
 	});
 
 	it("leaves unresolved residue for the deterministic fan-out", async () => {

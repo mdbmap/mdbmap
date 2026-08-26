@@ -1,7 +1,7 @@
 import { and, eq, or } from "drizzle-orm";
 import type { Promisable } from "type-fest";
 
-import { one } from "@/db";
+import { ascendingPair, one } from "@/db";
 import type { Db } from "@/db";
 import type {
 	AssertionSource,
@@ -72,12 +72,6 @@ interface PublishedResearch {
 }
 
 type ReviewEnqueue = (proposal: ReviewProposal) => Promisable<unknown>;
-
-const ascendingPair = (
-	left: number,
-	right: number,
-): readonly [number, number] =>
-	left < right ? [left, right] : [right, left];
 
 const requireTitleId = async (db: Db, ref: ServiceRef): Promise<number> => {
 	const id = await findTitle(db, ref);
@@ -240,7 +234,10 @@ const publishTitleProposal = async (
 	const rightId = await requireTitleId(db, proposal.right);
 	const [titleAId, titleBId] = ascendingPair(leftId, rightId);
 	const existing = await db
-		.select({ id: titleAssertions.id })
+		.select({
+			confidence: titleAssertions.confidence,
+			id: titleAssertions.id,
+		})
 		.from(titleAssertions)
 		.where(
 			and(
@@ -265,6 +262,17 @@ const publishTitleProposal = async (
 			ROW_MISSING,
 		).id;
 
+	if (
+		existing[0] !== undefined &&
+		existing[0].confidence !== decision.confidence
+	) {
+		await db
+			.update(titleAssertions)
+			.set({ confidence: decision.confidence })
+			.where(eq(titleAssertions.id, assertionId))
+			.run();
+	}
+
 	if (decision.reviewFlag !== undefined) {
 		await queueTitlePairFlag(db, {
 			assertionConfidence: decision.confidence,
@@ -280,9 +288,12 @@ const existingRelationAssertion = async (
 	db: Db,
 	fromTitleId: number,
 	toTitleId: number,
-): Promise<number | undefined> => {
+): Promise<{ confidence: "high" | "low"; id: number } | undefined> => {
 	const existing = await db
-		.select({ id: relationAssertions.id })
+		.select({
+			confidence: relationAssertions.confidence,
+			id: relationAssertions.id,
+		})
 		.from(relationAssertions)
 		.where(
 			and(
@@ -291,7 +302,7 @@ const existingRelationAssertion = async (
 			),
 		)
 		.all();
-	return existing[0]?.id;
+	return existing[0];
 };
 
 const endpointConflicts = async (
@@ -412,8 +423,15 @@ const publishRelationProposal = async (
 	const decision = corroborate(proposal.evidence);
 	const fromTitleId = await requireTitleId(db, proposal.from);
 	const toTitleId = await requireTitleId(db, proposal.to);
-	const exactId = await existingRelationAssertion(db, fromTitleId, toTitleId);
-	if (exactId !== undefined) {
+	const exact = await existingRelationAssertion(db, fromTitleId, toTitleId);
+	if (exact !== undefined) {
+		if (exact.confidence !== decision.confidence) {
+			await db
+				.update(relationAssertions)
+				.set({ confidence: decision.confidence })
+				.where(eq(relationAssertions.id, exact.id))
+				.run();
+		}
 		if (decision.reviewFlag !== undefined) {
 			await queueRelationFlag(db, {
 				assertionConfidence: decision.confidence,
@@ -421,7 +439,7 @@ const publishRelationProposal = async (
 				toTitleId,
 			});
 		}
-		return publishedResult(proposal, exactId, decision);
+		return publishedResult(proposal, exact.id, decision);
 	}
 
 	const conflicts = await endpointConflicts(db, fromTitleId, toTitleId);
@@ -482,9 +500,12 @@ const existingInstalmentAssertion = async (
 	db: Db,
 	instalmentId: number,
 	unitId: string,
-): Promise<number | undefined> => {
+): Promise<{ confidence: "high" | "low"; id: number } | undefined> => {
 	const existing = await db
-		.select({ id: instalmentAssertions.id })
+		.select({
+			confidence: instalmentAssertions.confidence,
+			id: instalmentAssertions.id,
+		})
 		.from(instalmentAssertions)
 		.where(
 			and(
@@ -493,7 +514,7 @@ const existingInstalmentAssertion = async (
 			),
 		)
 		.all();
-	return existing[0]?.id;
+	return existing[0];
 };
 
 const insertInstalmentAssertion = async (
@@ -524,13 +545,26 @@ const publishInstalmentProposal = async (
 ): Promise<PublishedResearch> => {
 	const decision = corroborate(proposal.evidence);
 	const unitId = await resolveInstalmentUnitId(db, proposal);
+	const existing = await existingInstalmentAssertion(
+		db,
+		proposal.instalmentId,
+		unitId,
+	);
 	const assertionId =
-		(await existingInstalmentAssertion(db, proposal.instalmentId, unitId)) ??
+		existing?.id ??
 		(await insertInstalmentAssertion(db, {
 			confidence: decision.confidence,
 			instalmentId: proposal.instalmentId,
 			unitId,
 		}));
+
+	if (existing !== undefined && existing.confidence !== decision.confidence) {
+		await db
+			.update(instalmentAssertions)
+			.set({ confidence: decision.confidence })
+			.where(eq(instalmentAssertions.id, assertionId))
+			.run();
+	}
 
 	if (decision.reviewFlag !== undefined) {
 		const spoke = one(

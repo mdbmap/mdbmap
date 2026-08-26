@@ -8,6 +8,7 @@ import type { CatalogueTitle } from "@/engine/discovery";
 const researchInstalmentSchema = z.object({
 	kind: z.enum(["regular", "special"]).default("regular"),
 	locator: z.string().min(1),
+	locatorKind: z.enum(["service-id", "position"]).default("position"),
 });
 
 const researchCatalogueSchema = z.object({

@@ -116,7 +116,7 @@ const insertMissingSpokes = async (
 					.insert(serviceInstalments)
 					.values({
 						locator: instalment.locator,
-						locatorKind: "position",
+						locatorKind: instalment.locatorKind,
 						titleId,
 					})
 					.returning()

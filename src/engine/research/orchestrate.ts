@@ -2,8 +2,6 @@ import type { Promisable } from "type-fest";
 
 import type { Db } from "@/db";
 import type { SimklClient } from "@/engine/discovery";
-import type { ReviewTaskDeps } from "@/engine/reviewer";
-import { reviewResearchProposal } from "@/engine/reviewer";
 import type { ProviderConfig } from "@/lib/provider-config";
 import { getProviderConfig } from "@/lib/provider-config";
 
@@ -38,28 +36,17 @@ type ResearchAgent = (input: {
 	readonly tools: ResearchToolset;
 }) => Promisable<ResearchAgentResult>;
 
-type ResearchJudgeDeps = Pick<ReviewTaskDeps, "escalate" | "judge">;
-
-type ResearchReviewWiring =
-	| {
-			readonly enqueueReview: ReviewEnqueue;
-			readonly review?: ResearchJudgeDeps;
-	  }
-	| {
-			readonly enqueueReview?: undefined;
-			readonly review: ResearchJudgeDeps;
-	  };
-
-type ResearchPassDeps = {
+interface ResearchPassDeps {
 	readonly agent: ResearchAgent;
 	readonly clients: ResearchCatalogueClients;
 	readonly db: Db;
+	readonly enqueueReview: ReviewEnqueue;
 	readonly masterKey: string;
 	readonly providerId: string;
 	readonly scrape?: ScrapeClient;
 	readonly simkl?: SimklClient;
 	readonly timing: ResearchTimingStore;
-} & ResearchReviewWiring;
+}
 
 type ResearchPassOutcome =
 	| {
@@ -74,21 +61,6 @@ type ResearchPassOutcome =
 			readonly reason: "timing-mismatch" | "timing-off";
 			readonly residue: readonly string[];
 	  };
-
-const resolveEnqueue = (deps: ResearchPassDeps): ReviewEnqueue => {
-	if (deps.enqueueReview !== undefined) {
-		return deps.enqueueReview;
-	}
-	const { review } = deps;
-	// ADR-0004: reviewer is event-driven; never adjudicate inside the pass.
-	return (proposal) => {
-		void reviewResearchProposal(proposal, {
-			db: deps.db,
-			escalate: review.escalate,
-			judge: review.judge,
-		});
-	};
-};
 
 const servicesFromProposals = (
 	proposals: readonly ResearchProposal[],
@@ -179,7 +151,7 @@ const runResearchPass = async (
 	const published = await publishResearchProposals(
 		deps.db,
 		agentResult.proposals,
-		resolveEnqueue(deps),
+		deps.enqueueReview,
 	);
 
 	return {

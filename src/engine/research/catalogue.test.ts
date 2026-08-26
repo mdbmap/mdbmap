@@ -25,4 +25,18 @@ describe("research catalogue validators", () => {
 	it("rejects an empty title the way a server client would", () => {
 		expect(() => parseResearchCatalogue({ title: "" })).toThrow();
 	});
+
+	it("carries locatorKind through the catalogue schema", () => {
+		const record = parseResearchCatalogue({
+			instalments: [
+				{ locator: "ep-1", locatorKind: "service-id" },
+				{ locator: "1:2" },
+			],
+			title: "Show",
+		});
+		expect(record.instalments).toEqual([
+			{ kind: "regular", locator: "ep-1", locatorKind: "service-id" },
+			{ kind: "regular", locator: "1:2", locatorKind: "position" },
+		]);
+	});
 });
