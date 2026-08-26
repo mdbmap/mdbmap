@@ -81,6 +81,7 @@ const readSource = async (db: Db, assertionId: number): Promise<string> =>
 
 interface Escalation {
 	readonly proposal: ReviewProposal;
+	readonly rationale: string | undefined;
 	readonly reason: EscalationReason;
 }
 
@@ -90,8 +91,8 @@ const deps = (
 	escalations: Escalation[],
 ): ReviewTaskDeps => ({
 	db,
-	escalate: (proposal, reason) => {
-		escalations.push({ proposal, reason });
+	escalate: (proposal, reason, rationale) => {
+		escalations.push({ proposal, rationale, reason });
 	},
 	judge: () => verdict,
 });
@@ -122,9 +123,15 @@ describe("reviewResearchProposal", () => {
 			proposal,
 			deps(db, { rationale: "counts disagree", verdict: "disputing" }, escalations),
 		);
-		expect(result).toEqual({ kind: "escalated", reason: "disputing" });
+		expect(result).toEqual({
+			kind: "escalated",
+			rationale: "counts disagree",
+			reason: "disputing",
+		});
 		expect(await readSource(db, proposal.assertionId)).toBe("llm-research");
-		expect(escalations).toEqual([{ proposal, reason: "disputing" }]);
+		expect(escalations).toEqual([
+			{ proposal, rationale: "counts disagree", reason: "disputing" },
+		]);
 	});
 
 	it("escalates an unable-to-tell verdict and leaves the assertion unpromoted", async () => {
@@ -138,9 +145,19 @@ describe("reviewResearchProposal", () => {
 				escalations,
 			),
 		);
-		expect(result).toEqual({ kind: "escalated", reason: "unable-to-tell" });
+		expect(result).toEqual({
+			kind: "escalated",
+			rationale: "not enough evidence",
+			reason: "unable-to-tell",
+		});
 		expect(await readSource(db, proposal.assertionId)).toBe("llm-research");
-		expect(escalations).toEqual([{ proposal, reason: "unable-to-tell" }]);
+		expect(escalations).toEqual([
+			{
+				proposal,
+				rationale: "not enough evidence",
+				reason: "unable-to-tell",
+			},
+		]);
 	});
 
 	it("escalates malformed model output and leaves the assertion unpromoted", async () => {
@@ -150,9 +167,15 @@ describe("reviewResearchProposal", () => {
 			proposal,
 			deps(db, { verdict: "yes please" }, escalations),
 		);
-		expect(result).toEqual({ kind: "escalated", reason: "malformed-output" });
+		expect(result).toEqual({
+			kind: "escalated",
+			rationale: undefined,
+			reason: "malformed-output",
+		});
 		expect(await readSource(db, proposal.assertionId)).toBe("llm-research");
-		expect(escalations).toEqual([{ proposal, reason: "malformed-output" }]);
+		expect(escalations).toEqual([
+			{ proposal, rationale: undefined, reason: "malformed-output" },
+		]);
 	});
 
 	it("reports stale instead of promoting a row a concurrent writer already moved", async () => {
@@ -183,10 +206,15 @@ describe("reviewResearchProposal", () => {
 		);
 		expect(result).toEqual({
 			kind: "escalated",
+			rationale: "both sides agree",
 			reason: "missing-assertion",
 		});
 		expect(escalations).toEqual([
-			{ proposal, reason: "missing-assertion" },
+			{
+				proposal,
+				rationale: "both sides agree",
+				reason: "missing-assertion",
+			},
 		]);
 	});
 });

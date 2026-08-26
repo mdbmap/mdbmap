@@ -12,18 +12,21 @@ import type { ReviewProposal } from "./types.ts";
 // routed through the heavyweight overflow Workflow (#45).
 interface ReviewTaskDeps {
 	readonly db: Db;
-	// Records the escalation (a review flag / moderation candidate); the
-	// moderation queue this lands on is the caller's concern, not the
-	// reviewer's, so it stays an injected effect here.
+	// Records a human-review escalation; its destination is the caller's concern.
 	readonly escalate: (
 		proposal: ReviewProposal,
 		reason: EscalationReason,
+		rationale: string | undefined,
 	) => Promisable<void>;
 	readonly judge: ReviewJudge;
 }
 
 type ReviewTaskResult =
-	| { readonly kind: "escalated"; readonly reason: EscalationReason }
+	| {
+			readonly kind: "escalated";
+			readonly rationale: string | undefined;
+			readonly reason: EscalationReason;
+	  }
 	| { readonly kind: "promoted" }
 	// The assertion no longer carried `llm-research` by the time the verdict
 	// landed (already promoted, or reassigned by another writer entirely).
@@ -35,7 +38,7 @@ const reviewResearchProposal = async (
 ): Promise<ReviewTaskResult> => {
 	const outcome = await reviewProposal(proposal, deps.judge);
 	if (outcome.kind === "escalated") {
-		await deps.escalate(proposal, outcome.reason);
+		await deps.escalate(proposal, outcome.reason, outcome.rationale);
 		return outcome;
 	}
 	const promoted = await promoteAssertion(
@@ -44,8 +47,12 @@ const reviewResearchProposal = async (
 		proposal.assertionId,
 	);
 	if (promoted === "missing") {
-		const result = { kind: "escalated", reason: "missing-assertion" } as const;
-		await deps.escalate(proposal, result.reason);
+		const result = {
+			kind: "escalated",
+			rationale: outcome.rationale,
+			reason: "missing-assertion",
+		} as const;
+		await deps.escalate(proposal, result.reason, result.rationale);
 		return result;
 	}
 	return promoted === "promoted" ? { kind: "promoted" } : { kind: "stale" };

@@ -16,13 +16,21 @@ type EscalationReason =
 	| "unable-to-tell";
 
 type ReviewOutcome =
-	| { readonly kind: "escalated"; readonly reason: EscalationReason }
-	| { readonly kind: "promoted" };
+	| {
+			readonly kind: "escalated";
+			readonly rationale: string | undefined;
+			readonly reason: EscalationReason;
+	  }
+	| { readonly kind: "promoted"; readonly rationale: string };
 
-const outcomeFor = (verdict: RawVerdict["verdict"]): ReviewOutcome =>
-	verdict === "supporting"
-		? { kind: "promoted" }
-		: { kind: "escalated", reason: verdict };
+const outcomeFor = (verdict: RawVerdict): ReviewOutcome =>
+	verdict.verdict === "supporting"
+		? { kind: "promoted", rationale: verdict.rationale }
+		: {
+				kind: "escalated",
+				rationale: verdict.rationale,
+				reason: verdict.verdict,
+			};
 
 // Judges one proposal with a single tool-free model call and turns its raw
 // answer into a promote/escalate outcome. A malformed answer escalates just
@@ -34,8 +42,12 @@ const reviewProposal = async (
 	const raw = await judge(proposal);
 	const parsed = parseVerdict(raw);
 	return parsed.kind === "malformed"
-		? { kind: "escalated", reason: "malformed-output" }
-		: outcomeFor(parsed.verdict.verdict);
+		? {
+				kind: "escalated",
+				rationale: undefined,
+				reason: "malformed-output",
+			}
+		: outcomeFor(parsed.verdict);
 };
 
 export { reviewProposal };
