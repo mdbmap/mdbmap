@@ -61,6 +61,19 @@ describe("research catalogue tools", () => {
 		});
 	});
 
+	it("returns unavailable for an unconfigured service without throwing", async () => {
+		const tools = buildResearchTools({
+			clients: {},
+			db,
+			groupId,
+		});
+		await expect(tools.fetchCatalogue("unknown", "1")).resolves.toMatchObject({
+			kind: "api",
+			unavailable: true,
+			validated: false,
+		});
+	});
+
 	it("prefers the client requestUrl over a fabricated catalogue path", async () => {
 		const tools = buildResearchTools({
 			clients: {
