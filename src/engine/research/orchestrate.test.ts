@@ -374,6 +374,16 @@ const unavailableContinueAgent: ResearchAgent = async ({
 	return { proposals: [], residue: continuity.targetServices };
 };
 
+const malformedCatalogueAgent: ResearchAgent = async ({
+	tools,
+	continuity,
+}) => {
+	const bad = await tools.fetchCatalogue("tmdb", "broken");
+	expect(bad.unavailable).toBe(true);
+	expect(bad.validated).toBe(false);
+	return { proposals: [], residue: continuity.targetServices };
+};
+
 const idempotentRelationAgent: ResearchAgent = async ({ tools }) => {
 	const from = await requireAvailable(tools, "tmdb", "1");
 	const to = await requireAvailable(tools, "tvdb", "2");
@@ -1090,6 +1100,36 @@ describe("runResearchPass tools", () => {
 		expect(await db.select().from(serviceTitles).all()).toHaveLength(0);
 	});
 
+	it("treats a malformed catalogue payload as unavailable without aborting", async () => {
+		const outcome = await runResearchPass(continuity, "before-builds", {
+			agent: malformedCatalogueAgent,
+			clients: {
+				tmdb: {
+					fetchCatalogue: async () => {
+						await Promise.resolve();
+						return { instalmentCount: 1 };
+					},
+					fetchTitle: async () => {
+						await Promise.resolve();
+						return;
+					},
+					requestUrl: () => "https://api.themoviedb.org/3/tv/broken",
+				},
+			},
+			db,
+			enqueueReview: noopReview,
+			masterKey,
+			providerId,
+			timing: createMemoryTimingStore("before-builds"),
+		});
+		expect(outcome).toMatchObject({
+			kind: "completed",
+			published: [],
+			residue: ["tmdb", "tvdb", "mal"],
+		});
+		expect(await db.select().from(serviceTitles).all()).toHaveLength(0);
+	});
+
 	it("keeps silently skipped target services in residue", async () => {
 		const outcome = await runResearchPass(continuity, "before-builds", {
 			agent: silentSkipAgent,
@@ -1140,7 +1180,7 @@ describe("runResearchPass tools", () => {
 		expect(await db.select().from(relationAssertions).all()).toHaveLength(1);
 	});
 
-	it("keeps opposite-direction low-confidence relation flags distinct", async () => {
+	it("queues a continuity-conflict for a reverse-direction relation", async () => {
 		const outcome = await runResearchPass(continuity, "before-builds", {
 			agent: oppositeDirectionRelationFlagsAgent,
 			clients: {
@@ -1159,19 +1199,16 @@ describe("runResearchPass tools", () => {
 		});
 		expect(outcome.kind).toBe("completed");
 		if (outcome.kind === "completed") {
-			expect(outcome.published).toHaveLength(2);
+			expect(outcome.published).toHaveLength(1);
 		}
-		expect(await db.select().from(relationAssertions).all()).toHaveLength(2);
-		const flags = await db
-			.select()
-			.from(pendingGroupCandidates)
-			.all();
-		expect(flags).toHaveLength(2);
-		expect(flags.every((flag) => flag.kind === "low-confidence-flag")).toBe(
+		expect(await db.select().from(relationAssertions).all()).toHaveLength(1);
+		const pending = await db.select().from(pendingGroupCandidates).all();
+		expect(pending.some((row) => row.kind === "low-confidence-flag")).toBe(
 			true,
 		);
-		const hashes = new Set(flags.map((flag) => flag.evidenceHash));
-		expect(hashes.size).toBe(2);
+		expect(pending.some((row) => row.kind === "continuity-conflict")).toBe(
+			true,
+		);
 	});
 
 	it("queues competing relations instead of aborting the pass", async () => {

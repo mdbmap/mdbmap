@@ -422,6 +422,10 @@ const endpointConflicts = async (
 			or(
 				eq(relationAssertions.fromTitleId, fromTitleId),
 				eq(relationAssertions.toTitleId, toTitleId),
+				and(
+					eq(relationAssertions.fromTitleId, toTitleId),
+					eq(relationAssertions.toTitleId, fromTitleId),
+				),
 			),
 		)
 		.all();

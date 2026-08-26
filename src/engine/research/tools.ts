@@ -114,11 +114,39 @@ const buildResearchTools = (input: BuildToolsetInput): ResearchToolset => {
 			}
 			const ref = { service, serviceId };
 			const url = resolveCatalogueUrl(client, service, serviceId);
-			const raw =
-				client.fetchCatalogue === undefined
-					? await client.fetchTitle(serviceId)
-					: await client.fetchCatalogue(serviceId);
-			if (raw === undefined) {
+			try {
+				const raw =
+					client.fetchCatalogue === undefined
+						? await client.fetchTitle(serviceId)
+						: await client.fetchCatalogue(serviceId);
+				if (raw === undefined) {
+					return {
+						kind: "api",
+						operator: service,
+						ref,
+						unavailable: true,
+						url,
+						validated: false,
+					};
+				}
+				const objectRaw = objectPayload(raw);
+				const record = parseResearchCatalogue(objectRaw ?? raw);
+				const persisted = await persistCatalogueSpokes(
+					db,
+					groupId,
+					ref,
+					record,
+				);
+				return {
+					kind: "api",
+					operator: service,
+					persisted,
+					record,
+					ref,
+					url,
+					validated: true,
+				};
+			} catch {
 				return {
 					kind: "api",
 					operator: service,
@@ -128,18 +156,6 @@ const buildResearchTools = (input: BuildToolsetInput): ResearchToolset => {
 					validated: false,
 				};
 			}
-			const objectRaw = objectPayload(raw);
-			const record = parseResearchCatalogue(objectRaw ?? raw);
-			const persisted = await persistCatalogueSpokes(db, groupId, ref, record);
-			return {
-				kind: "api",
-				operator: service,
-				persisted,
-				record,
-				ref,
-				url,
-				validated: true,
-			};
 		},
 
 		fetchSimklHint: async (simklId) => {
