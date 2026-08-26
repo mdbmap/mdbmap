@@ -708,6 +708,51 @@ describe("runResearchPass publish path", () => {
 		);
 	});
 
+	it("does not rewrite confidence on a higher-precedence assertion", async () => {
+		const clients = {
+			tmdb: clientFor({
+				"1": catalogue({ instalments: [{ locator: "1:1" }], title: "Alone" }),
+			}),
+			tvdb: clientFor({
+				"2": catalogue({ instalments: [{ locator: "1:1" }], title: "Alone" }),
+			}),
+		};
+		const first = await runResearchPass(continuity, "after-residue", {
+			agent: singleSourceAgent,
+			clients,
+			db,
+			enqueueReview: noopReview,
+			masterKey,
+			providerId,
+			timing: createMemoryTimingStore("after-residue"),
+		});
+		expect(first.kind).toBe("completed");
+		const [seeded] = await db.select().from(titleAssertions).all();
+		expect(seeded).toBeDefined();
+		if (seeded === undefined) {
+			return;
+		}
+		await db
+			.update(titleAssertions)
+			.set({ confidence: "high", source: "manual" })
+			.where(eq(titleAssertions.id, seeded.id))
+			.run();
+
+		const second = await runResearchPass(continuity, "after-residue", {
+			agent: singleSourceAgent,
+			clients,
+			db,
+			enqueueReview: noopReview,
+			masterKey,
+			providerId,
+			timing: createMemoryTimingStore("after-residue"),
+		});
+		expect(second.kind).toBe("completed");
+		expect(await db.select().from(titleAssertions).all()).toMatchObject([
+			{ confidence: "high", id: seeded.id, source: "manual" },
+		]);
+	});
+
 	it("queues a low-confidence flag for a weak relation proposal", async () => {
 		const outcome = await runResearchPass(continuity, "after-residue", {
 			agent: weakRelationAgent,

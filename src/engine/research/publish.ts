@@ -30,6 +30,18 @@ import type { ServiceRef } from "./persist.ts";
 const RESEARCH = "llm-research" as const;
 const ROW_MISSING = "research publish: expected an inserted row";
 
+// ADR-0002 provenance: manual > community > llm-verified > llm-research > tiers.
+const outranksResearch = (source: AssertionSource): boolean =>
+	source === "manual" ||
+	source === "community" ||
+	source === "llm-verified";
+
+type ExistingAssertion = {
+	readonly confidence: "high" | "low";
+	readonly id: number;
+	readonly source: AssertionSource;
+};
+
 type LowConfidenceEvidence = Extract<
 	CandidateEvidence,
 	{ kind: "low-confidence-flag" }
@@ -237,6 +249,7 @@ const publishTitleProposal = async (
 		.select({
 			confidence: titleAssertions.confidence,
 			id: titleAssertions.id,
+			source: titleAssertions.source,
 		})
 		.from(titleAssertions)
 		.where(
@@ -264,6 +277,7 @@ const publishTitleProposal = async (
 
 	if (
 		existing[0] !== undefined &&
+		!outranksResearch(existing[0].source) &&
 		existing[0].confidence !== decision.confidence
 	) {
 		await db
@@ -288,11 +302,12 @@ const existingRelationAssertion = async (
 	db: Db,
 	fromTitleId: number,
 	toTitleId: number,
-): Promise<{ confidence: "high" | "low"; id: number } | undefined> => {
+): Promise<ExistingAssertion | undefined> => {
 	const existing = await db
 		.select({
 			confidence: relationAssertions.confidence,
 			id: relationAssertions.id,
+			source: relationAssertions.source,
 		})
 		.from(relationAssertions)
 		.where(
@@ -425,7 +440,10 @@ const publishRelationProposal = async (
 	const toTitleId = await requireTitleId(db, proposal.to);
 	const exact = await existingRelationAssertion(db, fromTitleId, toTitleId);
 	if (exact !== undefined) {
-		if (exact.confidence !== decision.confidence) {
+		if (
+			!outranksResearch(exact.source) &&
+			exact.confidence !== decision.confidence
+		) {
 			await db
 				.update(relationAssertions)
 				.set({ confidence: decision.confidence })
@@ -500,11 +518,12 @@ const existingInstalmentAssertion = async (
 	db: Db,
 	instalmentId: number,
 	unitId: string,
-): Promise<{ confidence: "high" | "low"; id: number } | undefined> => {
+): Promise<ExistingAssertion | undefined> => {
 	const existing = await db
 		.select({
 			confidence: instalmentAssertions.confidence,
 			id: instalmentAssertions.id,
+			source: instalmentAssertions.source,
 		})
 		.from(instalmentAssertions)
 		.where(
@@ -558,7 +577,11 @@ const publishInstalmentProposal = async (
 			unitId,
 		}));
 
-	if (existing !== undefined && existing.confidence !== decision.confidence) {
+	if (
+		existing !== undefined &&
+		!outranksResearch(existing.source) &&
+		existing.confidence !== decision.confidence
+	) {
 		await db
 			.update(instalmentAssertions)
 			.set({ confidence: decision.confidence })
