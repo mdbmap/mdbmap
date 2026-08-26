@@ -31,9 +31,63 @@ const ProviderConfigSchema = z.union([
 ]);
 type ProviderConfig = z.infer<typeof ProviderConfigSchema>;
 
-export { ProviderConfigSchema };
+// Admin edit form: omit `apiKey` (or leave it empty) to keep the stored key.
+const UpdateProviderConfigSchema = z.union([
+	z.object({
+		apiKey: z.string().min(1).optional(),
+		kind: z.enum(vercelAiSdkProviderKinds),
+		model: z.string().min(1),
+	}),
+	z.object({
+		apiKey: z.string().min(1).optional(),
+		baseUrl: z.url(),
+		kind: z.literal("openai-compatible"),
+		model: z.string().min(1),
+	}),
+]);
+type UpdateProviderConfig = z.infer<typeof UpdateProviderConfigSchema>;
+
+type ProviderPublicConfig =
+	| Omit<VercelAiSdkProviderConfig, "apiKey">
+	| Omit<OpenAiCompatibleProviderConfig, "apiKey">;
+
+const toPublicConfig = (config: ProviderConfig): ProviderPublicConfig => {
+	if (config.kind === "openai-compatible") {
+		return {
+			baseUrl: config.baseUrl,
+			kind: config.kind,
+			model: config.model,
+		};
+	}
+	return { kind: config.kind, model: config.model };
+};
+
+const mergeProviderConfig = (
+	existing: ProviderConfig,
+	update: UpdateProviderConfig,
+): ProviderConfig => {
+	const apiKey = update.apiKey ?? existing.apiKey;
+	if (update.kind === "openai-compatible") {
+		return {
+			apiKey,
+			baseUrl: update.baseUrl,
+			kind: update.kind,
+			model: update.model,
+		};
+	}
+	return { apiKey, kind: update.kind, model: update.model };
+};
+
+export {
+	ProviderConfigSchema,
+	UpdateProviderConfigSchema,
+	mergeProviderConfig,
+	toPublicConfig,
+};
 export type {
 	OpenAiCompatibleProviderConfig,
 	ProviderConfig,
+	ProviderPublicConfig,
+	UpdateProviderConfig,
 	VercelAiSdkProviderConfig,
 };

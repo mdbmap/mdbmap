@@ -23,6 +23,7 @@ interface ORPCContext {
 	db?: Db;
 	engine?: EngineRead;
 	headers?: Headers;
+	providerConfigMasterKey?: string;
 	providers?: Providers;
 	resolveSession?: ResolveSession;
 }

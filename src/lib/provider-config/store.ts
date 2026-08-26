@@ -1,12 +1,17 @@
-import { eq } from "drizzle-orm";
+import { desc, eq } from "drizzle-orm";
 
 import type { Db } from "@/db";
 import { llmProvider } from "@/db/schema";
 import type { LlmProviderKind } from "@/db/schema";
 
 import { decryptEnvelope, encryptEnvelope } from "./crypto.ts";
-import { ProviderConfigSchema } from "./types.ts";
-import type { ProviderConfig } from "./types.ts";
+import {
+	ProviderConfigSchema,
+	UpdateProviderConfigSchema,
+	mergeProviderConfig,
+	toPublicConfig,
+} from "./types.ts";
+import type { ProviderConfig, ProviderPublicConfig } from "./types.ts";
 
 interface ProviderRecord {
 	id: string;
@@ -14,8 +19,18 @@ interface ProviderRecord {
 	label: string;
 }
 
+interface ProviderListItem extends ProviderRecord {
+	config: ProviderPublicConfig;
+}
+
 interface StoreProviderInput {
 	config: unknown;
+	label: string;
+}
+
+interface UpdateProviderInput {
+	config: unknown;
+	id: string;
 	label: string;
 }
 
@@ -73,5 +88,83 @@ const getProviderConfig = async (
 	return ProviderConfigSchema.parse(JSON.parse(plaintext));
 };
 
-export { getProviderConfig, storeProvider };
-export type { ProviderRecord, StoreProviderInput };
+const listProviders = async (
+	db: Db,
+	masterKeyBase64: string,
+): Promise<readonly ProviderListItem[]> => {
+	const rows = await db
+		.select({
+			id: llmProvider.id,
+			kind: llmProvider.kind,
+			label: llmProvider.label,
+		})
+		.from(llmProvider)
+		.orderBy(desc(llmProvider.createdAt))
+		.all();
+
+	return Promise.all(
+		rows.map(async (row) => {
+			const config = await getProviderConfig(db, masterKeyBase64, row.id);
+			return {
+				config: toPublicConfig(config),
+				id: row.id,
+				kind: row.kind,
+				label: row.label,
+			};
+		}),
+	);
+};
+
+const updateProvider = async (
+	db: Db,
+	masterKeyBase64: string,
+	input: UpdateProviderInput,
+): Promise<ProviderRecord> => {
+	const existing = await getProviderConfig(db, masterKeyBase64, input.id);
+	const update = UpdateProviderConfigSchema.parse(input.config);
+	const config = ProviderConfigSchema.parse(
+		mergeProviderConfig(existing, update),
+	);
+	const envelope = await encryptEnvelope(
+		JSON.stringify(config),
+		masterKeyBase64,
+		input.id,
+	);
+	await db
+		.update(llmProvider)
+		.set({
+			ciphertext: envelope.ciphertext,
+			dataIv: envelope.dataIv,
+			kind: config.kind,
+			label: input.label,
+			wrapIv: envelope.wrapIv,
+			wrappedKey: envelope.wrappedKey,
+		})
+		.where(eq(llmProvider.id, input.id))
+		.run();
+	return { id: input.id, kind: config.kind, label: input.label };
+};
+
+const removeProvider = async (db: Db, id: string): Promise<void> => {
+	const result = await db
+		.delete(llmProvider)
+		.where(eq(llmProvider.id, id))
+		.run();
+	if (result.meta.changes === 0) {
+		throw new Error(`provider-config: no provider stored for id "${id}"`);
+	}
+};
+
+export {
+	getProviderConfig,
+	listProviders,
+	removeProvider,
+	storeProvider,
+	updateProvider,
+};
+export type {
+	ProviderListItem,
+	ProviderRecord,
+	StoreProviderInput,
+	UpdateProviderInput,
+};
