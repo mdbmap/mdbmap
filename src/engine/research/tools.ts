@@ -7,7 +7,7 @@ import type {
 	SimklEntry,
 } from "@/engine/discovery";
 
-import { parseResearchCatalogue } from "./catalogue.ts";
+import { researchCatalogueSchema } from "./catalogue.ts";
 import type { ResearchCatalogueRecord } from "./catalogue.ts";
 import { catalogueRequestUrl, isOfficialOperatorUrl } from "./domains.ts";
 import { persistCatalogueSpokes } from "./persist.ts";
@@ -114,39 +114,11 @@ const buildResearchTools = (input: BuildToolsetInput): ResearchToolset => {
 			}
 			const ref = { service, serviceId };
 			const url = resolveCatalogueUrl(client, service, serviceId);
-			try {
-				const raw =
-					client.fetchCatalogue === undefined
-						? await client.fetchTitle(serviceId)
-						: await client.fetchCatalogue(serviceId);
-				if (raw === undefined) {
-					return {
-						kind: "api",
-						operator: service,
-						ref,
-						unavailable: true,
-						url,
-						validated: false,
-					};
-				}
-				const objectRaw = objectPayload(raw);
-				const record = parseResearchCatalogue(objectRaw ?? raw);
-				const persisted = await persistCatalogueSpokes(
-					db,
-					groupId,
-					ref,
-					record,
-				);
-				return {
-					kind: "api",
-					operator: service,
-					persisted,
-					record,
-					ref,
-					url,
-					validated: true,
-				};
-			} catch {
+			const raw =
+				client.fetchCatalogue === undefined
+					? await client.fetchTitle(serviceId)
+					: await client.fetchCatalogue(serviceId);
+			if (raw === undefined) {
 				return {
 					kind: "api",
 					operator: service,
@@ -156,6 +128,35 @@ const buildResearchTools = (input: BuildToolsetInput): ResearchToolset => {
 					validated: false,
 				};
 			}
+			const parsed = researchCatalogueSchema.safeParse(
+				objectPayload(raw) ?? raw,
+			);
+			if (!parsed.success) {
+				return {
+					kind: "api",
+					operator: service,
+					ref,
+					unavailable: true,
+					url,
+					validated: false,
+				};
+			}
+			const record: ResearchCatalogueRecord = parsed.data;
+			const persisted = await persistCatalogueSpokes(
+				db,
+				groupId,
+				ref,
+				record,
+			);
+			return {
+				kind: "api",
+				operator: service,
+				persisted,
+				record,
+				ref,
+				url,
+				validated: true,
+			};
 		},
 
 		fetchSimklHint: async (simklId) => {

@@ -409,8 +409,8 @@ const endpointConflicts = async (
 		readonly source: AssertionSource;
 		readonly toTitleId: number;
 	}[]
-> =>
-	db
+> => {
+	const byEndpoint = await db
 		.select({
 			fromTitleId: relationAssertions.fromTitleId,
 			id: relationAssertions.id,
@@ -422,13 +422,33 @@ const endpointConflicts = async (
 			or(
 				eq(relationAssertions.fromTitleId, fromTitleId),
 				eq(relationAssertions.toTitleId, toTitleId),
-				and(
-					eq(relationAssertions.fromTitleId, toTitleId),
-					eq(relationAssertions.toTitleId, fromTitleId),
-				),
 			),
 		)
 		.all();
+	const reverse = await db
+		.select({
+			fromTitleId: relationAssertions.fromTitleId,
+			id: relationAssertions.id,
+			source: relationAssertions.source,
+			toTitleId: relationAssertions.toTitleId,
+		})
+		.from(relationAssertions)
+		.where(
+			and(
+				eq(relationAssertions.fromTitleId, toTitleId),
+				eq(relationAssertions.toTitleId, fromTitleId),
+			),
+		)
+		.all();
+	if (reverse.length === 0) {
+		return byEndpoint;
+	}
+	const seen = new Set(byEndpoint.map((row) => row.id));
+	return [
+		...byEndpoint,
+		...reverse.filter((row) => !seen.has(row.id)),
+	];
+};
 
 const queueCompetingRelations = async (
 	db: Db,
@@ -657,6 +677,7 @@ const queueInstalmentCoverageConflict = async (
 				subject,
 				subjectKey: candidateSubjectKey(subject),
 			})
+			.onConflictDoNothing()
 			.run();
 		return;
 	}
