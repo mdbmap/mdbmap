@@ -9,6 +9,7 @@ import { getProviderConfig } from "@/lib/provider-config";
 
 import { publishResearchProposals } from "./publish.ts";
 import type { ResearchProposal, ReviewEnqueue } from "./publish.ts";
+import { resolveResearchSchedule } from "./schedule.ts";
 import { shouldRunResearch } from "./timing.ts";
 import type {
 	ResearchPhase,
@@ -47,7 +48,7 @@ interface ResearchPassDeps {
 	readonly providerId: string;
 	readonly scrape?: ScrapeClient;
 	readonly simkl?: SimklClient;
-	readonly timing: ResearchTimingStore;
+	readonly timing?: ResearchTimingStore;
 }
 
 type ResearchPassOutcome =
@@ -133,20 +134,38 @@ const runResearchPass = async (
 	phase: ResearchPhase,
 	deps: ResearchPassDeps,
 ): Promise<ResearchPassOutcome> => {
-	const timing = await deps.timing.read();
-	if (timing === "off") {
-		return {
-			kind: "skipped",
-			reason: "timing-off",
-			residue: continuity.targetServices,
-		};
-	}
-	if (!shouldRunResearch(timing, phase)) {
-		return {
-			kind: "skipped",
-			reason: "timing-mismatch",
-			residue: continuity.targetServices,
-		};
+	if (deps.timing === undefined) {
+		const schedule = await resolveResearchSchedule(deps.db);
+		if (!schedule.run) {
+			return {
+				kind: "skipped",
+				reason: "timing-off",
+				residue: continuity.targetServices,
+			};
+		}
+		if (schedule.when !== phase) {
+			return {
+				kind: "skipped",
+				reason: "timing-mismatch",
+				residue: continuity.targetServices,
+			};
+		}
+	} else {
+		const timing = await deps.timing.read();
+		if (timing === "off") {
+			return {
+				kind: "skipped",
+				reason: "timing-off",
+				residue: continuity.targetServices,
+			};
+		}
+		if (!shouldRunResearch(timing, phase)) {
+			return {
+				kind: "skipped",
+				reason: "timing-mismatch",
+				residue: continuity.targetServices,
+			};
+		}
 	}
 
 	const provider = await getProviderConfig(

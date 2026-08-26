@@ -342,7 +342,7 @@ const insertTitleAssertion = async (
 const publishTitleProposal = async (
 	db: Db,
 	proposal: TitleProposal,
-): Promise<PublishedResearch> => {
+): Promise<PublishedResearch | undefined> => {
 	const decision = corroborate(proposal.evidence);
 	const leftId = await requireTitleId(db, proposal.left);
 	const rightId = await requireTitleId(db, proposal.right);
@@ -356,6 +356,9 @@ const publishTitleProposal = async (
 			}),
 		load: async () => loadTitleAssertion(db, titleAId, titleBId),
 	});
+	if (existing !== undefined && outranksResearch(existing.source)) {
+		return undefined;
+	}
 	await syncResearchOwned({
 		decision,
 		existing,
@@ -472,6 +475,7 @@ const queueCompetingRelations = async (
 		titleBId,
 	};
 	const entryId = `research:${input.fromTitleId}->${input.toTitleId}`;
+	const manualBlocks = input.published.some((row) => row.source === "manual");
 	await db
 		.insert(pendingGroupCandidates)
 		.values({
@@ -493,6 +497,7 @@ const queueCompetingRelations = async (
 			},
 			evidenceHash: `continuity-conflict:${entryId}`,
 			kind: "continuity-conflict",
+			...(manualBlocks ? { status: "rejected" as const } : {}),
 			subject,
 			subjectKey: candidateSubjectKey(subject),
 		})
@@ -559,6 +564,9 @@ const publishRelationProposal = async (
 	const toTitleId = await requireTitleId(db, proposal.to);
 	const exact = await existingRelationAssertion(db, fromTitleId, toTitleId);
 	if (exact !== undefined) {
+		if (outranksResearch(exact.source)) {
+			return undefined;
+		}
 		await applyOwnedRelation(db, {
 			decision,
 			existing: exact,
@@ -595,6 +603,9 @@ const publishRelationProposal = async (
 			toTitleId,
 		);
 		if (racedExact !== undefined) {
+			if (outranksResearch(racedExact.source)) {
+				return undefined;
+			}
 			await applyOwnedRelation(db, {
 				decision,
 				existing: racedExact,
@@ -666,27 +677,15 @@ const queueInstalmentCoverageConflict = async (
 		},
 	};
 	const evidenceHash = `instalment-assertion-conflict:${input.instalmentId}:${input.unitId}`;
-	if (input.published.source === "manual") {
-		await db
-			.insert(pendingGroupCandidates)
-			.values({
-				evidence,
-				evidenceHash,
-				kind: "instalment-assertion-conflict",
-				status: "rejected",
-				subject,
-				subjectKey: candidateSubjectKey(subject),
-			})
-			.onConflictDoNothing()
-			.run();
-		return;
-	}
 	await db
 		.insert(pendingGroupCandidates)
 		.values({
 			evidence,
 			evidenceHash,
 			kind: "instalment-assertion-conflict",
+			...(input.published.source === "manual"
+				? { status: "rejected" as const }
+				: {}),
 			subject,
 			subjectKey: candidateSubjectKey(subject),
 		})
@@ -828,6 +827,9 @@ const publishInstalmentProposal = async (
 		load: async () =>
 			existingInstalmentAssertion(db, proposal.instalmentId, unitId),
 	});
+	if (existing !== undefined && outranksResearch(existing.source)) {
+		return undefined;
+	}
 	await syncResearchOwned({
 		decision,
 		existing,
