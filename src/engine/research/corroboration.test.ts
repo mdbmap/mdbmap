@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { expect, it } from "vitest";
 
 import type { CorroborationEvidence } from "./corroboration.ts";
 import { corroborate } from "./corroboration.ts";
@@ -15,8 +15,7 @@ const api = (
 	...overrides,
 });
 
-describe("research evidence corroboration", () => {
-	it("returns high for two operators including a validated API response", () => {
+it("returns high for two operators including a validated API response", () => {
 		expect(corroborate([api("tvdb"), api("tmdb")])).toStrictEqual({
 			confidence: "high",
 			reviewFlag: undefined,
@@ -112,4 +111,3 @@ describe("research evidence corroboration", () => {
 			reviewFlag: "low-confidence-flag",
 		});
 	});
-});
