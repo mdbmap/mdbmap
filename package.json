@@ -21,6 +21,7 @@
 		"lint:style": "stylelint --fix",
 		"lint:style:ci": "stylelint --custom-formatter @csstools/stylelint-formatter-github .",
 		"preview": "vite preview",
+		"prepare": "husky",
 		"test": "vitest run",
 		"test:coverage": "vitest run --coverage"
 	},
