@@ -156,7 +156,24 @@ type CandidateEvidence =
 			instalmentId: number;
 			kind: "low-confidence-flag";
 			source: AssertionSource;
+			target: "instalment";
 			unitId: string;
+	  }
+	| {
+			confidence: AssertionConfidence;
+			fromTitleId: number;
+			kind: "low-confidence-flag";
+			source: AssertionSource;
+			target: "relation";
+			toTitleId: number;
+	  }
+	| {
+			confidence: AssertionConfidence;
+			kind: "low-confidence-flag";
+			source: AssertionSource;
+			target: "title";
+			titleAId: number;
+			titleBId: number;
 	  }
 	| {
 			competingGroupIds: number[];

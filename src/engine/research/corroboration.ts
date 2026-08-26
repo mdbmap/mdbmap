@@ -8,8 +8,9 @@ interface ApiEvidence {
 	readonly kind: "api";
 	readonly official: true;
 	readonly operator: string;
-	readonly validated: boolean;
 	readonly stance: SourceStance;
+	readonly url: string;
+	readonly validated: boolean;
 }
 
 interface ScrapeEvidence {
@@ -17,6 +18,7 @@ interface ScrapeEvidence {
 	readonly official: true;
 	readonly operator: string;
 	readonly stance: SourceStance;
+	readonly url: string;
 }
 
 interface CommunityWikiEvidence {

@@ -11,6 +11,7 @@ const api = (
 	official: true,
 	operator,
 	stance: "corroborates",
+	url: `https://api.example/${operator}`,
 	validated: true,
 	...overrides,
 });
@@ -73,6 +74,7 @@ describe("corroborate", () => {
 					official: true,
 					operator: "tmdb",
 					stance: "corroborates",
+					url: "https://www.themoviedb.org/tv/1",
 				},
 			]),
 		).toStrictEqual({

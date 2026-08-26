@@ -2,6 +2,7 @@ import { and, eq } from "drizzle-orm";
 import type { Promisable } from "type-fest";
 
 import type { Db } from "@/db";
+import type { CandidateEvidence, CandidateSubject } from "@/db/engine-schema";
 import {
 	candidateSubjectKey,
 	contentUnits,
@@ -14,7 +15,10 @@ import {
 import type { ReviewProposal } from "@/engine/reviewer";
 
 import { corroborate } from "./corroboration.ts";
-import type { CorroborationEvidence } from "./corroboration.ts";
+import type {
+	CorroborationDecision,
+	CorroborationEvidence,
+} from "./corroboration.ts";
 import { findTitle } from "./persist.ts";
 import type { ServiceRef } from "./persist.ts";
 
@@ -91,13 +95,47 @@ const capturedFrom = (
 			kind: item.kind,
 			operator: item.operator,
 			summary: `${item.kind} evidence from ${item.operator} (${item.stance})`,
-			url:
-				item.kind === "api"
-					? `https://api.local/${item.operator}`
-					: `https://${item.operator}.official/`,
+			url: item.url,
 		}));
 
-const queueLowConfidenceFlag = async (
+const publishedResult = (
+	proposal: ResearchProposal,
+	assertionId: number,
+	decision: CorroborationDecision,
+): PublishedResearch => ({
+	assertionId,
+	confidence: decision.confidence,
+	review: {
+		assertionId,
+		claim: proposal.claim,
+		evidence: capturedFrom(proposal.evidence),
+		kind: proposal.kind,
+	},
+	reviewFlag: decision.reviewFlag,
+});
+
+const queueFlag = async (
+	db: Db,
+	input: {
+		readonly evidence: CandidateEvidence;
+		readonly evidenceHash: string;
+		readonly subject: CandidateSubject;
+	},
+): Promise<void> => {
+	await db
+		.insert(pendingGroupCandidates)
+		.values({
+			evidence: input.evidence,
+			evidenceHash: input.evidenceHash,
+			kind: "low-confidence-flag",
+			subject: input.subject,
+			subjectKey: candidateSubjectKey(input.subject),
+		})
+		.onConflictDoNothing()
+		.run();
+};
+
+const queueInstalmentFlag = async (
 	db: Db,
 	input: {
 		readonly assertionConfidence: "high" | "low";
@@ -110,22 +148,72 @@ const queueLowConfidenceFlag = async (
 		subjectType: "title" as const,
 		titleId: input.titleId,
 	};
-	await db
-		.insert(pendingGroupCandidates)
-		.values({
-			evidence: {
-				confidence: input.assertionConfidence,
-				instalmentId: input.instalmentId,
-				kind: "low-confidence-flag",
-				source: RESEARCH,
-				unitId: input.unitId,
-			},
-			evidenceHash: `low-confidence-flag:${input.instalmentId}`,
+	await queueFlag(db, {
+		evidence: {
+			confidence: input.assertionConfidence,
+			instalmentId: input.instalmentId,
 			kind: "low-confidence-flag",
-			subject,
-			subjectKey: candidateSubjectKey(subject),
-		})
-		.run();
+			source: RESEARCH,
+			target: "instalment",
+			unitId: input.unitId,
+		},
+		evidenceHash: `low-confidence-flag:${input.instalmentId}:${input.unitId}`,
+		subject,
+	});
+};
+
+const queueTitlePairFlag = async (
+	db: Db,
+	input: {
+		readonly assertionConfidence: "high" | "low";
+		readonly titleAId: number;
+		readonly titleBId: number;
+	},
+): Promise<void> => {
+	const subject = {
+		subjectType: "title-pair" as const,
+		titleAId: input.titleAId,
+		titleBId: input.titleBId,
+	};
+	await queueFlag(db, {
+		evidence: {
+			confidence: input.assertionConfidence,
+			kind: "low-confidence-flag",
+			source: RESEARCH,
+			target: "title",
+			titleAId: input.titleAId,
+			titleBId: input.titleBId,
+		},
+		evidenceHash: `low-confidence-flag:title:${input.titleAId}:${input.titleBId}`,
+		subject,
+	});
+};
+
+const queueRelationFlag = async (
+	db: Db,
+	input: {
+		readonly assertionConfidence: "high" | "low";
+		readonly fromTitleId: number;
+		readonly toTitleId: number;
+	},
+): Promise<void> => {
+	const subject = {
+		subjectType: "title-pair" as const,
+		titleAId: input.fromTitleId,
+		titleBId: input.toTitleId,
+	};
+	await queueFlag(db, {
+		evidence: {
+			confidence: input.assertionConfidence,
+			fromTitleId: input.fromTitleId,
+			kind: "low-confidence-flag",
+			source: RESEARCH,
+			target: "relation",
+			toTitleId: input.toTitleId,
+		},
+		evidenceHash: `low-confidence-flag:relation:${input.fromTitleId}:${input.toTitleId}`,
+		subject,
+	});
 };
 
 const publishTitleProposal = async (
@@ -161,17 +249,15 @@ const publishTitleProposal = async (
 				.all(),
 		).id;
 
-	return {
-		assertionId,
-		confidence: decision.confidence,
-		review: {
-			assertionId,
-			claim: proposal.claim,
-			evidence: capturedFrom(proposal.evidence),
-			kind: "title",
-		},
-		reviewFlag: decision.reviewFlag,
-	};
+	if (decision.reviewFlag !== undefined) {
+		await queueTitlePairFlag(db, {
+			assertionConfidence: decision.confidence,
+			titleAId,
+			titleBId,
+		});
+	}
+
+	return publishedResult(proposal, assertionId, decision);
 };
 
 const publishRelationProposal = async (
@@ -194,17 +280,15 @@ const publishRelationProposal = async (
 			.all(),
 	).id;
 
-	return {
-		assertionId,
-		confidence: decision.confidence,
-		review: {
-			assertionId,
-			claim: proposal.claim,
-			evidence: capturedFrom(proposal.evidence),
-			kind: "relation",
-		},
-		reviewFlag: decision.reviewFlag,
-	};
+	if (decision.reviewFlag !== undefined) {
+		await queueRelationFlag(db, {
+			assertionConfidence: decision.confidence,
+			fromTitleId,
+			toTitleId,
+		});
+	}
+
+	return publishedResult(proposal, assertionId, decision);
 };
 
 const publishInstalmentProposal = async (
@@ -236,7 +320,7 @@ const publishInstalmentProposal = async (
 				.where(eq(serviceInstalments.id, proposal.instalmentId))
 				.all(),
 		);
-		await queueLowConfidenceFlag(db, {
+		await queueInstalmentFlag(db, {
 			assertionConfidence: decision.confidence,
 			instalmentId: proposal.instalmentId,
 			titleId: spoke.titleId,
@@ -244,17 +328,7 @@ const publishInstalmentProposal = async (
 		});
 	}
 
-	return {
-		assertionId,
-		confidence: decision.confidence,
-		review: {
-			assertionId,
-			claim: proposal.claim,
-			evidence: capturedFrom(proposal.evidence),
-			kind: "instalment",
-		},
-		reviewFlag: decision.reviewFlag,
-	};
+	return publishedResult(proposal, assertionId, decision);
 };
 
 const publishProposal = async (

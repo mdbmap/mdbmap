@@ -9,7 +9,7 @@ import type {
 
 import { parseResearchCatalogue } from "./catalogue.ts";
 import type { ResearchCatalogueRecord } from "./catalogue.ts";
-import { isOfficialOperatorUrl } from "./domains.ts";
+import { catalogueRequestUrl, isOfficialOperatorUrl } from "./domains.ts";
 import { persistCatalogueSpokes } from "./persist.ts";
 import type { PersistedTitle, ServiceRef } from "./persist.ts";
 
@@ -21,6 +21,9 @@ type ResearchCatalogueClient = CatalogueClient & {
 	readonly fetchCatalogue?: (
 		serviceId: string,
 	) => Promisable<unknown>;
+	// Optional override for the HTTP URL this client hits; defaults to the
+	// operator's official API host from the domain allowlist.
+	readonly requestUrl?: (serviceId: string) => string;
 };
 
 type ResearchCatalogueClients = Partial<
@@ -42,6 +45,7 @@ interface BoundApiToolResult {
 	readonly persisted: PersistedTitle;
 	readonly record: ResearchCatalogueRecord;
 	readonly ref: ServiceRef;
+	readonly url: string;
 	readonly validated: true;
 }
 
@@ -81,17 +85,6 @@ interface BuildToolsetInput {
 	readonly simkl?: SimklClient;
 }
 
-const asCatalogueRaw = (raw: object): unknown =>
-	"title" in raw
-		? {
-				...raw,
-				instalments:
-					"instalments" in raw
-						? (raw as { instalments?: unknown }).instalments
-						: [],
-			}
-		: raw;
-
 const objectPayload = (raw: unknown): object | undefined =>
 	raw instanceof Object ? raw : undefined;
 
@@ -115,16 +108,21 @@ const buildResearchTools = (input: BuildToolsetInput): ResearchToolset => {
 			}
 			const objectRaw = objectPayload(raw);
 			const record = parseResearchCatalogue(
-				objectRaw === undefined ? raw : asCatalogueRaw(objectRaw),
+				objectRaw ?? raw,
 			);
 			const ref = { service, serviceId };
 			const persisted = await persistCatalogueSpokes(db, groupId, ref, record);
+			const url =
+				client.requestUrl === undefined
+					? catalogueRequestUrl(service, serviceId)
+					: client.requestUrl(serviceId);
 			return {
 				kind: "api",
 				operator: service,
 				persisted,
 				record,
 				ref,
+				url,
 				validated: true,
 			};
 		},

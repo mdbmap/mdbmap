@@ -120,6 +120,7 @@ const highTitleAgent: ResearchAgent = async ({ tools, provider }) => {
 						official: true,
 						operator: "tmdb",
 						stance: "corroborates",
+						url: left.url,
 						validated: true,
 					},
 					{
@@ -127,6 +128,7 @@ const highTitleAgent: ResearchAgent = async ({ tools, provider }) => {
 						official: true,
 						operator: "tvdb",
 						stance: "corroborates",
+						url: right.url,
 						validated: true,
 					},
 				],
@@ -152,6 +154,7 @@ const singleSourceAgent: ResearchAgent = async ({ tools }) => {
 						official: true,
 						operator: "tmdb",
 						stance: "corroborates",
+						url: left.url,
 						validated: true,
 					},
 				],
@@ -188,6 +191,7 @@ const simklHintAgent: ResearchAgent = async ({ tools }) => {
 						official: true,
 						operator: "tmdb",
 						stance: "corroborates",
+						url: left.url,
 						validated: true,
 					},
 					{
@@ -195,6 +199,7 @@ const simklHintAgent: ResearchAgent = async ({ tools }) => {
 						official: true,
 						operator: "mal",
 						stance: "corroborates",
+						url: right.url,
 						validated: true,
 					},
 				],
@@ -223,6 +228,10 @@ const weakInstalmentAgent: ResearchAgent = async ({ tools }) => {
 	if (spokeId === undefined) {
 		throw new Error("expected a spoke");
 	}
+	const scraped = await tools.scrapeOfficial({
+		operator: "tmdb",
+		url: "https://www.themoviedb.org/tv/42",
+	});
 	return {
 		proposals: [
 			{
@@ -233,8 +242,47 @@ const weakInstalmentAgent: ResearchAgent = async ({ tools }) => {
 						official: true,
 						operator: "tmdb",
 						stance: "corroborates",
+						url: scraped.url,
 					},
 				],
+				instalmentId: spokeId,
+				kind: "instalment",
+			},
+		],
+		residue: [],
+	};
+};
+
+const multiUnitWeakInstalment: ResearchAgent = async ({ tools }) => {
+	const fetched = await tools.fetchCatalogue("tmdb", "42");
+	const spokeId = fetched.persisted.spokes[0]?.instalmentId;
+	if (spokeId === undefined) {
+		throw new Error("expected a spoke");
+	}
+	const scraped = await tools.scrapeOfficial({
+		operator: "tmdb",
+		url: "https://www.themoviedb.org/tv/42",
+	});
+	const evidence = [
+		{
+			kind: "scrape" as const,
+			official: true as const,
+			operator: "tmdb",
+			stance: "corroborates" as const,
+			url: scraped.url,
+		},
+	];
+	return {
+		proposals: [
+			{
+				claim: "weak instalment unit a",
+				evidence,
+				instalmentId: spokeId,
+				kind: "instalment",
+			},
+			{
+				claim: "weak instalment unit b",
+				evidence,
 				instalmentId: spokeId,
 				kind: "instalment",
 			},
@@ -453,6 +501,13 @@ describe("runResearchPass publish path", () => {
 		expect(await db.select().from(titleAssertions).all()).toMatchObject([
 			{ confidence: "low", source: "llm-research" },
 		]);
+		const flags = await db.select().from(pendingGroupCandidates).all();
+		expect(flags).toHaveLength(1);
+		expect(flags[0]?.kind).toBe("low-confidence-flag");
+		expect(flags[0]?.evidence).toMatchObject({ target: "title" });
+		expect(outcome.published[0]?.review.evidence[0]?.url).toMatch(
+			/^https:\/\/api\.themoviedb\.org\//u,
+		);
 	});
 
 	it("leaves unresolved residue for the deterministic fan-out", async () => {
@@ -564,6 +619,12 @@ describe("runResearchPass tools", () => {
 			enqueueReview: noopReview,
 			masterKey,
 			providerId,
+			scrape: {
+				fetchPage: async () => {
+					await Promise.resolve();
+					return { ok: true };
+				},
+			},
 			timing: createMemoryTimingStore("before-builds"),
 		});
 
@@ -571,5 +632,42 @@ describe("runResearchPass tools", () => {
 		const flags = await db.select().from(pendingGroupCandidates).all();
 		expect(flags).toHaveLength(1);
 		expect(flags[0]?.kind).toBe("low-confidence-flag");
+		expect(flags[0]?.evidence).toMatchObject({ target: "instalment" });
+		if (outcome.kind === "completed") {
+			expect(outcome.published[0]?.review.evidence[0]?.url).toBe(
+				"https://www.themoviedb.org/tv/42",
+			);
+		}
+	});
+
+	it("lets distinct-unit low-confidence flags coexist for one instalment", async () => {
+		const outcome = await runResearchPass(continuity, "before-builds", {
+			agent: multiUnitWeakInstalment,
+			clients: {
+				tmdb: clientFor({
+					"42": catalogue({
+						instalments: [{ locator: "1:1" }],
+						title: "Flagged",
+					}),
+				}),
+			},
+			db,
+			enqueueReview: noopReview,
+			masterKey,
+			providerId,
+			scrape: {
+				fetchPage: async () => {
+					await Promise.resolve();
+					return { ok: true };
+				},
+			},
+			timing: createMemoryTimingStore("before-builds"),
+		});
+
+		expect(outcome.kind).toBe("completed");
+		if (outcome.kind === "completed") {
+			expect(outcome.published).toHaveLength(2);
+		}
+		expect(await db.select().from(pendingGroupCandidates).all()).toHaveLength(2);
 	});
 });

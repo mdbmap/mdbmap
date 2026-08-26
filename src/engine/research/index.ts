@@ -13,7 +13,11 @@ export {
 	toCatalogueTitle,
 } from "./catalogue.ts";
 export type { ResearchCatalogueRecord } from "./catalogue.ts";
-export { isOfficialOperatorUrl, officialOperatorHosts } from "./domains.ts";
+export {
+	catalogueRequestUrl,
+	isOfficialOperatorUrl,
+	officialOperatorHosts,
+} from "./domains.ts";
 export { runResearchPass } from "./orchestrate.ts";
 export type {
 	ResearchAgent,
