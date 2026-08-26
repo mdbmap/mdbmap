@@ -4,6 +4,7 @@
 const MILLIS_PER_DAY = 86_400_000;
 const CHAR_WEIGHT = 0.5;
 const TOKEN_WEIGHT = 0.5;
+const TITLE_AGREEMENT = 0.5;
 
 // Lowercase, drop every non-alphanumeric character (unicode aware) and collapse
 // the gaps, so "Pups Save the Bay!" and "pups save the bay" normalise alike.
@@ -69,8 +70,6 @@ const tokenOverlap = (
 
 // Normalised similarity in [0, 1]: half from character edits, half from token
 // overlap. Either side empty after normalisation yields 0.
-const TITLE_AGREEMENT = 0.5;
-
 const titleSimilarity = (left: string, right: string): number => {
 	const leftNorm = normaliseTitle(left);
 	const rightNorm = normaliseTitle(right);
