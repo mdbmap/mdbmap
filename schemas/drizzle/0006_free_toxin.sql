@@ -12,7 +12,6 @@ CREATE TABLE `__new_absence_assertions` (
 INSERT INTO `__new_absence_assertions`("created_at", "id", "source", "coverage_revision", "target_service", "unit_id") SELECT "created_at", "id", "source", "coverage_revision", "target_service", "unit_id" FROM `absence_assertions`;--> statement-breakpoint
 DROP TABLE `absence_assertions`;--> statement-breakpoint
 ALTER TABLE `__new_absence_assertions` RENAME TO `absence_assertions`;--> statement-breakpoint
-PRAGMA foreign_keys=ON;--> statement-breakpoint
 CREATE UNIQUE INDEX `absence_assertions_unit_service_revision_idx` ON `absence_assertions` (`unit_id`,`target_service`,`coverage_revision`);--> statement-breakpoint
 CREATE TABLE `__new_content_units` (
 	`created_at` integer DEFAULT (unixepoch()) NOT NULL,
@@ -36,4 +35,5 @@ CREATE TABLE `__new_instalment_assertions` (
 INSERT INTO `__new_instalment_assertions`("confidence", "created_at", "id", "source", "instalment_id", "unit_id") SELECT "confidence", "created_at", "id", "source", "instalment_id", "unit_id" FROM `instalment_assertions`;--> statement-breakpoint
 DROP TABLE `instalment_assertions`;--> statement-breakpoint
 ALTER TABLE `__new_instalment_assertions` RENAME TO `instalment_assertions`;--> statement-breakpoint
-CREATE UNIQUE INDEX `instalment_assertions_instalment_unit_idx` ON `instalment_assertions` (`instalment_id`,`unit_id`);
+CREATE UNIQUE INDEX `instalment_assertions_instalment_unit_idx` ON `instalment_assertions` (`instalment_id`,`unit_id`);--> statement-breakpoint
+PRAGMA foreign_keys=ON;
