@@ -30,6 +30,22 @@ type RateableUnitKind = (typeof rateableUnitKinds)[number];
 const apiKeyPlans = ["free", "pro"] as const;
 type ApiKeyPlan = (typeof apiKeyPlans)[number];
 
+// Provisional Vercel AI SDK adapter subset (ADR-0005).
+const vercelAiSdkProviderKinds = [
+	"openai",
+	"anthropic",
+	"google",
+	"mistral",
+	"groq",
+	"xai",
+] as const;
+
+const llmProviderKinds = [
+	...vercelAiSdkProviderKinds,
+	"openai-compatible",
+] as const;
+type LlmProviderKind = (typeof llmProviderKinds)[number];
+
 const todos = sqliteTable("todos", {
 	createdAt: integer("created_at", { mode: "timestamp" }).default(
 		sql`(unixepoch())`,
@@ -187,16 +203,37 @@ const personalRating = sqliteTable(
 	],
 );
 
+// AES-GCM envelope encryption (ADR-0005): `ciphertext` holds the encrypted
+// provider config JSON, `wrappedKey` its per-record data key encrypted under
+// the deploy-time master key. `kind` and `label` stay plaintext so an admin
+// listing never has to decrypt every row just to show one.
+const llmProvider = sqliteTable("llm_provider", {
+	ciphertext: text().notNull(),
+	createdAt: timestamp("created_at"),
+	dataIv: text("data_iv").notNull(),
+	id: text()
+		.primaryKey()
+		.$defaultFn(() => crypto.randomUUID()),
+	kind: text({ enum: llmProviderKinds }).notNull(),
+	label: text().notNull(),
+	updatedAt: timestamp("updated_at").$onUpdateFn(() => new Date()),
+	wrapIv: text("wrap_iv").notNull(),
+	wrappedKey: text("wrapped_key").notNull(),
+});
+
 export {
 	account,
 	apiKey,
 	apiKeyPlans,
 	episodeProgress,
+	llmProvider,
+	llmProviderKinds,
 	personalRating,
 	rateableUnitKinds,
 	session,
 	todos,
 	user,
+	vercelAiSdkProviderKinds,
 	verification,
 	watchStatus,
 	watchStatuses,
@@ -205,6 +242,7 @@ export type {
 	ApiKeyPlan,
 	ContinuityKey,
 	InstalmentLocator,
+	LlmProviderKind,
 	RateableUnitKey,
 	RateableUnitKind,
 	WatchStatus,
