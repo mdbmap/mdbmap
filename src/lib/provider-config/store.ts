@@ -19,7 +19,6 @@ interface StoreProviderInput {
 	label: string;
 }
 
-// Encrypts `input.config` on write; the master key never reaches the row.
 const storeProvider = async (
 	db: Db,
 	masterKeyBase64: string,
@@ -47,8 +46,6 @@ const storeProvider = async (
 	return { id, kind: config.kind, label: input.label };
 };
 
-// The typed accessor callers use to get a configured provider: decrypts on
-// read and validates the recovered shape before handing it back.
 const getProviderConfig = async (
 	db: Db,
 	masterKeyBase64: string,

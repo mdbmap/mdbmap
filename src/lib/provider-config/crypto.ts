@@ -1,7 +1,7 @@
 // AES-GCM envelope encryption (ADR-0005): each record gets its own data key,
 // which in turn is encrypted ("wrapped") under the deploy-time master key.
-// Compromising the ciphertext alone yields nothing; compromising D1 alone
-// yields nothing either, since the master key never touches the database.
+
+import { ProviderConfigMasterKeySchema } from "./master-key.ts";
 
 const ALGORITHM = "AES-GCM";
 const IV_LENGTH_BYTES = 12;
@@ -36,6 +36,15 @@ const importKey = async (
 	usage: "decrypt" | "encrypt",
 ) => crypto.subtle.importKey("raw", raw, ALGORITHM, false, [usage]);
 
+const importMasterKey = async (
+	masterKeyBase64: string,
+	usage: "decrypt" | "encrypt",
+) =>
+	importKey(
+		base64ToBytes(ProviderConfigMasterKeySchema.parse(masterKeyBase64)),
+		usage,
+	);
+
 const randomBytes = (length: number): Uint8Array<ArrayBuffer> =>
 	crypto.getRandomValues(new Uint8Array(length));
 
@@ -54,7 +63,7 @@ const encryptEnvelope = async (
 	masterKeyBase64: string,
 	additionalData: string,
 ): Promise<Envelope> => {
-	const masterKey = await importKey(base64ToBytes(masterKeyBase64), "encrypt");
+	const masterKey = await importMasterKey(masterKeyBase64, "encrypt");
 	const dataKeyBytes = randomBytes(DATA_KEY_LENGTH_BYTES);
 	const dataKey = await importKey(dataKeyBytes, "encrypt");
 
@@ -86,7 +95,7 @@ const decryptEnvelope = async (
 	masterKeyBase64: string,
 	additionalData: string,
 ): Promise<string> => {
-	const masterKey = await importKey(base64ToBytes(masterKeyBase64), "decrypt");
+	const masterKey = await importMasterKey(masterKeyBase64, "decrypt");
 
 	let dataKeyBytes: ArrayBuffer;
 	try {

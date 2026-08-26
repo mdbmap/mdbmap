@@ -30,8 +30,7 @@ type RateableUnitKind = (typeof rateableUnitKinds)[number];
 const apiKeyPlans = ["free", "pro"] as const;
 type ApiKeyPlan = (typeof apiKeyPlans)[number];
 
-// The Vercel AI SDK adapters, plus one OpenAI-compatible entry for gateways
-// (OpenRouter) and self-hosted endpoints (ADR-0005).
+// Provisional Vercel AI SDK adapter subset (ADR-0005).
 const vercelAiSdkProviderKinds = [
 	"openai",
 	"anthropic",

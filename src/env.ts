@@ -1,6 +1,8 @@
 import { createEnv } from "@t3-oss/env-core";
 import { z } from "zod";
 
+import { ProviderConfigMasterKeySchema } from "@/lib/provider-config/master-key.ts";
+
 export const env = createEnv({
 	client: {
 		VITE_APP_TITLE: z.string().min(1).optional(),
@@ -40,7 +42,7 @@ export const env = createEnv({
 		ANIDB_CLIENT_VER: z.string().optional(),
 		// Deploy-time wrangler secret (ADR-0005): wraps each provider's per-record
 		// data key. Never set a value here or in an .env file committed to the repo.
-		PROVIDER_CONFIG_MASTER_KEY: z.string().optional(),
+		PROVIDER_CONFIG_MASTER_KEY: ProviderConfigMasterKeySchema.optional(),
 		SERVER_URL: z.url().optional(),
 		SIMKL_API_KEY: z.string().optional(),
 		TMDB_API_KEY: z.string().optional(),
