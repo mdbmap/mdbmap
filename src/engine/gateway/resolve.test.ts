@@ -31,12 +31,26 @@ const one = <Row>(rows: readonly Row[]): Row => {
 const seedGroup = async (db: Db, source: GroupSource = "t1-structure") =>
 	one(await db.insert(titleGroups).values({ source }).returning().all());
 
-const seedTitle = async (db: Db, groupId: number, service: string, serviceId: string) =>
+const seedTitle = async (
+	db: Db,
+	groupId: number,
+	service: string,
+	serviceId: string,
+) =>
 	one(
-		await db.insert(serviceTitles).values({ groupId, service, serviceId }).returning().all(),
+		await db
+			.insert(serviceTitles)
+			.values({ groupId, service, serviceId })
+			.returning()
+			.all(),
 	);
 
-const linkTitles = async (db: Db, firstId: number, secondId: number, source: GroupSource) => {
+const linkTitles = async (
+	db: Db,
+	firstId: number,
+	secondId: number,
+	source: GroupSource,
+) => {
 	await db
 		.insert(titleAssertions)
 		.values({
@@ -77,7 +91,11 @@ const seedInstalment = async (db: Db, titleId: number, locator: string) =>
 const seedUnit = async (db: Db) =>
 	one(await db.insert(contentUnits).values({}).returning().all());
 
-const coverInstalment = async (db: Db, instalmentId: number, unitId: number) => {
+const coverInstalment = async (
+	db: Db,
+	instalmentId: number,
+	unitId: string,
+) => {
 	await db
 		.insert(instalmentAssertions)
 		.values({ confidence: "high", instalmentId, source: "t3-episode", unitId })
@@ -106,7 +124,9 @@ describe("mapping gateway resolution", () => {
 		expect(outcome.body.input).toBe("tmdb:603");
 		const { imdb } = outcome.body.mappings;
 		expect(imdb?.status).toBe("matched");
-		expect(imdb?.counterparts.map((counterpart) => counterpart.id)).toEqual(["tt0133093"]);
+		expect(imdb?.counterparts.map((counterpart) => counterpart.id)).toEqual([
+			"tt0133093",
+		]);
 	});
 
 	it("maps in the reverse direction from the same graph", async () => {
@@ -115,15 +135,22 @@ describe("mapping gateway resolution", () => {
 		const target = await seedTitle(db, group.id, "imdb", "tt0133093");
 		await linkTitles(db, source.id, target.id, "t1-structure");
 
-		const outcome = await resolveMapping(db, "movie", "tt0133093", noColdLookup);
+		const outcome = await resolveMapping(
+			db,
+			"movie",
+			"tt0133093",
+			noColdLookup,
+		);
 
 		expect(outcome.kind).toBe("ok");
 		if (outcome.kind !== "ok") {
 			return;
 		}
-		expect(outcome.body.mappings.tmdb?.counterparts.map((counterpart) => counterpart.id)).toEqual([
-			"tmdb:603",
-		]);
+		expect(
+			outcome.body.mappings.tmdb?.counterparts.map(
+				(counterpart) => counterpart.id,
+			),
+		).toEqual(["tmdb:603"]);
 	});
 
 	it("treats a known id with no counterpart as a successful empty result", async () => {
@@ -140,7 +167,12 @@ describe("mapping gateway resolution", () => {
 	});
 
 	it("rejects a malformed id with the expected shape", async () => {
-		const outcome = await resolveMapping(db, "movie", "not-an-id", noColdLookup);
+		const outcome = await resolveMapping(
+			db,
+			"movie",
+			"not-an-id",
+			noColdLookup,
+		);
 
 		expect(outcome.kind).toBe("malformed");
 		if (outcome.kind !== "malformed") {
@@ -265,9 +297,11 @@ describe("mapping gateway resolution", () => {
 		if (outcome.kind !== "ok") {
 			return;
 		}
-		expect(outcome.body.mappings.imdb?.counterparts.map((counterpart) => counterpart.id)).toEqual([
-			"tt0133093",
-		]);
+		expect(
+			outcome.body.mappings.imdb?.counterparts.map(
+				(counterpart) => counterpart.id,
+			),
+		).toEqual(["tt0133093"]);
 	});
 });
 
@@ -336,18 +370,28 @@ describe("mapping gateway instalment resolution", () => {
 		const sourceEpisode = one(
 			await db
 				.insert(serviceInstalments)
-				.values({ locator: "s1e1", locatorKind: "position", titleId: source.id })
+				.values({
+					locator: "s1e1",
+					locatorKind: "position",
+					titleId: source.id,
+				})
 				.returning()
 				.all(),
 		);
 		const targetEpisode = one(
 			await db
 				.insert(serviceInstalments)
-				.values({ locator: "s1e1", locatorKind: "position", titleId: target.id })
+				.values({
+					locator: "s1e1",
+					locatorKind: "position",
+					titleId: target.id,
+				})
 				.returning()
 				.all(),
 		);
-		const unit = one(await db.insert(contentUnits).values({}).returning().all());
+		const unit = one(
+			await db.insert(contentUnits).values({}).returning().all(),
+		);
 		await db
 			.insert(instalmentAssertions)
 			.values(
@@ -360,16 +404,23 @@ describe("mapping gateway instalment resolution", () => {
 			)
 			.run();
 
-		const outcome = await resolveMapping(db, "series", "tmdb:1396:1:1", noColdLookup);
+		const outcome = await resolveMapping(
+			db,
+			"series",
+			"tmdb:1396:1:1",
+			noColdLookup,
+		);
 
 		expect(outcome.kind).toBe("ok");
 		if (outcome.kind !== "ok") {
 			return;
 		}
 		expect(outcome.body.input).toBe("tmdb:1396:1:1");
-		expect(outcome.body.mappings.imdb?.counterparts.map((counterpart) => counterpart.id)).toEqual([
-			"tt0903747:1:1",
-		]);
+		expect(
+			outcome.body.mappings.imdb?.counterparts.map(
+				(counterpart) => counterpart.id,
+			),
+		).toEqual(["tt0903747:1:1"]);
 	});
 
 	it("returns 202 for an episodic id whose anchor group has a pending target", async () => {
@@ -381,7 +432,12 @@ describe("mapping gateway instalment resolution", () => {
 			.run();
 		await seedCoverage(db, group.id, "imdb", "pending");
 
-		const outcome = await resolveMapping(db, "series", "tmdb:1396:1:1", noColdLookup);
+		const outcome = await resolveMapping(
+			db,
+			"series",
+			"tmdb:1396:1:1",
+			noColdLookup,
+		);
 
 		expect(outcome.kind).toBe("pending");
 		if (outcome.kind !== "pending") {
@@ -400,7 +456,12 @@ describe("mapping gateway instalment resolution", () => {
 			.run();
 		await seedCoverage(db, group.id, "imdb", "conflict");
 
-		const outcome = await resolveMapping(db, "series", "tmdb:1396:1:1", noColdLookup);
+		const outcome = await resolveMapping(
+			db,
+			"series",
+			"tmdb:1396:1:1",
+			noColdLookup,
+		);
 
 		expect(outcome.kind).toBe("conflict");
 		if (outcome.kind !== "conflict") {
@@ -429,18 +490,27 @@ describe("mapping gateway title-level instalments", () => {
 		await coverInstalment(db, sourceEpisode.id, unit.id);
 		await coverInstalment(db, targetEpisode.id, unit.id);
 
-		const outcome = await resolveMapping(db, "series", "tmdb:1396", noColdLookup);
+		const outcome = await resolveMapping(
+			db,
+			"series",
+			"tmdb:1396",
+			noColdLookup,
+		);
 
 		expect(outcome.kind).toBe("ok");
 		if (outcome.kind !== "ok") {
 			return;
 		}
-		expect(outcome.body.instalments?.map((entry) => entry.input)).toEqual(["tmdb:1396:1:1"]);
-		const [entry] = outcome.body.instalments ?? [];
-		expect(entry?.mappings.imdb?.counterparts.map((counterpart) => counterpart.id)).toEqual([
-			"tt0903747:1:1",
+		expect(outcome.body.instalments?.map((entry) => entry.input)).toEqual([
+			"tmdb:1396:1:1",
 		]);
-		expect(outcome.body.mappings.imdb?.counterparts[0]?.supportingInstalment).toBeUndefined();
+		const [entry] = outcome.body.instalments ?? [];
+		expect(
+			entry?.mappings.imdb?.counterparts.map((counterpart) => counterpart.id),
+		).toEqual(["tt0903747:1:1"]);
+		expect(
+			outcome.body.mappings.imdb?.counterparts[0]?.supportingInstalment,
+		).toBeUndefined();
 	});
 
 	it("names the supporting instalment for a non-coextensive counterpart", async () => {
@@ -457,7 +527,12 @@ describe("mapping gateway title-level instalments", () => {
 		await coverInstalment(db, sourceTwo.id, secondUnit.id);
 		await coverInstalment(db, targetOne.id, firstUnit.id);
 
-		const outcome = await resolveMapping(db, "series", "tmdb:1396", noColdLookup);
+		const outcome = await resolveMapping(
+			db,
+			"series",
+			"tmdb:1396",
+			noColdLookup,
+		);
 
 		expect(outcome.kind).toBe("ok");
 		if (outcome.kind !== "ok") {
@@ -486,7 +561,12 @@ describe("mapping gateway title-level instalments", () => {
 		await coverInstalment(db, targetOne.id, firstUnit.id);
 		await coverInstalment(db, targetTwo.id, secondUnit.id);
 
-		const outcome = await resolveMapping(db, "series", "tmdb:1396", noColdLookup);
+		const outcome = await resolveMapping(
+			db,
+			"series",
+			"tmdb:1396",
+			noColdLookup,
+		);
 
 		expect(outcome.kind).toBe("ok");
 		if (outcome.kind !== "ok") {
@@ -509,7 +589,12 @@ describe("mapping gateway title-level instalments", () => {
 		await coverInstalment(db, targetEpisode.id, unit.id);
 		await seedInstalment(db, source.id, "s1e2");
 
-		const outcome = await resolveMapping(db, "series", "tmdb:1396", noColdLookup);
+		const outcome = await resolveMapping(
+			db,
+			"series",
+			"tmdb:1396",
+			noColdLookup,
+		);
 
 		expect(outcome.kind).toBe("ok");
 		if (outcome.kind !== "ok") {
@@ -521,8 +606,12 @@ describe("mapping gateway title-level instalments", () => {
 			return;
 		}
 		expect(imdb.source).toBe("manual");
-		const linked = outcome.body.instalments?.find((entry) => entry.input === "tmdb:1396:1:1");
-		const unlinked = outcome.body.instalments?.find((entry) => entry.input === "tmdb:1396:1:2");
+		const linked = outcome.body.instalments?.find(
+			(entry) => entry.input === "tmdb:1396:1:1",
+		);
+		const unlinked = outcome.body.instalments?.find(
+			(entry) => entry.input === "tmdb:1396:1:2",
+		);
 		expect(linked?.source).toBe("t3-episode");
 		expect(unlinked?.source).toBe("manual");
 	});
@@ -554,7 +643,9 @@ describe("mapping gateway assertion integrity", () => {
 		expect(imdb.confidence).toBe("low");
 		expect(
 			imdb.counterparts.every((counterpart) =>
-				counterpart.assertionPath.every((assertion) => assertion.confidence !== "high"),
+				counterpart.assertionPath.every(
+					(assertion) => assertion.confidence !== "high",
+				),
 			),
 		).toBe(true);
 	});

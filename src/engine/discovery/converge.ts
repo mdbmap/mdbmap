@@ -1,5 +1,7 @@
 import { and, eq, inArray, or } from "drizzle-orm";
 
+import { runAtomicBatch } from "@/db/atomic";
+import type { PreparedBatch } from "@/db/atomic";
 import {
 	candidateSubjectKey,
 	instalmentAssertions,
@@ -7,7 +9,6 @@ import {
 	serviceInstalments,
 	serviceTitles,
 	titleAssertions,
-	titleGroupAliases,
 	titleGroups,
 } from "@/db/engine-schema";
 import type {
@@ -17,6 +18,7 @@ import type {
 } from "@/db/engine-schema";
 import { survivorGroupId } from "@/engine/gateway";
 import type { GatewayDb } from "@/engine/gateway";
+import { tierIds } from "@/engine/matcher";
 import { isCuratedSource } from "@/engine/recompute";
 
 // A member the discovery named, in the order the discovery placed it (live
@@ -178,7 +180,11 @@ const readGroupSnapshot = async (
 	groupId: number,
 ): Promise<GroupSnapshot | undefined> => {
 	const group = takeFirst(
-		await db.select().from(titleGroups).where(eq(titleGroups.id, groupId)).all(),
+		await db
+			.select()
+			.from(titleGroups)
+			.where(eq(titleGroups.id, groupId))
+			.all(),
 	);
 	if (group === undefined) {
 		return undefined;
@@ -209,7 +215,9 @@ const resolveStoredMember = async (
 		eq(serviceTitles.service, member.service),
 		eq(serviceTitles.serviceId, member.serviceId),
 	);
-	const title = takeFirst(await db.select().from(serviceTitles).where(match).all());
+	const title = takeFirst(
+		await db.select().from(serviceTitles).where(match).all(),
+	);
 	if (title === undefined) {
 		return undefined;
 	}
@@ -229,10 +237,12 @@ const readConvergeState = async (
 	const resolved = await Promise.all(
 		input.members.map(async (member) => resolveStoredMember(db, member)),
 	);
-	const stored = resolved.filter((member): member is StoredMember => member !== undefined);
-	const involvedIds = [...new Set(stored.map((member) => member.groupId))].toSorted(
-		ascending,
+	const stored = resolved.filter(
+		(member): member is StoredMember => member !== undefined,
 	);
+	const involvedIds = [
+		...new Set(stored.map((member) => member.groupId)),
+	].toSorted(ascending);
 	const snapshotRows = await Promise.all(
 		involvedIds.map(async (groupId) => readGroupSnapshot(db, groupId)),
 	);
@@ -259,7 +269,9 @@ const candidatePlan = (
 	const proposedMembers = input.members
 		.map((member) => toRef(member))
 		.toSorted(byServiceRef);
-	const anchorTitleId = Math.min(...state.stored.map((member) => member.titleId));
+	const anchorTitleId = Math.min(
+		...state.stored.map((member) => member.titleId),
+	);
 	const subject: CandidateSubject = {
 		subjectType: "title",
 		titleId: anchorTitleId,
@@ -325,28 +337,6 @@ const planConverge = (
 	};
 };
 
-const canonical = (precondition: ConvergePrecondition): string =>
-	JSON.stringify(precondition);
-
-// Re-read every involved group inside the write and compare it against the plan's
-// assumption. A concurrent converge that got there first has moved a membership or
-// curated a group, so the canonical mismatch aborts this batch untouched and the
-// next request re-plans against the winner.
-const reReadPrecondition = async (
-	db: GatewayDb,
-	plan: Extract<ConvergePlan, { kind: "merge" }>,
-): Promise<ConvergePrecondition> => {
-	const snapshotRows = await Promise.all(
-		plan.precondition.snapshots.map(async (snapshot) =>
-			readGroupSnapshot(db, snapshot.groupId),
-		),
-	);
-	const snapshots = snapshotRows.filter(
-		(snapshot): snapshot is GroupSnapshot => snapshot !== undefined,
-	);
-	return { snapshots };
-};
-
 // Queue the collision, coalescing on the open partial unique index: a repeat or
 // concurrent discovery of the same subject and evidence inserts nothing and the
 // outcome stays total, so an admin reviews one question rather than a pile.
@@ -375,42 +365,104 @@ const commitMerge = async (
 	db: GatewayDb,
 	plan: Extract<ConvergePlan, { kind: "merge" }>,
 ): Promise<ConvergeOutcome> => {
-	const outcome = await db.transaction(async (tx): Promise<ConvergeOutcome> => {
-		if (canonical(await reReadPrecondition(tx, plan)) !== canonical(plan.precondition)) {
-			return { kind: "aborted" };
-		}
-		// Statements run in series: concurrent writes on a single transaction
-		// connection corrupt it, so no-await-in-loop is waived inside the write.
-		for (const reassignment of plan.reassignments) {
-			// oxlint-disable-next-line eslint/no-await-in-loop
-			await tx
-				.update(serviceTitles)
-				.set({ groupId: plan.survivorId, ordinal: reassignment.ordinal })
-				.where(eq(serviceTitles.id, reassignment.titleId))
-				.run();
-		}
-		// Flatten as we write: an id that already pointed at a now-retired group is
-		// re-pointed to the survivor, and each retired group aliases the survivor —
-		// one hop always reaches a group that holds members.
-		if (plan.retiredIds.length > 0) {
-			await tx
-				.update(titleGroupAliases)
-				.set({ survivorGroupId: plan.survivorId })
-				.where(inArray(titleGroupAliases.survivorGroupId, [...plan.retiredIds]))
-				.run();
-			await tx
-				.insert(titleGroupAliases)
-				.values(
-					plan.retiredIds.map((retiredId) => ({
-						retiredGroupId: retiredId,
-						survivorGroupId: plan.survivorId,
-					})),
+	const { acquired } = await runAtomicBatch(db, (database, operationId) => {
+		const clauses: string[] = [];
+		const bindings: (boolean | number | string)[] = [operationId];
+		for (const snapshot of plan.precondition.snapshots) {
+			clauses.push(`EXISTS (
+				SELECT 1 FROM title_groups AS groups
+				WHERE groups.id = ? AND groups.source = ? AND groups.ladder_complete = ?
+				AND (SELECT count(*) FROM service_titles WHERE group_id = groups.id) = json_array_length(?)
+				AND NOT EXISTS (
+					SELECT 1 FROM json_each(?) AS expected
+					WHERE NOT EXISTS (
+						SELECT 1 FROM service_titles
+						WHERE group_id = groups.id AND id = expected.value
+					)
 				)
-				.run();
+				AND (CASE WHEN groups.source = 'manual'
+					OR EXISTS (
+						SELECT 1 FROM instalment_assertions AS assertions
+						JOIN service_instalments AS instalments ON instalments.id = assertions.instalment_id
+						JOIN service_titles AS titles ON titles.id = instalments.title_id
+						WHERE titles.group_id = groups.id AND assertions.source NOT IN (${tierIds.map(() => "?").join(", ")})
+					)
+					OR EXISTS (
+						SELECT 1 FROM title_assertions AS assertions
+						WHERE assertions.source NOT IN (${tierIds.map(() => "?").join(", ")})
+						AND (assertions.title_a_id IN (SELECT id FROM service_titles WHERE group_id = groups.id)
+							OR assertions.title_b_id IN (SELECT id FROM service_titles WHERE group_id = groups.id))
+					)
+				THEN 1 ELSE 0 END) = ?
+			)`);
+			const members = JSON.stringify(snapshot.memberTitleIds);
+			bindings.push(
+				snapshot.groupId,
+				snapshot.source,
+				snapshot.ladderComplete,
+				members,
+				members,
+				...tierIds,
+				...tierIds,
+				Number(snapshot.curated),
+			);
 		}
-		return { kind: "merged", retiredIds: plan.retiredIds, survivorId: plan.survivorId };
+		const statements: PreparedBatch = [
+			database
+				.prepare(`INSERT INTO atomic_write_gates (operation_id)
+					SELECT ? WHERE ${clauses.join(" AND ")}
+					RETURNING operation_id`)
+				.bind(...bindings),
+		];
+		const cases = plan.reassignments.map(() => "WHEN ? THEN ?").join(" ");
+		const titleIds = plan.reassignments.map(({ titleId }) => titleId);
+		statements.push(
+			database
+				.prepare(`UPDATE service_titles
+					SET group_id = ?, ordinal = CASE id ${cases} ELSE ordinal END
+					WHERE id IN (${titleIds.map(() => "?").join(", ")})
+					AND EXISTS (SELECT 1 FROM atomic_write_gates WHERE operation_id = ?)`)
+				.bind(
+					plan.survivorId,
+					...plan.reassignments.flatMap(({ ordinal, titleId }) => [
+						titleId,
+						ordinal,
+					]),
+					...titleIds,
+					operationId,
+				),
+		);
+		if (plan.retiredIds.length > 0) {
+			statements.push(
+				database
+					.prepare(`UPDATE title_group_aliases SET survivor_group_id = ?
+						WHERE survivor_group_id IN (${plan.retiredIds.map(() => "?").join(", ")})
+						AND EXISTS (SELECT 1 FROM atomic_write_gates WHERE operation_id = ?)`)
+					.bind(plan.survivorId, ...plan.retiredIds, operationId),
+				...plan.retiredIds.map((retiredId) =>
+					database
+						.prepare(`INSERT INTO title_group_aliases (retired_group_id, survivor_group_id)
+							SELECT ?, ? WHERE EXISTS (
+								SELECT 1 FROM atomic_write_gates WHERE operation_id = ?
+							)`)
+						.bind(retiredId, plan.survivorId, operationId),
+				),
+			);
+		}
+		statements.push(
+			database
+				.prepare("DELETE FROM atomic_write_gates WHERE operation_id = ?")
+				.bind(operationId),
+		);
+		return statements;
 	});
-	return outcome;
+	return acquired
+		? {
+				kind: "merged",
+				retiredIds: plan.retiredIds,
+				survivorId: plan.survivorId,
+			}
+		: { kind: "aborted" };
 };
 
 // One stored member as a revalidation sees it: its title and the spokes it owns,

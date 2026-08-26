@@ -1,6 +1,6 @@
 import { and, eq, inArray } from "drizzle-orm";
-import type { BaseSQLiteDatabase } from "drizzle-orm/sqlite-core";
 
+import type { Db as GatewayDb } from "@/db";
 import {
 	assertionSources,
 	instalmentAssertions,
@@ -12,7 +12,6 @@ import {
 	titleGroups,
 } from "@/db/engine-schema";
 import type { AssertionConfidence, GroupSource } from "@/db/engine-schema";
-
 import type { Identity, Service } from "@/engine/identity.ts";
 import type {
 	PathAssertion,
@@ -22,6 +21,7 @@ import type {
 	ResolvedLink,
 	ResolvedLinks,
 } from "@/engine/serializer.ts";
+
 import {
 	isIdentityService,
 	memberInstalment,
@@ -29,10 +29,6 @@ import {
 	toGraphLocator,
 	toGraphMember,
 } from "./keys.ts";
-
-// The runtime db is async (D1 in production, an in-memory libsql db in tests).
-// The union stays permissive so any schema-typed or schemaless driver assigns.
-type GatewayDb = BaseSQLiteDatabase<"sync" | "async", unknown, Record<string, unknown>>;
 
 type GraphRead =
 	| { readonly found: false }
@@ -65,11 +61,15 @@ interface RefSink {
 
 const groupContinuity = (groupId: number): string => `group:${groupId}`;
 
-const opaqueRef = (prefix: string, id: number): string => `${prefix}:${id.toString(36)}`;
+const opaqueRef = (prefix: string, id: number): string =>
+	`${prefix}:${id.toString(36)}`;
 
 const takeFirst = <Row>(rows: readonly Row[]): Row | undefined => rows[0];
 
-const survivorGroupId = async (db: GatewayDb, groupId: number): Promise<number> => {
+const survivorGroupId = async (
+	db: GatewayDb,
+	groupId: number,
+): Promise<number> => {
 	const aliases = await db
 		.select()
 		.from(titleGroupAliases)
@@ -91,9 +91,14 @@ const coverageVerdicts = async (
 	for (const row of rows) {
 		const prior = verdicts.get(row.targetService);
 		verdicts.set(row.targetService, {
-			conflictId: prior?.conflictId ?? (row.state === "conflict" ? row.id : undefined),
-			pendingId: prior?.pendingId ?? (row.state === "pending" ? row.id : undefined),
-			usable: (prior?.usable ?? false) || row.state === "complete" || row.state === "open",
+			conflictId:
+				prior?.conflictId ?? (row.state === "conflict" ? row.id : undefined),
+			pendingId:
+				prior?.pendingId ?? (row.state === "pending" ? row.id : undefined),
+			usable:
+				(prior?.usable ?? false) ||
+				row.state === "complete" ||
+				row.state === "open",
 		});
 	}
 	return verdicts;
@@ -104,7 +109,9 @@ const coverageVerdicts = async (
 const sourceRank = (source: GroupSource): number =>
 	source === "release" ? -1 : assertionSources.indexOf(source);
 
-const mostCurated = (sources: Iterable<GroupSource>): GroupSource | undefined => {
+const mostCurated = (
+	sources: Iterable<GroupSource>,
+): GroupSource | undefined => {
 	let best: GroupSource | undefined;
 	for (const source of sources) {
 		if (best === undefined || sourceRank(source) > sourceRank(best)) {
@@ -137,7 +144,9 @@ const titleEvidence = async (
 		eq(titleAssertions.titleAId, Math.min(fromId, toId)),
 		eq(titleAssertions.titleBId, Math.max(fromId, toId)),
 	);
-	const direct = takeFirst(await db.select().from(titleAssertions).where(pair).all());
+	const direct = takeFirst(
+		await db.select().from(titleAssertions).where(pair).all(),
+	);
 	if (direct !== undefined) {
 		return {
 			assertionPath: [{ confidence: direct.confidence, source: direct.source }],
@@ -178,13 +187,13 @@ const completionFor = (
 const titleUnitSpokes = async (
 	db: GatewayDb,
 	titleId: number,
-): Promise<Map<number, InstalmentRow>> => {
+): Promise<Map<string, InstalmentRow>> => {
 	const spokes = await db
 		.select()
 		.from(serviceInstalments)
 		.where(eq(serviceInstalments.titleId, titleId))
 		.all();
-	const byUnit = new Map<number, InstalmentRow>();
+	const byUnit = new Map<string, InstalmentRow>();
 	if (spokes.length === 0) {
 		return byUnit;
 	}
@@ -215,9 +224,9 @@ interface CounterpartShape {
 // coverage stays a bare title.
 const reconcileCounterpart = (
 	requested: TitleRow,
-	requestedUnits: ReadonlyMap<number, InstalmentRow>,
+	requestedUnits: ReadonlyMap<string, InstalmentRow>,
 	member: { readonly service: Service; readonly serviceId: string },
-	memberUnits: ReadonlyMap<number, InstalmentRow>,
+	memberUnits: ReadonlyMap<string, InstalmentRow>,
 	bare: Identity,
 ): CounterpartShape => {
 	if (!isIdentityService(requested.service)) {
@@ -225,10 +234,13 @@ const reconcileCounterpart = (
 	}
 	const sharedUnits = [...requestedUnits.keys()]
 		.filter((unit) => memberUnits.has(unit))
-		.toSorted((left, right) => left - right);
+		.toSorted();
 	const [sharedUnit] = sharedUnits;
-	const requestInsideMember = requestedUnits.size > 0 && sharedUnits.length === requestedUnits.size;
-	const memberSpansMore = [...memberUnits.keys()].some((unit) => !requestedUnits.has(unit));
+	const requestInsideMember =
+		requestedUnits.size > 0 && sharedUnits.length === requestedUnits.size;
+	const memberSpansMore = [...memberUnits.keys()].some(
+		(unit) => !requestedUnits.has(unit),
+	);
 	if (requestInsideMember && memberSpansMore && sharedUnit !== undefined) {
 		const spoke = memberUnits.get(sharedUnit);
 		const instalment =
@@ -251,7 +263,9 @@ const reconcileCounterpart = (
 					{ service: requested.service, serviceId: requested.serviceId },
 					spoke.locator,
 				);
-	return supporting === undefined ? { identity: bare } : { identity: bare, supportingInstalment: supporting };
+	return supporting === undefined
+		? { identity: bare }
+		: { identity: bare, supportingInstalment: supporting };
 };
 
 const titleCounterparts = async (
@@ -260,7 +274,7 @@ const titleCounterparts = async (
 	members: readonly TitleRow[],
 	source: GroupSource,
 	service: Service,
-	requestedUnits: ReadonlyMap<number, InstalmentRow>,
+	requestedUnits: ReadonlyMap<string, InstalmentRow>,
 ): Promise<readonly ResolvedCounterpart[]> => {
 	const nested = await Promise.all(
 		members
@@ -278,7 +292,12 @@ const titleCounterparts = async (
 					memberUnits,
 					bare,
 				);
-				const evidence = await titleEvidence(db, source, requested.id, member.id);
+				const evidence = await titleEvidence(
+					db,
+					source,
+					requested.id,
+					member.id,
+				);
 				return [
 					supportingInstalment === undefined
 						? { identity, ...evidence }
@@ -375,7 +394,11 @@ const resolveInstalmentCounterpart = async (
 		return undefined;
 	}
 	const title = takeFirst(
-		await db.select().from(serviceTitles).where(eq(serviceTitles.id, spoke.titleId)).all(),
+		await db
+			.select()
+			.from(serviceTitles)
+			.where(eq(serviceTitles.id, spoke.titleId))
+			.all(),
 	);
 	if (title === undefined || !isIdentityService(title.service)) {
 		return undefined;
@@ -413,17 +436,26 @@ const instalmentCounterparts = async (
 	// A merged counterpart can share several units with the anchor; its spoke is one
 	// counterpart on that content unit, so the first edge wins and later ones drop.
 	const seen = new Set<number>();
-	const pending: { readonly anchor: InstalmentEdge; readonly edge: InstalmentEdge }[] = [];
+	const pending: {
+		readonly anchor: InstalmentEdge;
+		readonly edge: InstalmentEdge;
+	}[] = [];
 	for (const edge of edges) {
 		const anchor = anchorByUnit.get(edge.unitId);
-		if (edge.instalmentId === anchorId || anchor === undefined || seen.has(edge.instalmentId)) {
+		if (
+			edge.instalmentId === anchorId ||
+			anchor === undefined ||
+			seen.has(edge.instalmentId)
+		) {
 			continue;
 		}
 		seen.add(edge.instalmentId);
 		pending.push({ anchor, edge });
 	}
 	const resolved = await Promise.all(
-		pending.map(async ({ anchor, edge }) => resolveInstalmentCounterpart(db, anchor, edge)),
+		pending.map(async ({ anchor, edge }) =>
+			resolveInstalmentCounterpart(db, anchor, edge),
+		),
 	);
 	for (const entry of resolved) {
 		if (entry === undefined) {
@@ -448,7 +480,10 @@ const instalmentLinks = async (
 	const counterparts = await instalmentCounterparts(db, anchorId);
 	const links = new Map<Service, ResolvedLink>();
 	const refs: RefSink = { pendingRef: undefined, reviewRef: undefined };
-	const services = new Set<string>([...counterparts.keys(), ...verdicts.keys()]);
+	const services = new Set<string>([
+		...counterparts.keys(),
+		...verdicts.keys(),
+	]);
 	for (const service of [...services].toSorted()) {
 		if (!isIdentityService(service) || service === requestedService) {
 			continue;
@@ -494,7 +529,12 @@ const requestedInstalments = async (
 			if (input === undefined) {
 				return [];
 			}
-			const { links } = await instalmentLinks(db, spoke.id, requested.service, verdicts);
+			const { links } = await instalmentLinks(
+				db,
+				spoke.id,
+				requested.service,
+				verdicts,
+			);
 			return [{ input, links }];
 		}),
 	);
@@ -508,7 +548,11 @@ const readTitle = async (
 ): Promise<GraphRead> => {
 	const groupId = await survivorGroupId(db, requested.groupId);
 	const group = takeFirst(
-		await db.select().from(titleGroups).where(eq(titleGroups.id, groupId)).all(),
+		await db
+			.select()
+			.from(titleGroups)
+			.where(eq(titleGroups.id, groupId))
+			.all(),
 	);
 	const rowSource: GroupSource = group?.source ?? "release";
 	const members = await db
@@ -518,8 +562,18 @@ const readTitle = async (
 		.orderBy(serviceTitles.ordinal, serviceTitles.id)
 		.all();
 	const verdicts = await coverageVerdicts(db, groupId);
-	const { links, refs } = await titleLinks(db, requested, members, rowSource, verdicts);
-	const resolvedInstalments = await requestedInstalments(db, requested, verdicts);
+	const { links, refs } = await titleLinks(
+		db,
+		requested,
+		members,
+		rowSource,
+		verdicts,
+	);
+	const resolvedInstalments = await requestedInstalments(
+		db,
+		requested,
+		verdicts,
+	);
 	// The served group source is the most curated across the group row and every one
 	// of its links; each entry then carries its own, the group's when unlinked.
 	const groupSource =
@@ -528,11 +582,13 @@ const readTitle = async (
 			...linkSources(links),
 			...resolvedInstalments.flatMap((entry) => linkSources(entry.links)),
 		]) ?? rowSource;
-	const instalments: readonly ResolvedInstalment[] = resolvedInstalments.map((entry) => ({
-		input: entry.input,
-		links: entry.links,
-		source: mostCurated(linkSources(entry.links)) ?? groupSource,
-	}));
+	const instalments: readonly ResolvedInstalment[] = resolvedInstalments.map(
+		(entry) => ({
+			input: entry.input,
+			links: entry.links,
+			source: mostCurated(linkSources(entry.links)) ?? groupSource,
+		}),
+	);
 	return {
 		answer: { groupSource, input: identity, instalments, kind: "title", links },
 		found: true,
@@ -550,7 +606,9 @@ const readInstalment = async (
 		eq(serviceInstalments.titleId, requested.id),
 		eq(serviceInstalments.locator, toGraphLocator(identity.locator)),
 	);
-	const anchor = takeFirst(await db.select().from(serviceInstalments).where(anchorMatch).all());
+	const anchor = takeFirst(
+		await db.select().from(serviceInstalments).where(anchorMatch).all(),
+	);
 	if (anchor === undefined) {
 		return { found: false };
 	}
@@ -569,13 +627,18 @@ const readInstalment = async (
 	};
 };
 
-const readGraph = async (db: GatewayDb, identity: Identity): Promise<GraphRead> => {
+const readGraph = async (
+	db: GatewayDb,
+	identity: Identity,
+): Promise<GraphRead> => {
 	const member = toGraphMember(identity.title);
 	const match = and(
 		eq(serviceTitles.service, member.service),
 		eq(serviceTitles.serviceId, member.serviceId),
 	);
-	const requested = takeFirst(await db.select().from(serviceTitles).where(match).all());
+	const requested = takeFirst(
+		await db.select().from(serviceTitles).where(match).all(),
+	);
 	if (requested === undefined) {
 		return { found: false };
 	}
@@ -585,4 +648,4 @@ const readGraph = async (db: GatewayDb, identity: Identity): Promise<GraphRead> 
 };
 
 export { readGraph, survivorGroupId };
-export type { GatewayDb, GraphRead };
+export type { GraphRead };

@@ -1,16 +1,10 @@
 import { and, eq } from "drizzle-orm";
-import type { BaseSQLiteDatabase } from "drizzle-orm/sqlite-core";
 
+import type { Db as CoverageDb } from "@/db";
 import { serviceCoverages } from "@/db/engine-schema";
 import type { CoverageState } from "@/db/engine-schema";
 import type { ContinuityKey } from "@/db/schema.ts";
 import type { Service } from "@/engine/identity.ts";
-
-// D1 is the source of published mappings and coverage; the overflow build only
-// coordinates the per-service coverage state through it (ADR-0002 §overflow).
-// The runtime db is async (D1 in production, libsql in tests); the union stays
-// permissive so any schema-typed or schemaless driver assigns.
-type CoverageDb = BaseSQLiteDatabase<"sync" | "async", unknown, Record<string, unknown>>;
 
 const revisionMatch = (
 	continuity: ContinuityKey,
@@ -113,4 +107,3 @@ export {
 	coverageStatesFor,
 	seedPendingCoverage,
 };
-export type { CoverageDb };

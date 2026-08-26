@@ -1,27 +1,38 @@
-import { createClient } from "@libsql/client";
-import { drizzle } from "drizzle-orm/libsql";
-import { migrate } from "drizzle-orm/libsql/migrator";
-import { mkdtempSync, rmSync } from "node:fs";
-import { tmpdir } from "node:os";
+/// <reference types="@cloudflare/vitest-pool-workers/types" />
 
-// libsql detaches its connection after every transaction, so a `:memory:` db
-// reopens empty on the next query. A throwaway file per db survives that and
-// keeps each test isolated; the dirs are removed when the process exits.
-const tempDirs: string[] = [];
-process.once("exit", () => {
-	for (const dir of tempDirs) {
-		rmSync(dir, { force: true, recursive: true });
-	}
-});
+import { env } from "cloudflare:workers";
+
+import { createDb } from "./index.ts";
+
+const tables = [
+	"absence_assertions",
+	"atomic_write_gates",
+	"instalment_assertions",
+	"relation_assertions",
+	"title_assertions",
+	"title_group_aliases",
+	"service_instalments",
+	"service_titles",
+	"title_groups",
+	"content_units",
+	"service_coverages",
+	"pending_group_candidates",
+	"account",
+	"episode_progress",
+	"personal_rating",
+	"session",
+	"watch_status",
+	"user",
+	"verification",
+	"todos",
+] as const;
 
 const freshDb = async () => {
-	const dir = mkdtempSync(`${tmpdir()}/mdbmap-test-`);
-	tempDirs.push(dir);
-	const client = createClient({ url: `file:${dir}/test.db` });
-	await client.execute("PRAGMA foreign_keys = ON");
-	const db = drizzle(client);
-	await migrate(db, { migrationsFolder: "schemas/drizzle" });
-	return db;
+	await env.DB.batch([
+		...tables.map((table) => env.DB.prepare(`DELETE FROM ${table}`)),
+		env.DB.prepare("DELETE FROM sqlite_sequence"),
+	]);
+	return createDb(env.DB);
 };
 
 // drizzle wraps the driver error, so the SQLite constraint text lives on the

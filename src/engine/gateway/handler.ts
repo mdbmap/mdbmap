@@ -1,9 +1,9 @@
 import { resolveDb } from "@/db";
-
+import type { Db as GatewayDb } from "@/db";
 import type { Profile } from "@/engine/identity.ts";
+
 import { noColdLookup } from "./cold-lookup.ts";
 import type { ColdLookup } from "./cold-lookup.ts";
-import type { GatewayDb } from "./read.ts";
 import { resolveMapping } from "./resolve.ts";
 import { toResponse } from "./respond.ts";
 

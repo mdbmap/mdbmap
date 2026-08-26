@@ -1,13 +1,9 @@
-import type { BaseSQLiteDatabase } from "drizzle-orm/sqlite-core";
 import type { Promisable } from "type-fest";
 
+import type { Db } from "@/db";
 import type { EngineRead } from "@/engine";
 
 import type { Providers } from "./providers";
-
-// The runtime db is async (D1 in production, an in-memory libsql db in tests).
-// The union stays permissive so any schema-typed or schemaless driver assigns.
-type Db = BaseSQLiteDatabase<"sync" | "async", unknown, Record<string, unknown>>;
 
 interface SessionUser {
 	id: string;
@@ -31,4 +27,5 @@ interface ORPCContext {
 	resolveSession?: ResolveSession;
 }
 
-export type { Db, ORPCContext, ResolveSession, SessionUser };
+export type { Db } from "@/db";
+export type { ORPCContext, ResolveSession, SessionUser };

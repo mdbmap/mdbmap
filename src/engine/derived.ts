@@ -14,7 +14,7 @@ import type {
 	ResolvedLink,
 } from "./serializer.ts";
 
-type UnitId = number;
+type UnitId = string;
 
 // One accepted assertion that a service instalment covers a content unit,
 // carrying its own confidence and provenance (ADR-0002).
@@ -46,7 +46,9 @@ const toPathAssertion = (coverage: UnitCoverage): PathAssertion => ({
 // The most-curated provenance on a path, mirroring how the serializer derives a
 // link's own source, so a tie-break here matches what it publishes.
 const provenanceRank = (path: readonly PathAssertion[]): number =>
-	Math.max(...path.map((assertion) => assertionSources.indexOf(assertion.source)));
+	Math.max(
+		...path.map((assertion) => assertionSources.indexOf(assertion.source)),
+	);
 
 interface DerivedPath {
 	readonly assertionPath: readonly PathAssertion[];
@@ -57,12 +59,14 @@ interface DerivedPath {
 // ADR-0002 leaves ties unspecified; break them by provenance, then by unit, so
 // the selected path never depends on coverage row order.
 const isStrongerPath = (candidate: DerivedPath, best: DerivedPath): boolean => {
-	const byConfidence = confidenceRank(candidate.confidence) - confidenceRank(best.confidence);
+	const byConfidence =
+		confidenceRank(candidate.confidence) - confidenceRank(best.confidence);
 	if (byConfidence !== 0) {
 		return byConfidence > 0;
 	}
 	const byProvenance =
-		provenanceRank(candidate.assertionPath) - provenanceRank(best.assertionPath);
+		provenanceRank(candidate.assertionPath) -
+		provenanceRank(best.assertionPath);
 	if (byProvenance !== 0) {
 		return byProvenance > 0;
 	}
@@ -82,7 +86,10 @@ const derivePath = (
 		if (sourceCoverage === undefined) {
 			continue;
 		}
-		const assertionPath = [toPathAssertion(sourceCoverage), toPathAssertion(coverage)];
+		const assertionPath = [
+			toPathAssertion(sourceCoverage),
+			toPathAssertion(coverage),
+		];
 		const candidate: DerivedPath = {
 			assertionPath,
 			confidence: pathConfidence(assertionPath),
@@ -115,7 +122,10 @@ const compareCounterpart = (
 	left: ResolvedCounterpart,
 	right: ResolvedCounterpart,
 ): number => {
-	const titleComparison = compareStrings(left.identity.title.id, right.identity.title.id);
+	const titleComparison = compareStrings(
+		left.identity.title.id,
+		right.identity.title.id,
+	);
 	if (titleComparison !== 0) {
 		return titleComparison;
 	}

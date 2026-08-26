@@ -2,6 +2,7 @@ import { drizzle } from "drizzle-orm/d1";
 
 import {
 	absenceAssertions,
+	atomicWriteGates,
 	contentUnits,
 	instalmentAssertions,
 	pendingGroupCandidates,
@@ -27,6 +28,7 @@ import {
 const schema = {
 	absenceAssertions,
 	account,
+	atomicWriteGates,
 	contentUnits,
 	episodeProgress,
 	instalmentAssertions,
@@ -46,12 +48,16 @@ const schema = {
 	watchStatus,
 };
 
+const createDb = (database: D1Database) => drizzle(database, { schema });
+type Db = ReturnType<typeof createDb>;
+
 // Resolved per request so the Workers-only `cloudflare:workers` import is never
 // evaluated under Node, mirroring `resolveMetadataKv`. The runtime db is D1
-// (async); tests inject their own async in-memory db instead.
+// (async); tests bind to a local D1 through `cloudflare:test`.
 const resolveDb = async () => {
 	const { env } = await import("cloudflare:workers");
-	return drizzle(env.DB, { schema });
+	return createDb(env.DB);
 };
 
-export { resolveDb };
+export { createDb, resolveDb, schema };
+export type { Db };

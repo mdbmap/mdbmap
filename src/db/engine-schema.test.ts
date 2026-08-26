@@ -1,5 +1,6 @@
 import { eq } from "drizzle-orm";
 import { beforeEach, describe, expect, it } from "vitest";
+
 import {
 	candidateSubjectKey,
 	contentUnits,
@@ -86,8 +87,8 @@ describe("hub-and-spoke coverage edges", () => {
 			.from(instalmentAssertions)
 			.where(eq(instalmentAssertions.instalmentId, instalment.id))
 			.all();
-		expect(rows.map((row) => row.unitId).toSorted((left, right) => left - right)).toEqual(
-			[unitA.id, unitB.id].toSorted((left, right) => left - right),
+		expect(rows.map((row) => row.unitId).toSorted()).toEqual(
+			[unitA.id, unitB.id].toSorted(),
 		);
 	});
 
@@ -110,9 +111,11 @@ describe("hub-and-spoke coverage edges", () => {
 			.run();
 
 		const rows = await db.select().from(instalmentAssertions).all();
-		expect(rows.map((row) => row.instalmentId).toSorted((left, right) => left - right)).toEqual(
-			[spokeA.id, spokeB.id].toSorted((left, right) => left - right),
-		);
+		expect(
+			rows
+				.map((row) => row.instalmentId)
+				.toSorted((left, right) => left - right),
+		).toEqual([spokeA.id, spokeB.id].toSorted((left, right) => left - right));
 	});
 
 	it("rejects a title overlap edge that is reversed or self-referential", async () => {
@@ -132,8 +135,12 @@ describe("hub-and-spoke coverage edges", () => {
 				})
 				.run();
 
-		expect(await rejectionText(insertPair(higher.id, lower.id))).toMatch(/constraint/iu);
-		expect(await rejectionText(insertPair(lower.id, lower.id))).toMatch(/constraint/iu);
+		expect(await rejectionText(insertPair(higher.id, lower.id))).toMatch(
+			/constraint/iu,
+		);
+		expect(await rejectionText(insertPair(lower.id, lower.id))).toMatch(
+			/constraint/iu,
+		);
 		await insertPair(lower.id, higher.id);
 	});
 
@@ -269,7 +276,9 @@ describe("pending group candidates", () => {
 			})
 			.run();
 
-		expect(await db.select().from(pendingGroupCandidates).all()).toHaveLength(2);
+		expect(await db.select().from(pendingGroupCandidates).all()).toHaveLength(
+			2,
+		);
 	});
 
 	it("coalesces subjects that differ only in json key order", async () => {
@@ -322,7 +331,9 @@ describe("pending group candidates", () => {
 			})
 			.run();
 
-		expect(await db.select().from(pendingGroupCandidates).all()).toHaveLength(2);
+		expect(await db.select().from(pendingGroupCandidates).all()).toHaveLength(
+			2,
+		);
 	});
 
 	it("names the title pair as the subject of a title-assertion conflict", async () => {

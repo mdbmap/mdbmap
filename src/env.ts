@@ -38,7 +38,6 @@ export const env = createEnv({
 	server: {
 		ANIDB_CLIENT: z.string().optional(),
 		ANIDB_CLIENT_VER: z.string().optional(),
-		DATABASE_URL: z.string().optional(),
 		SERVER_URL: z.url().optional(),
 		SIMKL_API_KEY: z.string().optional(),
 		TMDB_API_KEY: z.string().optional(),

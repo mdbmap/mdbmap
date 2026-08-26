@@ -29,11 +29,32 @@ const one = <Row>(rows: readonly Row[]): Row => {
 	return row;
 };
 
-const seedGroup = async (db: Db, source: GroupSource = "t1-structure", ladderComplete = false) =>
-	one(await db.insert(titleGroups).values({ ladderComplete, source }).returning().all());
+const seedGroup = async (
+	db: Db,
+	source: GroupSource = "t1-structure",
+	ladderComplete = false,
+) =>
+	one(
+		await db
+			.insert(titleGroups)
+			.values({ ladderComplete, source })
+			.returning()
+			.all(),
+	);
 
-const seedTitle = async (db: Db, groupId: number, service: string, serviceId: string) =>
-	one(await db.insert(serviceTitles).values({ groupId, service, serviceId }).returning().all());
+const seedTitle = async (
+	db: Db,
+	groupId: number,
+	service: string,
+	serviceId: string,
+) =>
+	one(
+		await db
+			.insert(serviceTitles)
+			.values({ groupId, service, serviceId })
+			.returning()
+			.all(),
+	);
 
 const seedSpoke = async (db: Db, titleId: number, locator: string) =>
 	one(
@@ -47,7 +68,12 @@ const seedSpoke = async (db: Db, titleId: number, locator: string) =>
 const seedUnit = async (db: Db) =>
 	one(await db.insert(contentUnits).values({}).returning().all()).id;
 
-const cover = async (db: Db, instalmentId: number, unitId: number, source: AssertionSource) => {
+const cover = async (
+	db: Db,
+	instalmentId: number,
+	unitId: string,
+	source: AssertionSource,
+) => {
 	await db
 		.insert(instalmentAssertions)
 		.values({ confidence: "high", instalmentId, source, unitId })
@@ -55,7 +81,11 @@ const cover = async (db: Db, instalmentId: number, unitId: number, source: Asser
 };
 
 // A curated link pairs two spokes on one shared unit, both stamped by curation.
-const curatedLink = async (db: Db, leftSpoke: number, rightSpoke: number): Promise<number> => {
+const curatedLink = async (
+	db: Db,
+	leftSpoke: number,
+	rightSpoke: number,
+): Promise<string> => {
 	const unitId = await seedUnit(db);
 	await cover(db, leftSpoke, unitId, "manual");
 	await cover(db, rightSpoke, unitId, "manual");
@@ -68,7 +98,7 @@ const curatedNoCounterpart = async (
 	db: Db,
 	spokeId: number,
 	targetService: string,
-): Promise<number> => {
+): Promise<string> => {
 	const unitId = await seedUnit(db);
 	await cover(db, spokeId, unitId, "manual");
 	await db
@@ -111,7 +141,9 @@ describe("curated-preserving recompute", () => {
 		const outcome = await recomputeGroup(db, {
 			groupId: group.id,
 			ladderComplete: true,
-			pairings: [{ confidence: "high", source: "t3-episode", spokeIds: [a3, b2] }],
+			pairings: [
+				{ confidence: "high", source: "t3-episode", spokeIds: [a3, b2] },
+			],
 			triedSource: "t3-episode",
 		});
 
@@ -154,7 +186,11 @@ describe("curated-preserving recompute", () => {
 		const b2 = await seedSpoke(db, titleB.id, "1:2");
 		await curatedLink(db, a1, b1);
 		// The fresh matcher wants a1, which curation already holds.
-		const colliding = { confidence: "high", source: "t3-episode", spokeIds: [a1, b2] } as const;
+		const colliding = {
+			confidence: "high",
+			source: "t3-episode",
+			spokeIds: [a1, b2],
+		} as const;
 
 		const state = await readGroupState(db, group.id);
 		if (state === undefined) {
@@ -197,7 +233,9 @@ describe("curated-preserving recompute", () => {
 		const plan = planRecompute(state, {
 			groupId: group.id,
 			ladderComplete: true,
-			pairings: [{ confidence: "high", source: "t3-episode", spokeIds: [a1, b1] }],
+			pairings: [
+				{ confidence: "high", source: "t3-episode", spokeIds: [a1, b1] },
+			],
 			triedSource: "t3-episode",
 		});
 
@@ -237,7 +275,9 @@ describe("curated-preserving recompute", () => {
 		const input = {
 			groupId: group.id,
 			ladderComplete: true,
-			pairings: [{ confidence: "high", source: "t3-episode", spokeIds: [a1, b1] }],
+			pairings: [
+				{ confidence: "high", source: "t3-episode", spokeIds: [a1, b1] },
+			],
 			triedSource: "t3-episode",
 		} as const;
 		const plan = planRecompute(state, input);
@@ -272,7 +312,9 @@ describe("curated-preserving recompute", () => {
 		const plan = planRecompute(state, {
 			groupId: group.id,
 			ladderComplete: false,
-			pairings: [{ confidence: "high", source: "t3-episode", spokeIds: [a1, b1] }],
+			pairings: [
+				{ confidence: "high", source: "t3-episode", spokeIds: [a1, b1] },
+			],
 			triedSource: "t3-episode",
 		});
 		expect(plan.stamp).toBeUndefined();
@@ -280,7 +322,11 @@ describe("curated-preserving recompute", () => {
 		const outcome = await commitRecompute(db, plan);
 		expect(outcome.kind).toBe("applied");
 		const stamped = one(
-			await db.select().from(titleGroups).where(eq(titleGroups.id, group.id)).all(),
+			await db
+				.select()
+				.from(titleGroups)
+				.where(eq(titleGroups.id, group.id))
+				.all(),
 		);
 		expect(stamped.source).toBe("manual");
 		expect(stamped.ladderComplete).toBe(true);

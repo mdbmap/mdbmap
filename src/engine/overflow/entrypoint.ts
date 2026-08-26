@@ -17,8 +17,8 @@ const toDurableStep = (step: WorkflowStep): DurableStep => ({
 
 // Wiring the four durable phases to live discovery, target fetching, the matcher
 // and D1 publication needs the provider clients and the D1 binding, neither of
-// which the Worker environment carries yet (the app db is still better-sqlite3,
-// and no target-service client provisioning is centralised). That integration is
+// which the Worker environment carries yet (no target-service client provisioning
+// is centralised). That integration is
 // tracked separately; until it lands, an overflow instance fails fast rather
 // than retrying unimplemented work.
 const resolveBuildDeps = (

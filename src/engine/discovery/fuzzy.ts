@@ -1,11 +1,12 @@
 import { and, eq } from "drizzle-orm";
 import type { Promisable } from "type-fest";
 
+import { runAtomicBatch } from "@/db/atomic";
+import type { PreparedBatch } from "@/db/atomic";
 import {
 	candidateSubjectKey,
 	pendingGroupCandidates,
 	serviceTitles,
-	titleGroups,
 } from "@/db/engine-schema";
 import type {
 	CandidateEvidence,
@@ -50,7 +51,8 @@ const jsonNull = ((): null => {
 	throw new Error("JSON null must parse to null");
 })();
 
-const toStoredYear = (year: number | undefined): number | null => year ?? jsonNull;
+const toStoredYear = (year: number | undefined): number | null =>
+	year ?? jsonNull;
 
 type FuzzyGroupEvidence = Extract<CandidateEvidence, { kind: "fuzzy-group" }>;
 type StoredHit = FuzzyGroupEvidence["proposedMembers"][number];
@@ -126,7 +128,8 @@ type FuzzyAcceptOutcome =
 	  }
 	| { readonly kind: "missing" }
 	| { readonly kind: "no-subject" }
-	| { readonly kind: "not-open" };
+	| { readonly kind: "not-open" }
+	| { readonly kind: "stale" };
 
 type FuzzyRejectOutcome =
 	| { readonly candidateId: number; readonly kind: "rejected" }
@@ -233,9 +236,13 @@ interface Buckets {
 // considered", and among the rest the member cap splits proposed members from the
 // overflow the admin still sees ("over the cap").
 const bucketHits = (scored: readonly ScoredHit[]): Buckets => {
-	const cleared = scored.filter((hit) => hit.score >= MEMBER_BAR).toSorted(byScore);
+	const cleared = scored
+		.filter((hit) => hit.score >= MEMBER_BAR)
+		.toSorted(byScore);
 	return {
-		alsoConsidered: scored.filter((hit) => hit.score < MEMBER_BAR).toSorted(byScore),
+		alsoConsidered: scored
+			.filter((hit) => hit.score < MEMBER_BAR)
+			.toSorted(byScore),
 		overCap: cleared.slice(MEMBER_CAP),
 		proposedMembers: cleared.slice(0, MEMBER_CAP),
 	};
@@ -281,39 +288,48 @@ const queueCandidate = async (
 	db: GatewayDb,
 	plan: QueuePlan,
 ): Promise<FuzzyDiscoveryOutcome> => {
-	const outcome = await db.transaction(async (tx): Promise<FuzzyDiscoveryOutcome> => {
-		const rejected = await tx
-			.select({ id: pendingGroupCandidates.id })
-			.from(pendingGroupCandidates)
-			.where(
-				and(
-					eq(pendingGroupCandidates.kind, "fuzzy-group"),
-					eq(pendingGroupCandidates.subjectKey, plan.subjectKey),
-					eq(pendingGroupCandidates.evidenceHash, plan.evidenceHash),
-					eq(pendingGroupCandidates.status, "rejected"),
-				),
+	const inserted = await db.$client
+		.prepare(`INSERT INTO pending_group_candidates
+			(kind, subject, subject_key, evidence, evidence_hash)
+			SELECT 'fuzzy-group', ?, ?, ?, ?
+			WHERE NOT EXISTS (
+				SELECT 1 FROM pending_group_candidates
+				WHERE kind = 'fuzzy-group' AND subject_key = ? AND evidence_hash = ?
+				AND status = 'rejected'
 			)
-			.all();
-		if (rejected.length > 0) {
-			return { evidence: plan.evidence, kind: "suppressed" };
-		}
-		const inserted = takeFirst(
-			await tx
-				.insert(pendingGroupCandidates)
-				.values({
-					evidence: plan.evidence,
-					evidenceHash: plan.evidenceHash,
-					kind: "fuzzy-group",
-					subject: plan.subject,
-					subjectKey: plan.subjectKey,
-				})
-				.onConflictDoNothing()
-				.returning()
-				.all(),
-		);
-		return { candidateId: inserted?.id, evidence: plan.evidence, kind: "queued" };
-	});
-	return outcome;
+			ON CONFLICT DO NOTHING
+			RETURNING id`)
+		.bind(
+			JSON.stringify(plan.subject),
+			plan.subjectKey,
+			JSON.stringify(plan.evidence),
+			plan.evidenceHash,
+			plan.subjectKey,
+			plan.evidenceHash,
+		)
+		.first<{ id: number }>();
+	if (inserted !== null) {
+		return {
+			candidateId: inserted.id,
+			evidence: plan.evidence,
+			kind: "queued",
+		};
+	}
+	const rejected = await db
+		.select({ id: pendingGroupCandidates.id })
+		.from(pendingGroupCandidates)
+		.where(
+			and(
+				eq(pendingGroupCandidates.kind, "fuzzy-group"),
+				eq(pendingGroupCandidates.subjectKey, plan.subjectKey),
+				eq(pendingGroupCandidates.evidenceHash, plan.evidenceHash),
+				eq(pendingGroupCandidates.status, "rejected"),
+			),
+		)
+		.all();
+	return rejected.length > 0
+		? { evidence: plan.evidence, kind: "suppressed" }
+		: { candidateId: undefined, evidence: plan.evidence, kind: "queued" };
 };
 
 // The service/id pairs already in the subject's group — the subject among them —
@@ -323,7 +339,10 @@ const existingMembers = async (
 	groupId: number,
 ): Promise<ReadonlySet<string>> => {
 	const rows = await db
-		.select({ service: serviceTitles.service, serviceId: serviceTitles.serviceId })
+		.select({
+			service: serviceTitles.service,
+			serviceId: serviceTitles.serviceId,
+		})
 		.from(serviceTitles)
 		.where(eq(serviceTitles.groupId, groupId))
 		.all();
@@ -340,13 +359,21 @@ const runFuzzyDiscovery = async (
 	input: FuzzyDiscoveryInput,
 ): Promise<FuzzyDiscoveryOutcome> => {
 	const subjectTitle = takeFirst(
-		await db.select().from(serviceTitles).where(eq(serviceTitles.id, input.subjectTitleId)).all(),
+		await db
+			.select()
+			.from(serviceTitles)
+			.where(eq(serviceTitles.id, input.subjectTitleId))
+			.all(),
 	);
 	if (subjectTitle === undefined) {
 		return { kind: "no-subject" };
 	}
 	const groupId = await survivorGroupId(db, subjectTitle.groupId);
-	const scored = await gatherHits(deps, input, await existingMembers(db, groupId));
+	const scored = await gatherHits(
+		deps,
+		input,
+		await existingMembers(db, groupId),
+	);
 	const buckets = bucketHits(scored);
 	if (buckets.proposedMembers.length === 0) {
 		return { kind: "no-proposal" };
@@ -388,78 +415,139 @@ const loadFuzzyCandidate = async (
 interface AcceptPlan {
 	readonly candidateId: number;
 	readonly groupId: number;
+	readonly members: readonly {
+		readonly id: number;
+		readonly ordinal: number;
+	}[];
 	readonly refused: readonly ServiceRef[];
 	readonly toAttach: readonly ServiceRef[];
 }
 
-// Re-rank the group densely — stored members keep the first positions in stored
-// order, then the proposal follows in scored order — and return the ids attached.
-const attachProposal = async (
-	tx: GatewayDb,
-	groupId: number,
-	toAttach: readonly ServiceRef[],
-): Promise<readonly number[]> => {
-	const members = await tx
-		.select({ id: serviceTitles.id })
-		.from(serviceTitles)
-		.where(eq(serviceTitles.groupId, groupId))
-		.orderBy(serviceTitles.ordinal, serviceTitles.id)
-		.all();
-	// Ordinals are re-stamped one row at a time: concurrent writes on a transaction
-	// connection corrupt it, so no-await-in-loop is waived inside the write.
-	let ordinal = 0;
-	for (const member of members) {
-		// oxlint-disable-next-line eslint/no-await-in-loop
-		await tx.update(serviceTitles).set({ ordinal }).where(eq(serviceTitles.id, member.id)).run();
-		ordinal += 1;
-	}
-	if (toAttach.length === 0) {
-		return [];
-	}
-	const created = await tx
-		.insert(serviceTitles)
-		.values(
-			toAttach.map((ref, index) => ({
-				groupId,
-				ordinal: ordinal + index,
-				service: ref.service,
-				serviceId: ref.serviceId,
-			})),
-		)
-		.returning()
-		.all();
-	if (created.length !== toAttach.length) {
-		throw new Error("service title insert returned no row");
-	}
-	return created.map((row) => row.id);
-};
-
 // Attach the proposal to the subject's group through the curated path. The accept
 // is a human vouch, so the group turns curated and a later recompute preserves
 // this membership.
-const commitAccept = async (db: GatewayDb, plan: AcceptPlan): Promise<FuzzyAcceptOutcome> => {
-	const outcome = await db.transaction(async (tx): Promise<FuzzyAcceptOutcome> => {
-		const current = await loadFuzzyCandidate(tx, plan.candidateId);
+const commitAccept = async (
+	db: GatewayDb,
+	plan: AcceptPlan,
+): Promise<FuzzyAcceptOutcome> => {
+	const membersJson = JSON.stringify(plan.members);
+	const { acquired } = await runAtomicBatch(db, (database, operationId) => {
+		const absentRefs = plan.toAttach
+			.map(
+				() => `AND NOT EXISTS (
+					SELECT 1 FROM service_titles WHERE service = ? AND service_id = ?
+				)`,
+			)
+			.join("\n");
+		const gate = database
+			.prepare(`INSERT INTO atomic_write_gates (operation_id)
+				SELECT ? WHERE EXISTS (
+					SELECT 1 FROM pending_group_candidates
+					WHERE id = ? AND kind = 'fuzzy-group' AND status = 'open'
+				) AND EXISTS (
+					SELECT 1 FROM title_groups AS groups
+					WHERE groups.id = ?
+					AND NOT EXISTS (
+						SELECT 1 FROM title_group_aliases WHERE retired_group_id = groups.id
+					)
+					AND (SELECT count(*) FROM service_titles WHERE group_id = groups.id) = json_array_length(?)
+					AND NOT EXISTS (
+						SELECT 1 FROM json_each(?) AS expected
+						WHERE NOT EXISTS (
+							SELECT 1 FROM service_titles
+							WHERE group_id = groups.id
+							AND id = json_extract(expected.value, '$.id')
+							AND ordinal = json_extract(expected.value, '$.ordinal')
+						)
+					)
+				) ${absentRefs}
+				RETURNING operation_id`)
+			.bind(
+				operationId,
+				plan.candidateId,
+				plan.groupId,
+				membersJson,
+				membersJson,
+				...plan.toAttach.flatMap(({ service, serviceId }) => [
+					service,
+					serviceId,
+				]),
+			);
+		const statements: PreparedBatch = [gate];
+		const cases = plan.members.map(() => "WHEN ? THEN ?").join(" ");
+		statements.push(
+			database
+				.prepare(`UPDATE service_titles
+					SET ordinal = CASE id ${cases} ELSE ordinal END
+					WHERE group_id = ?
+					AND EXISTS (SELECT 1 FROM atomic_write_gates WHERE operation_id = ?)`)
+				.bind(
+					...plan.members.flatMap(({ id }, ordinal) => [id, ordinal]),
+					plan.groupId,
+					operationId,
+				),
+			...plan.toAttach.map((ref, index) =>
+				database
+					.prepare(`INSERT INTO service_titles (service, service_id, group_id, ordinal)
+						SELECT ?, ?, ?, ? WHERE EXISTS (
+							SELECT 1 FROM atomic_write_gates WHERE operation_id = ?
+						)`)
+					.bind(
+						ref.service,
+						ref.serviceId,
+						plan.groupId,
+						plan.members.length + index,
+						operationId,
+					),
+			),
+			database
+				.prepare(`UPDATE title_groups SET source = 'manual'
+					WHERE id = ? AND EXISTS (
+						SELECT 1 FROM atomic_write_gates WHERE operation_id = ?
+					)`)
+				.bind(plan.groupId, operationId),
+			database
+				.prepare(`UPDATE pending_group_candidates SET status = 'accepted'
+					WHERE id = ? AND EXISTS (
+						SELECT 1 FROM atomic_write_gates WHERE operation_id = ?
+					)`)
+				.bind(plan.candidateId, operationId),
+			database
+				.prepare("DELETE FROM atomic_write_gates WHERE operation_id = ?")
+				.bind(operationId),
+		);
+		return statements;
+	});
+	if (!acquired) {
+		const current = await loadFuzzyCandidate(db, plan.candidateId);
 		if (current === undefined) {
 			return { kind: "missing" };
 		}
-		if (current.status !== "open") {
-			return { kind: "not-open" };
-		}
-		const attachedTitleIds = await attachProposal(tx, plan.groupId, plan.toAttach);
-		await tx
-			.update(titleGroups)
-			.set({ source: "manual" })
-			.where(eq(titleGroups.id, plan.groupId))
-			.run();
-		await tx
-			.update(pendingGroupCandidates)
-			.set({ status: "accepted" })
-			.where(eq(pendingGroupCandidates.id, plan.candidateId))
-			.run();
-		return { attachedTitleIds, groupId: plan.groupId, kind: "accepted", refused: plan.refused };
-	});
-	return outcome;
+		return current.status === "open" ? { kind: "stale" } : { kind: "not-open" };
+	}
+	const attachedTitleIds = await Promise.all(
+		plan.toAttach.map(async (ref) => {
+			const serviceMatch = eq(serviceTitles.service, ref.service);
+			const serviceIdMatch = eq(serviceTitles.serviceId, ref.serviceId);
+			const row = takeFirst(
+				await db
+					.select({ id: serviceTitles.id })
+					.from(serviceTitles)
+					.where(and(serviceMatch, serviceIdMatch))
+					.all(),
+			);
+			if (row === undefined) {
+				throw new Error("attached service title is missing");
+			}
+			return row.id;
+		}),
+	);
+	return {
+		attachedTitleIds,
+		groupId: plan.groupId,
+		kind: "accepted",
+		refused: plan.refused,
+	};
 };
 
 // Accept a queued proposal through the curated attach path. A proposed title with
@@ -482,25 +570,43 @@ const acceptFuzzyCandidate = async (
 		return { kind: "missing" };
 	}
 	const subjectTitle = takeFirst(
-		await db.select().from(serviceTitles).where(eq(serviceTitles.id, subject.titleId)).all(),
+		await db
+			.select()
+			.from(serviceTitles)
+			.where(eq(serviceTitles.id, subject.titleId))
+			.all(),
 	);
 	if (subjectTitle === undefined) {
 		return { kind: "no-subject" };
 	}
 	const groupId = await survivorGroupId(db, subjectTitle.groupId);
+	const members = await db
+		.select({ id: serviceTitles.id, ordinal: serviceTitles.ordinal })
+		.from(serviceTitles)
+		.where(eq(serviceTitles.groupId, groupId))
+		.orderBy(serviceTitles.ordinal, serviceTitles.id)
+		.all();
 	const classified = await Promise.all(
 		evidence.proposedMembers.map(async (member) => {
-			const ref: ServiceRef = { service: member.service, serviceId: member.serviceId };
+			const ref: ServiceRef = {
+				service: member.service,
+				serviceId: member.serviceId,
+			};
 			const match = and(
 				eq(serviceTitles.service, ref.service),
 				eq(serviceTitles.serviceId, ref.serviceId),
 			);
-			const stored = takeFirst(await db.select().from(serviceTitles).where(match).all());
+			const stored = takeFirst(
+				await db.select().from(serviceTitles).where(match).all(),
+			);
 			if (stored === undefined) {
 				return { kind: "attach" as const, ref };
 			}
 			const survivor = await survivorGroupId(db, stored.groupId);
-			return { kind: survivor === groupId ? ("member" as const) : ("refuse" as const), ref };
+			return {
+				kind: survivor === groupId ? ("member" as const) : ("refuse" as const),
+				ref,
+			};
 		}),
 	);
 	const refused: ServiceRef[] = [];
@@ -512,7 +618,7 @@ const acceptFuzzyCandidate = async (
 			refused.push(entry.ref);
 		}
 	}
-	return commitAccept(db, { candidateId, groupId, refused, toAttach });
+	return commitAccept(db, { candidateId, groupId, members, refused, toAttach });
 };
 
 // Record a rejection. Its `evidence_hash` (the proposed membership) is already on
@@ -522,22 +628,18 @@ const rejectFuzzyCandidate = async (
 	db: GatewayDb,
 	candidateId: number,
 ): Promise<FuzzyRejectOutcome> => {
-	const outcome = await db.transaction(async (tx): Promise<FuzzyRejectOutcome> => {
-		const candidate = await loadFuzzyCandidate(tx, candidateId);
-		if (candidate === undefined) {
-			return { kind: "missing" };
-		}
-		if (candidate.status !== "open") {
-			return { kind: "not-open" };
-		}
-		await tx
-			.update(pendingGroupCandidates)
-			.set({ status: "rejected" })
-			.where(eq(pendingGroupCandidates.id, candidateId))
-			.run();
+	const rejected = await db.$client
+		.prepare(`UPDATE pending_group_candidates SET status = 'rejected'
+			WHERE id = ? AND kind = 'fuzzy-group' AND status = 'open'
+			RETURNING id`)
+		.bind(candidateId)
+		.first();
+	if (rejected !== null) {
 		return { candidateId, kind: "rejected" };
-	});
-	return outcome;
+	}
+	return (await loadFuzzyCandidate(db, candidateId)) === undefined
+		? { kind: "missing" }
+		: { kind: "not-open" };
 };
 
 export {

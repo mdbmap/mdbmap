@@ -42,7 +42,7 @@ const pub = base.use(async ({ context, next }) => {
 	});
 });
 
-const authed = pub.use(({ context, next }) => {
+const authed = pub.use(async ({ context, next }) => {
 	if (context.user === undefined) {
 		throw new ORPCError("UNAUTHORIZED", {
 			message: "Sign in to track your progress.",
