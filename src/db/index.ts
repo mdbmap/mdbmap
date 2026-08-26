@@ -16,6 +16,7 @@ import {
 } from "./engine-schema.ts";
 import {
 	account,
+	apiKey,
 	episodeProgress,
 	personalRating,
 	session,
@@ -28,6 +29,7 @@ import {
 const schema = {
 	absenceAssertions,
 	account,
+	apiKey,
 	atomicWriteGates,
 	contentUnits,
 	episodeProgress,

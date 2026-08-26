@@ -8,6 +8,7 @@ import { createDb, schema } from "./index.ts";
 // Children before parents so DELETE respects D1 FK enforcement. Asserted against
 // `schema` so a new table fails the harness load instead of leaking across tests.
 const wipeOrder = [
+	"api_key",
 	"absence_assertions",
 	"instalment_assertions",
 	"title_assertions",

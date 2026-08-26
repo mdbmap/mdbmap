@@ -1,7 +1,7 @@
 import { z } from "zod";
 
-import type { RateableUnitKind, WatchStatus } from "@/db/schema";
-import { watchStatuses } from "@/db/schema";
+import type { ApiKeyPlan, RateableUnitKind, WatchStatus } from "@/db/schema";
+import { apiKeyPlans, watchStatuses } from "@/db/schema";
 import type { MediaKind } from "@/engine";
 
 const TodoSchema = z.object({
@@ -65,9 +65,33 @@ const ManualPairInput = z.object({
 	unitId: z.uuid().optional(),
 });
 
+const ApiKeyPlanSchema = z.enum(apiKeyPlans);
+
+const MintApiKeyInput = z.object({
+	label: z.string().trim().min(1).max(200),
+	plan: ApiKeyPlanSchema.optional(),
+});
+
+const RevokeApiKeyInput = z.object({
+	id: z.string().min(1),
+});
+
 interface RateableUnit {
 	key: string;
 	kind: RateableUnitKind;
+}
+
+interface ApiKeyRow {
+	createdAt: Date | null;
+	id: string;
+	label: string;
+	plan: ApiKeyPlan;
+	revokedAt: Date | null;
+}
+
+interface MintedApiKey extends ApiKeyRow {
+	// Present only in the mint response — never re-derivable afterwards.
+	secret: string;
 }
 
 interface ServiceRating {
@@ -162,10 +186,13 @@ interface RatingResult {
 }
 
 export {
+	ApiKeyPlanSchema,
 	CandidateIdInput,
 	ManualPairInput,
 	MarkMatchedInput,
+	MintApiKeyInput,
 	RateableUnitInput,
+	RevokeApiKeyInput,
 	SetEpisodeWatchedInput,
 	SetRatingInput,
 	SetRewatchInput,
@@ -176,10 +203,12 @@ export {
 	WorkGetInput,
 };
 export type {
+	ApiKeyRow,
 	CommunityScore,
 	Credit,
 	EpisodeView,
 	EpisodeWatchedResult,
+	MintedApiKey,
 	PartView,
 	RateableUnit,
 	RatingResult,

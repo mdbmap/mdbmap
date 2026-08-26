@@ -61,7 +61,7 @@ const hasAdminRole = (role: string | undefined): boolean =>
 const admin = authed.use(({ context, next }) => {
 	if (!hasAdminRole(context.user.role)) {
 		throw new ORPCError("FORBIDDEN", {
-			message: "Moderation is limited to administrators.",
+			message: "Administrator access required.",
 		});
 	}
 	return next({ context: { user: context.user } });
