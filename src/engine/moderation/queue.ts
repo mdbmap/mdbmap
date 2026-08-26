@@ -30,7 +30,9 @@ const conflictKinds = new Set<PendingCandidateKind>([
 
 const ascending = (left: number, right: number): number => left - right;
 
-const listOpenCandidates = (db: GatewayDb): readonly CandidateRow[] =>
+const listOpenCandidates = async (
+	db: GatewayDb,
+): Promise<readonly CandidateRow[]> =>
 	db
 		.select()
 		.from(pendingGroupCandidates)
@@ -38,47 +40,55 @@ const listOpenCandidates = (db: GatewayDb): readonly CandidateRow[] =>
 		.orderBy(pendingGroupCandidates.createdAt, pendingGroupCandidates.id)
 		.all();
 
-const loadCandidate = (db: GatewayDb, candidateId: number): CandidateRow | undefined =>
-	db
-		.select()
-		.from(pendingGroupCandidates)
-		.where(eq(pendingGroupCandidates.id, candidateId))
-		.all()[0];
+const loadCandidate = async (
+	db: GatewayDb,
+	candidateId: number,
+): Promise<CandidateRow | undefined> =>
+	(
+		await db
+			.select()
+			.from(pendingGroupCandidates)
+			.where(eq(pendingGroupCandidates.id, candidateId))
+			.all()
+	)[0];
 
 // The spoke ids owned by a group's member titles — the instalments a conflict may
 // name — alongside the content units those spokes cover.
 interface GroupScope {
 	readonly spokeIds: ReadonlySet<number>;
 	readonly titleIds: ReadonlySet<number>;
-	readonly unitIds: ReadonlySet<number>;
+	readonly unitIds: ReadonlySet<string>;
 }
 
-const groupScope = (db: GatewayDb, groupId: number): GroupScope => {
-	const survivor = survivorGroupId(db, groupId);
-	const titleIds = db
-		.select({ id: serviceTitles.id })
-		.from(serviceTitles)
-		.where(eq(serviceTitles.groupId, survivor))
-		.all()
-		.map((row) => row.id);
+const groupScope = async (db: GatewayDb, groupId: number): Promise<GroupScope> => {
+	const survivor = await survivorGroupId(db, groupId);
+	const titleIds = (
+		await db
+			.select({ id: serviceTitles.id })
+			.from(serviceTitles)
+			.where(eq(serviceTitles.groupId, survivor))
+			.all()
+	).map((row) => row.id);
 	const spokeIds =
 		titleIds.length === 0
 			? []
-			: db
-					.select({ id: serviceInstalments.id })
-					.from(serviceInstalments)
-					.where(inArray(serviceInstalments.titleId, titleIds))
-					.all()
-					.map((row) => row.id);
+			: (
+					await db
+						.select({ id: serviceInstalments.id })
+						.from(serviceInstalments)
+						.where(inArray(serviceInstalments.titleId, titleIds))
+						.all()
+				).map((row) => row.id);
 	const unitIds =
 		spokeIds.length === 0
 			? []
-			: db
-					.select({ unitId: instalmentAssertions.unitId })
-					.from(instalmentAssertions)
-					.where(inArray(instalmentAssertions.instalmentId, spokeIds))
-					.all()
-					.map((row) => row.unitId);
+			: (
+					await db
+						.select({ unitId: instalmentAssertions.unitId })
+						.from(instalmentAssertions)
+						.where(inArray(instalmentAssertions.instalmentId, spokeIds))
+						.all()
+				).map((row) => row.unitId);
 	return {
 		spokeIds: new Set(spokeIds),
 		titleIds: new Set(titleIds),
@@ -131,9 +141,12 @@ interface PublicationStatus {
 // row carries its evidence — an instalment conflict's proposed and published
 // sides, a title conflict's competing pair — so the admin surface can show both
 // proposals. A group with no open conflict is not blocked and publishes normally.
-const publicationStatus = (db: GatewayDb, groupId: number): PublicationStatus => {
-	const scope = groupScope(db, groupId);
-	const conflicts = listOpenCandidates(db)
+const publicationStatus = async (
+	db: GatewayDb,
+	groupId: number,
+): Promise<PublicationStatus> => {
+	const scope = await groupScope(db, groupId);
+	const conflicts = (await listOpenCandidates(db))
 		.filter((row) => conflictKinds.has(row.kind))
 		.filter((row) => evidenceTouchesScope(row.evidence, scope))
 		.toSorted((left, right) => ascending(left.id, right.id));

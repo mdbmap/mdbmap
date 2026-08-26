@@ -34,53 +34,60 @@ const first = <Row>(rows: readonly Row[]): Row => {
 	return row;
 };
 
-const makeGroup = (db: GatewayDb, source = "t1-structure" as const): number =>
-	first(db.insert(titleGroups).values({ source }).returning().all()).id;
+const makeGroup = async (
+	db: GatewayDb,
+	source = "t1-structure" as const,
+): Promise<number> =>
+	first(await db.insert(titleGroups).values({ source }).returning().all()).id;
 
-const makeTitle = (
+const makeTitle = async (
 	db: GatewayDb,
 	groupId: number,
 	service: string,
 	serviceId: string,
 	ordinal = 0,
-): number =>
+): Promise<number> =>
 	first(
-		db
+		await db
 			.insert(serviceTitles)
 			.values({ groupId, ordinal, service, serviceId })
 			.returning()
 			.all(),
 	).id;
 
-const makeSpoke = (db: GatewayDb, titleId: number, locator: string): number =>
+const makeSpoke = async (
+	db: GatewayDb,
+	titleId: number,
+	locator: string,
+): Promise<number> =>
 	first(
-		db
+		await db
 			.insert(serviceInstalments)
 			.values({ locator, locatorKind: "service-id", titleId })
 			.returning()
 			.all(),
 	).id;
 
-const makeUnit = (db: GatewayDb): number =>
-	first(db.insert(contentUnits).values({}).returning().all()).id;
+const makeUnit = async (db: GatewayDb): Promise<string> =>
+	first(await db.insert(contentUnits).values({}).returning().all()).id;
 
-const groupSourceOf = (db: GatewayDb, groupId: number): string => {
+const groupSourceOf = async (db: GatewayDb, groupId: number): Promise<string> => {
 	const group = first(
-		db.select().from(titleGroups).where(eq(titleGroups.id, groupId)).all(),
+		await db.select().from(titleGroups).where(eq(titleGroups.id, groupId)).all(),
 	);
 	return group.source;
 };
 
-const openRows = (db: GatewayDb) => listOpenCandidates(db);
+const openRows = async (db: GatewayDb) => listOpenCandidates(db);
 
 describe("moderation queue", () => {
-	it("blocks a group's publication on a queued instalment conflict and shows both proposals", () => {
-		const db = freshDb();
-		const groupId = makeGroup(db);
-		const titleId = makeTitle(db, groupId, "tmdb", "1396");
-		const spokeId = makeSpoke(db, titleId, "1:1");
-		const proposedUnit = makeUnit(db);
-		const publishedUnit = makeUnit(db);
+	it("blocks a group's publication on a queued instalment conflict and shows both proposals", async () => {
+		const db = await freshDb();
+		const groupId = await makeGroup(db);
+		const titleId = await await makeTitle(db, groupId, "tmdb", "1396");
+		const spokeId = await makeSpoke(db, titleId, "1:1");
+		const proposedUnit = await makeUnit(db);
+		const publishedUnit = await makeUnit(db);
 
 		const subject: CandidateSubject = { subjectType: "title", titleId };
 		const evidence: CandidateEvidence = {
@@ -89,10 +96,10 @@ describe("moderation queue", () => {
 			proposed: { confidence: "high", source: "t3-episode", unitId: proposedUnit },
 			published: { confidence: "high", source: "t1-structure", unitId: publishedUnit },
 		};
-		const queued = queueAssertionConflict(db, { evidence, subject });
+		const queued = await queueAssertionConflict(db, { evidence, subject });
 		expect(queued.kind).toBe("queued");
 
-		const status = publicationStatus(db, groupId);
+		const status = await publicationStatus(db, groupId);
 		expect(status.blocked).toBe(true);
 		expect(status.conflicts).toHaveLength(1);
 		const conflict = first(status.conflicts).evidence;
@@ -103,17 +110,17 @@ describe("moderation queue", () => {
 		}
 	});
 
-	it("does not block a group with no open conflict", () => {
-		const db = freshDb();
-		const groupId = makeGroup(db);
-		makeTitle(db, groupId, "tmdb", "1396");
-		expect(publicationStatus(db, groupId).blocked).toBe(false);
+	it("does not block a group with no open conflict", async () => {
+		const db = await freshDb();
+		const groupId = await makeGroup(db);
+		await makeTitle(db, groupId, "tmdb", "1396");
+		expect((await publicationStatus(db, groupId)).blocked).toBe(false);
 	});
 
-	it("accepts a fuzzy membership candidate through the curated path and stamps manual", () => {
-		const db = freshDb();
-		const groupId = makeGroup(db, "t1-structure");
-		const subjectTitleId = makeTitle(db, groupId, "tmdb", "1396");
+	it("accepts a fuzzy membership candidate through the curated path and stamps manual", async () => {
+		const db = await freshDb();
+		const groupId = await makeGroup(db, "t1-structure");
+		const subjectTitleId = await await makeTitle(db, groupId, "tmdb", "1396");
 
 		const subject: CandidateSubject = { subjectType: "title", titleId: subjectTitleId };
 		const evidence: CandidateEvidence = {
@@ -126,7 +133,7 @@ describe("moderation queue", () => {
 			queries: [{ service: "imdb", title: "Breaking Bad", year: 2008 }],
 		};
 		const candidateId = first(
-			db
+			await db
 				.insert(pendingGroupCandidates)
 				.values({
 					evidence,
@@ -139,10 +146,10 @@ describe("moderation queue", () => {
 				.all(),
 		).id;
 
-		const outcome = acceptMembership(db, candidateId);
+		const outcome = await acceptMembership(db, candidateId);
 		expect(outcome.kind).toBe("accepted");
 
-		const attached = db
+		const attached = await db
 			.select()
 			.from(serviceTitles)
 			.where(eq(serviceTitles.serviceId, "tt0903747"))
@@ -150,17 +157,17 @@ describe("moderation queue", () => {
 		expect(attached).toHaveLength(1);
 		expect(first(attached).groupId).toBe(groupId);
 
-		const group = first(db.select().from(titleGroups).where(eq(titleGroups.id, groupId)).all());
+		const group = first(await db.select().from(titleGroups).where(eq(titleGroups.id, groupId)).all());
 		expect(group.source).toBe("manual");
-		expect(openRows(db)).toHaveLength(0);
+		expect(await openRows(db)).toHaveLength(0);
 	});
 
-	it("merges competing groups when a structural candidate is accepted", () => {
-		const db = freshDb();
-		const groupA = makeGroup(db);
-		const groupB = makeGroup(db);
-		const titleA = makeTitle(db, groupA, "tmdb", "1396");
-		const titleB = makeTitle(db, groupB, "imdb", "tt0903747");
+	it("merges competing groups when a structural candidate is accepted", async () => {
+		const db = await freshDb();
+		const groupA = await makeGroup(db);
+		const groupB = await makeGroup(db);
+		const titleA = await makeTitle(db, groupA, "tmdb", "1396");
+		const titleB = await makeTitle(db, groupB, "imdb", "tt0903747");
 		const survivor = Math.min(groupA, groupB);
 		const retired = Math.max(groupA, groupB);
 
@@ -174,7 +181,7 @@ describe("moderation queue", () => {
 			],
 		};
 		const candidateId = first(
-			db
+			await db
 				.insert(pendingGroupCandidates)
 				.values({
 					evidence,
@@ -187,27 +194,27 @@ describe("moderation queue", () => {
 				.all(),
 		).id;
 
-		expect(acceptMembership(db, candidateId).kind).toBe("accepted");
+		expect((await acceptMembership(db, candidateId)).kind).toBe("accepted");
 
-		const members = db.select().from(serviceTitles).all();
+		const members = await db.select().from(serviceTitles).all();
 		expect(members.every((member) => member.groupId === survivor)).toBe(true);
-		const alias = db
+		const alias = await db
 			.select()
 			.from(titleGroupAliases)
 			.where(eq(titleGroupAliases.retiredGroupId, retired))
 			.all();
 		expect(first(alias).survivorGroupId).toBe(survivor);
-		expect(groupSourceOf(db, survivor)).toBe("manual");
+		expect(await groupSourceOf(db, survivor)).toBe("manual");
 	});
 
-	it("clears a review flag, keeping the link but dropping it from the queue", () => {
-		const db = freshDb();
-		const groupId = makeGroup(db);
-		const titleId = makeTitle(db, groupId, "tmdb", "1396");
-		const spokeId = makeSpoke(db, titleId, "1:1");
-		const unitId = makeUnit(db);
+	it("clears a review flag, keeping the link but dropping it from the queue", async () => {
+		const db = await freshDb();
+		const groupId = await makeGroup(db);
+		const titleId = await await makeTitle(db, groupId, "tmdb", "1396");
+		const spokeId = await makeSpoke(db, titleId, "1:1");
+		const unitId = await makeUnit(db);
 		const assertionId = first(
-			db
+			await db
 				.insert(instalmentAssertions)
 				.values({ confidence: "low", instalmentId: spokeId, source: "t3-episode", unitId })
 				.returning()
@@ -223,7 +230,7 @@ describe("moderation queue", () => {
 			unitId,
 		};
 		const candidateId = first(
-			db
+			await db
 				.insert(pendingGroupCandidates)
 				.values({
 					evidence,
@@ -236,23 +243,23 @@ describe("moderation queue", () => {
 				.all(),
 		).id;
 
-		expect(clearReviewFlag(db, candidateId).kind).toBe("cleared");
+		expect((await clearReviewFlag(db, candidateId)).kind).toBe("cleared");
 
-		const link = db
+		const link = await db
 			.select()
 			.from(instalmentAssertions)
 			.where(eq(instalmentAssertions.id, assertionId))
 			.all();
 		expect(link).toHaveLength(1);
-		expect(openRows(db)).toHaveLength(0);
+		expect(await openRows(db)).toHaveLength(0);
 	});
 
-	it("keeps a review flag open in the queue", () => {
-		const db = freshDb();
-		const groupId = makeGroup(db);
-		const titleId = makeTitle(db, groupId, "tmdb", "1396");
-		const spokeId = makeSpoke(db, titleId, "1:1");
-		const unitId = makeUnit(db);
+	it("keeps a review flag open in the queue", async () => {
+		const db = await freshDb();
+		const groupId = await makeGroup(db);
+		const titleId = await await makeTitle(db, groupId, "tmdb", "1396");
+		const spokeId = await makeSpoke(db, titleId, "1:1");
+		const unitId = await makeUnit(db);
 
 		const subject: CandidateSubject = { subjectType: "title", titleId };
 		const evidence: CandidateEvidence = {
@@ -263,7 +270,7 @@ describe("moderation queue", () => {
 			unitId,
 		};
 		const candidateId = first(
-			db
+			await db
 				.insert(pendingGroupCandidates)
 				.values({
 					evidence,
@@ -276,18 +283,18 @@ describe("moderation queue", () => {
 				.all(),
 		).id;
 
-		expect(keepReviewFlag(db, candidateId).kind).toBe("kept");
-		expect(openRows(db)).toHaveLength(1);
+		expect((await keepReviewFlag(db, candidateId)).kind).toBe("kept");
+		expect(await openRows(db)).toHaveLength(1);
 	});
 
-	it("auto-rejects a competing proposal when a prior manual assertion stands", () => {
-		const db = freshDb();
-		const groupId = makeGroup(db);
-		const titleId = makeTitle(db, groupId, "tmdb", "1396");
-		const spokeId = makeSpoke(db, titleId, "1:1");
-		const manualUnit = makeUnit(db);
-		const competingUnit = makeUnit(db);
-		db.insert(instalmentAssertions)
+	it("auto-rejects a competing proposal when a prior manual assertion stands", async () => {
+		const db = await freshDb();
+		const groupId = await makeGroup(db);
+		const titleId = await await makeTitle(db, groupId, "tmdb", "1396");
+		const spokeId = await makeSpoke(db, titleId, "1:1");
+		const manualUnit = await makeUnit(db);
+		const competingUnit = await makeUnit(db);
+		await db.insert(instalmentAssertions)
 			.values({ confidence: "high", instalmentId: spokeId, source: "manual", unitId: manualUnit })
 			.run();
 
@@ -298,47 +305,47 @@ describe("moderation queue", () => {
 			proposed: { confidence: "high", source: "t3-episode", unitId: competingUnit },
 			published: { confidence: "high", source: "manual", unitId: manualUnit },
 		};
-		const outcome = queueAssertionConflict(db, { evidence, subject });
+		const outcome = await queueAssertionConflict(db, { evidence, subject });
 		expect(outcome.kind).toBe("auto-rejected");
-		expect(openRows(db)).toHaveLength(0);
-		expect(publicationStatus(db, groupId).blocked).toBe(false);
+		expect(await openRows(db)).toHaveLength(0);
+		expect((await publicationStatus(db, groupId)).blocked).toBe(false);
 	});
 
-	it("settles an instalment conflict by publishing the proposed side as manual", () => {
-		const db = freshDb();
-		const groupId = makeGroup(db);
-		const titleId = makeTitle(db, groupId, "tmdb", "1396");
-		const spokeId = makeSpoke(db, titleId, "1:1");
-		const proposedUnit = makeUnit(db);
+	it("settles an instalment conflict by publishing the proposed side as manual", async () => {
+		const db = await freshDb();
+		const groupId = await makeGroup(db);
+		const titleId = await await makeTitle(db, groupId, "tmdb", "1396");
+		const spokeId = await makeSpoke(db, titleId, "1:1");
+		const proposedUnit = await makeUnit(db);
 
 		const subject: CandidateSubject = { subjectType: "title", titleId };
 		const evidence: CandidateEvidence = {
 			instalmentId: spokeId,
 			kind: "instalment-assertion-conflict",
 			proposed: { confidence: "high", source: "t3-episode", unitId: proposedUnit },
-			published: { confidence: "high", source: "t1-structure", unitId: makeUnit(db) },
+			published: { confidence: "high", source: "t1-structure", unitId: await makeUnit(db) },
 		};
-		const candidateId = queueAssertionConflict(db, { evidence, subject }).candidateId ?? 0;
+		const candidateId = (await queueAssertionConflict(db, { evidence, subject })).candidateId ?? 0;
 
-		expect(settleConflict(db, { accept: true, candidateId }).kind).toBe("settled");
-		const links = db
+		expect((await settleConflict(db, { accept: true, candidateId })).kind).toBe("settled");
+		const links = await db
 			.select()
 			.from(instalmentAssertions)
 			.where(eq(instalmentAssertions.instalmentId, spokeId))
 			.all();
 		expect(links.some((link) => link.source === "manual" && link.unitId === proposedUnit)).toBe(true);
-		expect(openRows(db)).toHaveLength(0);
+		expect(await openRows(db)).toHaveLength(0);
 	});
 
-	it("does not close a conflict as accepted when the proposed assertion already exists", () => {
-		const db = freshDb();
-		const groupId = makeGroup(db);
-		const titleId = makeTitle(db, groupId, "tmdb", "1396");
-		const spokeId = makeSpoke(db, titleId, "1:1");
-		const proposedUnit = makeUnit(db);
+	it("does not close a conflict as accepted when the proposed assertion already exists", async () => {
+		const db = await freshDb();
+		const groupId = await makeGroup(db);
+		const titleId = await await makeTitle(db, groupId, "tmdb", "1396");
+		const spokeId = await makeSpoke(db, titleId, "1:1");
+		const proposedUnit = await makeUnit(db);
 		// A non-manual assertion already occupies the proposed edge, so the accept
 		// insert collides on instalment_assertions_instalment_unit_idx.
-		db.insert(instalmentAssertions)
+		await db.insert(instalmentAssertions)
 			.values({ confidence: "high", instalmentId: spokeId, source: "t3-episode", unitId: proposedUnit })
 			.run();
 
@@ -347,34 +354,34 @@ describe("moderation queue", () => {
 			instalmentId: spokeId,
 			kind: "instalment-assertion-conflict",
 			proposed: { confidence: "high", source: "t3-episode", unitId: proposedUnit },
-			published: { confidence: "high", source: "t1-structure", unitId: makeUnit(db) },
+			published: { confidence: "high", source: "t1-structure", unitId: await makeUnit(db) },
 		};
-		const candidateId = queueAssertionConflict(db, { evidence, subject }).candidateId ?? 0;
+		const candidateId = (await queueAssertionConflict(db, { evidence, subject })).candidateId ?? 0;
 
-		expect(settleConflict(db, { accept: true, candidateId }).kind).toBe("collision");
-		expect(openRows(db)).toHaveLength(1);
+		expect((await settleConflict(db, { accept: true, candidateId })).kind).toBe("collision");
+		expect(await openRows(db)).toHaveLength(1);
 	});
 
-	it("pairs instalments by hand onto one content unit as manual", () => {
-		const db = freshDb();
-		const groupId = makeGroup(db);
-		const titleA = makeTitle(db, groupId, "tmdb", "1396");
-		const titleB = makeTitle(db, groupId, "imdb", "tt0903747", 1);
-		const spokeA = makeSpoke(db, titleA, "1:1");
-		const spokeB = makeSpoke(db, titleB, "1:1");
+	it("pairs instalments by hand onto one content unit as manual", async () => {
+		const db = await freshDb();
+		const groupId = await makeGroup(db);
+		const titleA = await await makeTitle(db, groupId, "tmdb", "1396");
+		const titleB = await makeTitle(db, groupId, "imdb", "tt0903747", 1);
+		const spokeA = await makeSpoke(db, titleA, "1:1");
+		const spokeB = await makeSpoke(db, titleB, "1:1");
 
-		const outcome = manualPairing(db, { instalmentIds: [spokeA, spokeB] });
+		const outcome = await manualPairing(db, { instalmentIds: [spokeA, spokeB] });
 		expect(outcome.kind).toBe("paired");
-		const links = db.select().from(instalmentAssertions).all();
+		const links = await db.select().from(instalmentAssertions).all();
 		expect(links).toHaveLength(2);
 		expect(links.every((link) => link.source === "manual")).toBe(true);
 		expect(new Set(links.map((link) => link.unitId)).size).toBe(1);
 	});
 
-	it("marks a group as matched with a manual vouch", () => {
-		const db = freshDb();
-		const groupId = makeGroup(db);
-		expect(markAsMatched(db, groupId).kind).toBe("matched");
-		expect(groupSourceOf(db, groupId)).toBe("manual");
+	it("marks a group as matched with a manual vouch", async () => {
+		const db = await freshDb();
+		const groupId = await makeGroup(db);
+		expect((await markAsMatched(db, groupId)).kind).toBe("matched");
+		expect(await groupSourceOf(db, groupId)).toBe("manual");
 	});
 });

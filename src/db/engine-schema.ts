@@ -112,7 +112,7 @@ interface AssertionSnapshot {
 	source: AssertionSource;
 }
 
-type InstalmentConflictSide = AssertionSnapshot & { unitId: number };
+type InstalmentConflictSide = AssertionSnapshot & { unitId: string };
 type TitleConflictSide = AssertionSnapshot & {
 	titleAId: number;
 	titleBId: number;
@@ -131,7 +131,7 @@ type CandidateEvidence =
 			coverageRevision: number;
 			kind: "absence-assertion-conflict";
 			targetService: Service;
-			unitId: number;
+			unitId: string;
 	  }
 	| {
 			competingRelations: CompetingRelation[];
@@ -156,7 +156,7 @@ type CandidateEvidence =
 			instalmentId: number;
 			kind: "low-confidence-flag";
 			source: AssertionSource;
-			unitId: number;
+			unitId: string;
 	  }
 	| {
 			competingGroupIds: number[];

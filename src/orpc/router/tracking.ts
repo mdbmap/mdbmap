@@ -25,7 +25,7 @@ const deriveWholeSeriesStatus = async (
 	userId: string,
 	continuityId: string,
 ): Promise<EpisodeWatchedResult> => {
-	const locators = instalmentsOf(engine.resolveContinuity(continuityId));
+	const locators = instalmentsOf(await engine.resolveContinuity(continuityId));
 	const rows =
 		locators.length === 0
 			? []

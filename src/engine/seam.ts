@@ -21,10 +21,10 @@ interface ResolveResult {
 	segments: readonly Segment[];
 }
 
-// The real resolver is the mapping engine's job (ADR-0001/0002); the stub stands
-// in until it lands, and swapping the engine in must not change this contract.
+// The real resolver is the mapping engine's job (ADR-0001/0002); swapping the
+// engine in must not change this contract. Async because the runtime db is D1.
 interface EngineRead {
-	resolveContinuity: (continuityId: ContinuityKey) => ResolveResult;
+	resolveContinuity: (continuityId: ContinuityKey) => Promise<ResolveResult>;
 }
 
 const metadataProviderFor = (kind: MediaKind): MetadataProvider =>

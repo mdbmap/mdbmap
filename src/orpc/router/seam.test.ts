@@ -13,14 +13,14 @@ import { router } from "./index.ts";
 const seeded = async () => {
 	const db = await freshDb();
 	await db.insert(user).values({ email: "a@b.test", id: "user-1", name: "Ada" }).run();
-	const { continuityId } = seedSpyXFamily(db);
+	const { continuityId } = await seedSpyXFamily(db);
 	return { continuityId, db };
 };
 
-const locatorsFor = (
+const locatorsFor = async (
 	db: Awaited<ReturnType<typeof seeded>>["db"],
 	continuityId: string,
-) => instalmentsOf(createEngine(db).resolveContinuity(continuityId));
+) => instalmentsOf(await createEngine(db).resolveContinuity(continuityId));
 
 const clientFor = (
 	db: Awaited<ReturnType<typeof seeded>>["db"],
@@ -38,7 +38,7 @@ describe("tracking + work.get seam", () => {
 	it("completes the series once every instalment is watched", async () => {
 		const { continuityId, db } = await seeded();
 		const client = clientFor(db, "user-1");
-		const locators = locatorsFor(db, continuityId);
+		const locators = await locatorsFor(db, continuityId);
 
 		const results = await Promise.all(
 			locators.map(async (instalmentLocator) => {

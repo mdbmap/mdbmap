@@ -6,24 +6,24 @@ import { createEngine } from "./engine.ts";
 import { metadataProviderFor } from "./seam.ts";
 import { seedSpyXFamily, seedTmdbContinuity } from "./test-continuity.ts";
 
-const seededEngine = () => {
-	const db = freshDb();
-	const { continuityId } = seedSpyXFamily(db);
+const seededEngine = async () => {
+	const db = await freshDb();
+	const { continuityId } = await seedSpyXFamily(db);
 	return { continuityId, read: createEngine(db) };
 };
 
 describe("createEngine.resolveContinuity", () => {
-	it("routes the anime continuity to AniDB per media kind", () => {
-		const { continuityId, read } = seededEngine();
-		const result = read.resolveContinuity(continuityId);
+	it("routes the anime continuity to AniDB per media kind", async () => {
+		const { continuityId, read } = await seededEngine();
+		const result = await read.resolveContinuity(continuityId);
 
 		expect(result.mediaKind).toBe("anime");
 		expect(metadataProviderFor(result.mediaKind)).toBe("anidb");
 	});
 
-	it("resolves each cour to its per-service member ids through the hub", () => {
-		const { continuityId, read } = seededEngine();
-		const result = read.resolveContinuity(continuityId);
+	it("resolves each cour to its per-service member ids through the hub", async () => {
+		const { continuityId, read } = await seededEngine();
+		const result = await read.resolveContinuity(continuityId);
 
 		expect(result.segments).toHaveLength(3);
 		expect(result.segments[0]?.members).toStrictEqual({
@@ -40,19 +40,19 @@ describe("createEngine.resolveContinuity", () => {
 		});
 	});
 
-	it("orders instalment locators under the provider member title", () => {
-		const { continuityId, read } = seededEngine();
-		const [first] = read.resolveContinuity(continuityId).segments;
+	it("orders instalment locators under the provider member title", async () => {
+		const { continuityId, read } = await seededEngine();
+		const [first] = (await read.resolveContinuity(continuityId)).segments;
 
 		expect(first?.instalments).toHaveLength(12);
 		expect(first?.instalments[0]).toBe("anidb:16947#1");
 		expect(first?.instalments.at(-1)).toBe("anidb:16947#12");
 	});
 
-	it("routes a TMDB film continuity to TMDB with the bare id", () => {
-		const db = freshDb();
-		const { continuityId } = seedTmdbContinuity(db, "movie", "603");
-		const result = createEngine(db).resolveContinuity(continuityId);
+	it("routes a TMDB film continuity to TMDB with the bare id", async () => {
+		const db = await freshDb();
+		const { continuityId } = await seedTmdbContinuity(db, "movie", "603");
+		const result = await createEngine(db).resolveContinuity(continuityId);
 
 		expect(result.mediaKind).toBe("film");
 		expect(metadataProviderFor(result.mediaKind)).toBe("tmdb");
@@ -60,37 +60,37 @@ describe("createEngine.resolveContinuity", () => {
 		expect(result.segments[0]?.instalments[0]).toBe("tmdb:603#1");
 	});
 
-	it("routes a TMDB series continuity to tv", () => {
-		const db = freshDb();
-		const { continuityId } = seedTmdbContinuity(db, "tv", "1396");
-		const result = createEngine(db).resolveContinuity(continuityId);
+	it("routes a TMDB series continuity to tv", async () => {
+		const db = await freshDb();
+		const { continuityId } = await seedTmdbContinuity(db, "tv", "1396");
+		const result = await createEngine(db).resolveContinuity(continuityId);
 
 		expect(result.mediaKind).toBe("tv");
 		expect(result.segments[0]?.members).toStrictEqual({ tmdb: "1396" });
 	});
 
-	it("keeps season-0 specials out of the positional locator stream", () => {
-		const db = freshDb();
-		const { continuityId } = seedTmdbContinuity(db, "tv", "1396", [
+	it("keeps season-0 specials out of the positional locator stream", async () => {
+		const db = await freshDb();
+		const { continuityId } = await seedTmdbContinuity(db, "tv", "1396", [
 			"s0e1",
 			"s1e1",
 			"s1e2",
 		]);
-		const [first] = createEngine(db).resolveContinuity(continuityId).segments;
+		const [first] = (await createEngine(db).resolveContinuity(continuityId)).segments;
 
 		expect(first?.instalments).toEqual(["tmdb:1396#1", "tmdb:1396#2"]);
 	});
 
-	it("throws for a continuity with no group", () => {
-		const read = createEngine(freshDb());
+	it("throws for a continuity with no group", async () => {
+		const read = createEngine(await freshDb());
 
-		expect(() => read.resolveContinuity("group:999")).toThrow(/no continuity/iu);
+		await expect(read.resolveContinuity("group:999")).rejects.toThrow(/no continuity/iu);
 	});
 
-	it("throws for a malformed continuity key", () => {
-		const read = createEngine(freshDb());
+	it("throws for a malformed continuity key", async () => {
+		const read = createEngine(await freshDb());
 
-		expect(() => read.resolveContinuity("continuity:spy")).toThrow(/malformed/iu);
+		await expect(read.resolveContinuity("continuity:spy")).rejects.toThrow(/malformed/iu);
 	});
 });
 
