@@ -1,6 +1,7 @@
 import { resolveDb } from "@/db";
 import type { Db as GatewayDb } from "@/db";
 import type { Profile } from "@/engine/identity.ts";
+import { withPublicApiGate } from "@/lib/api-key";
 
 import { noColdLookup } from "./cold-lookup.ts";
 import type { ColdLookup } from "./cold-lookup.ts";
@@ -29,5 +30,16 @@ const runMapping = async (
 	return toResponse(outcome);
 };
 
-export { runMapping };
+const publicMappingHandler =
+	(profile: Profile) =>
+	async ({
+		params,
+		request,
+	}: {
+		params: { id: string };
+		request: Request;
+	}): Promise<Response> =>
+		withPublicApiGate(request, async () => runMapping(profile, params.id));
+
+export { publicMappingHandler, runMapping };
 export type { GatewayDeps };

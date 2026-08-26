@@ -1,6 +1,6 @@
 export { noColdLookup } from "./cold-lookup.ts";
 export type { ColdLookup, ColdResult, PendingBuild } from "./cold-lookup.ts";
-export { runMapping } from "./handler.ts";
+export { publicMappingHandler, runMapping } from "./handler.ts";
 export type { GatewayDeps } from "./handler.ts";
 export { readGraph, survivorGroupId } from "./read.ts";
 export type { Db as GatewayDb } from "@/db";

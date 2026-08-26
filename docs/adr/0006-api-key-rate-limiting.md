@@ -1,14 +1,20 @@
 # ADR-0006: Per-key rate limiting via the Workers Rate Limiting binding
 
-Status: accepted (2026-08-21)
+Status: accepted (2026-08-21); amended (2026-08-26)
 
 ## Decision
 
-Public API requests (`/movie/*`, later `/series/*`) are rate limited per API
-key with the Workers Rate Limiting binding (`ratelimits` in `wrangler.jsonc`),
-keyed by the key's record id. One binding, `API_RATE_LIMIT`, at 60
-requests/minute — the free tier. Exceeding it returns `429` with a
-`retry-after: 60` header.
+Public API requests (`/movie/*`, `/series/*`, `/anime/*`) require a valid
+API key `Authorization: Bearer` and are rate limited per key with the Workers
+Rate Limiting binding (`ratelimits` in `wrangler.jsonc`), keyed by the key's
+record id. One binding, `API_RATE_LIMIT`, at 60 requests/minute — the free
+tier.
+
+- Missing or invalid key → `401` with JSON `{ error: "Unauthorized" }`
+  (rejected upstream of the limiter).
+- Over the limit → `429` with JSON
+  `{ error: "Too Many Requests", retryAfter: 60 }` and a `retry-after: 60`
+  header.
 
 ## Why the binding over D1 counters
 
@@ -27,8 +33,9 @@ abuse protection; this is not billing-grade metering.
 
 Binding limits are static config, so each plan gets its own binding
 (`API_RATE_LIMIT_PRO`, …) with a distinct `namespace_id`, and the gate picks
-the binding from the key's `plan` column. If plans ever need runtime-tunable
-limits, revisit with Durable Objects.
+the binding from the key's `plan` column. Until those bindings exist, every
+plan shares `API_RATE_LIMIT`. If plans ever need runtime-tunable limits,
+revisit with Durable Objects.
 
 ## Related: keys are hand-rolled, not better-auth's plugin
 
