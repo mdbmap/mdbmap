@@ -1,9 +1,14 @@
 import type { Promisable } from "type-fest";
 
 import type { AssertionConfidence } from "@/db/columns.ts";
-import { dayDistance, titleSimilarity } from "@/engine/matcher/index.ts";
-import type { ChainSegment, ContinuityChain } from "./walk.ts";
+import {
+	dayDistance,
+	TITLE_AGREEMENT,
+	titleSimilarity,
+} from "@/engine/matcher/index.ts";
+
 import type { SimklEntry, SimklService } from "./simkl.ts";
+import type { ChainSegment, ContinuityChain } from "./walk.ts";
 
 // SIMKL verification (ADR-0002 discovery, issue #40). SIMKL is a broker, not an
 // authority: its native alignments must be checked against the real catalogues
@@ -73,9 +78,7 @@ interface CandidateReference {
 	serviceId: string;
 }
 
-type VerificationConflictReason =
-	| "count-mismatch"
-	| "date-mismatch";
+type VerificationConflictReason = "count-mismatch" | "date-mismatch";
 
 // A FAILED check — a real contradiction, not missing evidence. Nothing
 // publishes for the run; #42 queues it for review.
@@ -97,8 +100,6 @@ interface VerifyDeps {
 	clients: VerificationClients;
 	target: SimklService;
 }
-
-const TITLE_AGREEMENT = 0.5;
 
 // Every chain segment is anime-shaped (the walk guards it), but keeping the map
 // explicit lets a future TV/film continuity anchor against its own catalogue.
@@ -144,7 +145,12 @@ const anchorSegment = async (
 	if (native === undefined || !nativeAgrees(segment.entry, native)) {
 		return { anchor: undefined, native: undefined, nativeService, segment };
 	}
-	return { anchor: { service: nativeService, serviceId }, native, nativeService, segment };
+	return {
+		anchor: { service: nativeService, serviceId },
+		native,
+		nativeService,
+		segment,
+	};
 };
 
 const namesEdge = (
@@ -175,7 +181,8 @@ const adjacentPairs = <Item>(items: readonly Item[]): [Item, Item][] => {
 // earlier as sequel, the later as prequel. A one-sided edge is too weak to
 // carry high confidence anywhere it is checked.
 const twoSidedEdge = (earlier: SimklEntry, later: SimklEntry): boolean =>
-	namesEdge(earlier, "sequel", later.id) && namesEdge(later, "prequel", earlier.id);
+	namesEdge(earlier, "sequel", later.id) &&
+	namesEdge(later, "prequel", earlier.id);
 
 // Adjacent chain segments are joined by a mainline edge the walk already
 // followed. The edge is high only when both records confirm it; a one-sided
@@ -196,7 +203,9 @@ const relationFor = (
 	};
 };
 
-const relationsOf = (anchored: readonly AnchoredSegment[]): RelationAssertionPlan[] =>
+const relationsOf = (
+	anchored: readonly AnchoredSegment[],
+): RelationAssertionPlan[] =>
 	adjacentPairs(anchored).flatMap(([earlier, later]) => {
 		const relation = relationFor(earlier, later);
 		return relation === undefined ? [] : [relation];
@@ -288,12 +297,17 @@ const titleVerdict = (run: TargetRun, targetTitle: string): CheckVerdict => {
 // Format is corroboration, never contradiction: a shared shape (both `tv`, both
 // `ona`) supports the alignment, but a mismatch across catalogues that name
 // shapes differently is absent evidence, not a conflict.
-const formatVerdict = (run: TargetRun, targetFormat: string | undefined): CheckVerdict => {
+const formatVerdict = (
+	run: TargetRun,
+	targetFormat: string | undefined,
+): CheckVerdict => {
 	if (targetFormat === undefined) {
 		return "unavailable";
 	}
 	const wanted = targetFormat.toLowerCase();
-	const agrees = run.segments.some((item) => item.native?.format?.toLowerCase() === wanted);
+	const agrees = run.segments.some(
+		(item) => item.native?.format?.toLowerCase() === wanted,
+	);
 	return agrees ? "pass" : "unavailable";
 };
 
@@ -315,7 +329,10 @@ const relationVerdict = (run: TargetRun): CheckVerdict => {
 // Segment sizes drive the target's instalment split, so a run only verifies
 // structurally when every segment has a native count and they sum to the
 // target's own count. A sum that disagrees is a conflict, not weak evidence.
-const countVerdict = (sum: number | undefined, total: number | undefined): CheckVerdict => {
+const countVerdict = (
+	sum: number | undefined,
+	total: number | undefined,
+): CheckVerdict => {
 	if (sum === undefined || total === undefined) {
 		return "unavailable";
 	}
@@ -415,9 +432,15 @@ const verifyRun = async (
 
 	const sizes = sizesOf(run);
 	const counts = countVerdict(sumOf(sizes), targetTitle.instalmentCount);
-	const dates = dateVerdict(run.segments[0]?.native?.releaseDate, targetTitle.releaseDate);
+	const dates = dateVerdict(
+		run.segments[0]?.native?.releaseDate,
+		targetTitle.releaseDate,
+	);
 	if (counts === "fail") {
-		return { ...emptyOutcome(), conflicts: [conflictOf(run, "count-mismatch")] };
+		return {
+			...emptyOutcome(),
+			conflicts: [conflictOf(run, "count-mismatch")],
+		};
 	}
 	if (dates === "fail") {
 		return { ...emptyOutcome(), conflicts: [conflictOf(run, "date-mismatch")] };

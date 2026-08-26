@@ -20,27 +20,25 @@ import {
 } from "@/db/engine-schema";
 import type { ReviewProposal } from "@/engine/reviewer";
 
+import { RESEARCH } from "./assertions.ts";
 import { corroborate } from "./corroboration.ts";
 import type {
 	CorroborationDecision,
 	CorroborationEvidence,
 } from "./corroboration.ts";
-import { findTitle } from "./persist.ts";
-import type { ServiceRef } from "./persist.ts";
 import {
 	queueInstalmentFlag,
 	queueRelationFlag,
 	queueTitlePairFlag,
 } from "./low-confidence-flag.ts";
+import { findTitle } from "./persist.ts";
+import type { ServiceRef } from "./persist.ts";
 
-const RESEARCH = "llm-research" as const;
 const ROW_MISSING = "research publish: expected an inserted row";
 
 // ADR-0002 provenance: manual > community > llm-verified > llm-research > tiers.
 const outranksResearch = (source: AssertionSource): boolean =>
-	source === "manual" ||
-	source === "community" ||
-	source === "llm-verified";
+	source === "manual" || source === "community" || source === "llm-verified";
 
 interface ExistingAssertion {
 	readonly confidence: "high" | "low";
@@ -130,10 +128,7 @@ interface InstalmentProposal {
 	readonly unitId?: string;
 }
 
-type ResearchProposal =
-	| InstalmentProposal
-	| RelationProposal
-	| TitleProposal;
+type ResearchProposal = InstalmentProposal | RelationProposal | TitleProposal;
 
 interface PublishedResearch {
 	readonly assertionId: number;
@@ -332,10 +327,7 @@ const endpointConflicts = async (
 		return byEndpoint;
 	}
 	const seen = new Set(byEndpoint.map((row) => row.id));
-	return [
-		...byEndpoint,
-		...reverse.filter((row) => !seen.has(row.id)),
-	];
+	return [...byEndpoint, ...reverse.filter((row) => !seen.has(row.id))];
 };
 
 const queueCompetingRelations = async (
@@ -522,10 +514,7 @@ const publishRelationProposal = async (
 	return publishedResult(proposal, assertionId, decision);
 };
 
-const spokeTitleId = async (
-	db: Db,
-	instalmentId: number,
-): Promise<number> =>
+const spokeTitleId = async (db: Db, instalmentId: number): Promise<number> =>
 	one(
 		await db
 			.select({ titleId: serviceInstalments.titleId })

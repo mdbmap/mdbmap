@@ -4,6 +4,7 @@
 const MILLIS_PER_DAY = 86_400_000;
 const CHAR_WEIGHT = 0.5;
 const TOKEN_WEIGHT = 0.5;
+const TITLE_AGREEMENT = 0.5;
 
 // Lowercase, drop every non-alphanumeric character (unicode aware) and collapse
 // the gaps, so "Pups Save the Bay!" and "pups save the bay" normalise alike.
@@ -28,7 +29,10 @@ const editDistance = (left: string, right: string): number => {
 	if (right.length === 0) {
 		return left.length;
 	}
-	let previous = Array.from({ length: right.length + 1 }, (_ignored, col) => col);
+	let previous = Array.from(
+		{ length: right.length + 1 },
+		(_ignored, col) => col,
+	);
 	for (let row = 1; row <= left.length; row += 1) {
 		const current = [row];
 		for (let col = 1; col <= right.length; col += 1) {
@@ -89,4 +93,11 @@ const dayDistance = (left: string, right: string): number | undefined => {
 	return Math.round(Math.abs(leftMillis - rightMillis) / MILLIS_PER_DAY);
 };
 
-export { dayDistance, editDistance, normaliseTitle, titleSimilarity, tokenOverlap };
+export {
+	dayDistance,
+	editDistance,
+	normaliseTitle,
+	TITLE_AGREEMENT,
+	titleSimilarity,
+	tokenOverlap,
+};
