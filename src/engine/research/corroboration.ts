@@ -1,3 +1,5 @@
+// Research corroboration gate (ADR-0004, #60).
+
 type EvidenceVerdict = "corroborates" | "contradicts";
 
 interface ApiEvidence {
