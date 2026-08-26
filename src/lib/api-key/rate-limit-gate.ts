@@ -19,7 +19,6 @@ type ApiRateLimitBindings = Readonly<Record<ApiKeyPlan, RateLimit>>;
 interface ApiKeyRateLimitGateDeps {
 	readonly db?: Db | undefined;
 	readonly rateLimits: ApiRateLimitBindings;
-	readonly verify?: typeof verifyApiKey | undefined;
 }
 
 const unauthorizedResponse = (): Response =>
@@ -57,8 +56,7 @@ const enforceApiKeyRateLimit = async (
 	}
 
 	const db = deps.db ?? (await resolveDb());
-	const verify = deps.verify ?? verifyApiKey;
-	const verified = await verify(db, secret);
+	const verified = await verifyApiKey(db, secret);
 	if (verified === undefined) {
 		return unauthorizedResponse();
 	}
