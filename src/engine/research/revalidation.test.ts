@@ -14,7 +14,7 @@ import {
 import { freshDb } from "@/db/test-helpers";
 import type { CatalogueTitle } from "@/engine/discovery";
 import { createBudget } from "@/engine/matcher";
-import { revalidateGroup } from "@/engine/recompute";
+import { revalidateGroup } from "@/engine/revalidation";
 
 import { sampleResearchRecheck } from "./recheck.ts";
 import type { ResearchCatalogueClient } from "./tools.ts";

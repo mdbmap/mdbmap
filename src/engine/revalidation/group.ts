@@ -2,12 +2,14 @@ import type { Db } from "@/db";
 import { readRevalidationMembers } from "@/engine/discovery";
 import { createBudget } from "@/engine/matcher";
 import type { BudgetSnapshot, TierId } from "@/engine/matcher";
-
-import { sampleResearchRecheck } from "../research/recheck.ts";
-import type { ResearchRecheckOutcome } from "../research/recheck.ts";
-import type { ResearchCatalogueClients } from "../research/tools.ts";
-import { recomputeGroup } from "./recompute.ts";
-import type { FreshPairing, RecomputeOutcome } from "./recompute.ts";
+import { recomputeGroup } from "@/engine/recompute/recompute.ts";
+import type {
+	FreshPairing,
+	RecomputeOutcome,
+} from "@/engine/recompute/recompute.ts";
+import { sampleResearchRecheck } from "@/engine/research/recheck.ts";
+import type { ResearchRecheckOutcome } from "@/engine/research/recheck.ts";
+import type { ResearchCatalogueClients } from "@/engine/research/tools.ts";
 
 interface RevalidateGroupInput {
 	readonly budgetLimit: number;

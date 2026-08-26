@@ -1,7 +1,6 @@
 import { eq } from "drizzle-orm";
 
 import type { Db } from "@/db";
-import { ascendingPair } from "@/db";
 import type {
 	CandidateEvidence,
 	CandidateSubject,
@@ -19,7 +18,6 @@ import type { BudgetLedger } from "@/engine/matcher";
 import type { ResearchAssertion } from "./assertions.ts";
 import { listResearchAssertions, RESEARCH } from "./assertions.ts";
 import {
-	parseResearchCatalogue,
 	researchCatalogueSchema,
 	toCatalogueTitle,
 } from "./catalogue.ts";
@@ -201,8 +199,7 @@ const recheckAssertion = async (
 			return recheckInstalment(assertion, clients, budget);
 		}
 		default: {
-			const _exhaustive: never = assertion;
-			return _exhaustive;
+			throw new Error("recheck: unexpected assertion kind");
 		}
 	}
 };
@@ -281,8 +278,7 @@ const demoteAndFlag = async (
 			return;
 		}
 		default: {
-			const _exhaustive: never = assertion;
-			return _exhaustive;
+			throw new Error("recheck: unexpected assertion kind");
 		}
 	}
 };
@@ -299,10 +295,13 @@ const sampleResearchRecheck = async (
 	let checked = 0;
 	let flagged = 0;
 
-	for (const assertion of candidates) {
-		const snapshot = input.budget.snapshot();
-		if (snapshot.remaining < fetchCostFor(assertion)) {
-			break;
+	const processFrom = async (index: number): Promise<void> => {
+		const assertion = candidates[index];
+		if (assertion === undefined) {
+			return;
+		}
+		if (input.budget.snapshot().remaining < fetchCostFor(assertion)) {
+			return;
 		}
 		const verdict = await recheckAssertion(
 			assertion,
@@ -314,7 +313,10 @@ const sampleResearchRecheck = async (
 			await demoteAndFlag(db, assertion);
 			flagged += 1;
 		}
-	}
+		await processFrom(index + 1);
+	};
+
+	await processFrom(0);
 
 	return {
 		checked,
