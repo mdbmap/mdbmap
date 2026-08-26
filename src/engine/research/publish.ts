@@ -36,11 +36,11 @@ const outranksResearch = (source: AssertionSource): boolean =>
 	source === "community" ||
 	source === "llm-verified";
 
-type ExistingAssertion = {
+interface ExistingAssertion {
 	readonly confidence: "high" | "low";
 	readonly id: number;
 	readonly source: AssertionSource;
-};
+}
 
 type LowConfidenceEvidence = Extract<
 	CandidateEvidence,

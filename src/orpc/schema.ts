@@ -1,7 +1,7 @@
 import { z } from "zod";
 
 import type { ApiKeyPlan, RateableUnitKind, WatchStatus } from "@/db/schema";
-import { apiKeyPlans, watchStatuses } from "@/db/schema";
+import { apiKeyPlans, researchTimings, watchStatuses } from "@/db/schema";
 import type { MediaKind } from "@/engine";
 
 const TodoSchema = z.object({
@@ -74,6 +74,12 @@ const MintApiKeyInput = z.object({
 
 const RevokeApiKeyInput = z.object({
 	id: z.string().min(1),
+});
+
+const ResearchTimingSchema = z.enum(researchTimings);
+
+const SetResearchTimingInput = z.object({
+	timing: ResearchTimingSchema,
 });
 
 interface RateableUnit {
@@ -192,9 +198,11 @@ export {
 	MarkMatchedInput,
 	MintApiKeyInput,
 	RateableUnitInput,
+	ResearchTimingSchema,
 	RevokeApiKeyInput,
 	SetEpisodeWatchedInput,
 	SetRatingInput,
+	SetResearchTimingInput,
 	SetRewatchInput,
 	SetStatusInput,
 	SettleConflictInput,

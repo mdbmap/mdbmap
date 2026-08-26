@@ -1,6 +1,9 @@
 import { describe, expect, it } from "vitest";
 
+import { freshDb } from "@/db/test-helpers";
+
 import {
+	createDbTimingStore,
 	createMemoryTimingStore,
 	isResearchTiming,
 	researchTimings,
@@ -24,5 +27,15 @@ describe("research timing config reader", () => {
 		expect(shouldRunResearch(await store.read(), "before-builds")).toBe(
 			false,
 		);
+	});
+
+	it("persists timing through the D1-backed store", async () => {
+		const db = await freshDb();
+		const store = createDbTimingStore(db);
+		expect(await store.read()).toBe("off");
+		await store.write("before-builds");
+		expect(await store.read()).toBe("before-builds");
+		await store.write("after-residue");
+		expect(await store.read()).toBe("after-residue");
 	});
 });

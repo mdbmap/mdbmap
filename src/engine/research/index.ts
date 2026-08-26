@@ -38,6 +38,7 @@ export type {
 	TitleProposal,
 } from "./publish.ts";
 export {
+	createDbTimingStore,
 	createMemoryTimingStore,
 	isResearchTiming,
 	researchTimings,

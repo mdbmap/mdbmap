@@ -64,6 +64,13 @@
       "when": 1787743847226,
       "tag": "0008_modern_princess_powerful",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "6",
+      "when": 1787769000000,
+      "tag": "0009_research_timing",
+      "breakpoints": true
     }
   ]
 }

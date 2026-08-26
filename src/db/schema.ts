@@ -221,6 +221,21 @@ const llmProvider = sqliteTable("llm_provider", {
 	wrappedKey: text("wrapped_key").notNull(),
 });
 
+// Deployment policy for the agentic research pass (ADR-0004 / issue #59).
+// Singleton row (`id = 1`); admin write path updates timing in place.
+const researchTimings = ["before-builds", "after-residue", "off"] as const;
+type ResearchTiming = (typeof researchTimings)[number];
+
+const researchTiming = sqliteTable(
+	"research_timing",
+	{
+		id: integer({ mode: "number" }).primaryKey(),
+		timing: text({ enum: researchTimings }).notNull().default("off"),
+		updatedAt: timestamp("updated_at").$onUpdateFn(() => new Date()),
+	},
+	(table) => [check("research_timing_singleton", sql`${table.id} = 1`)],
+);
+
 export {
 	account,
 	apiKey,
@@ -230,6 +245,8 @@ export {
 	llmProviderKinds,
 	personalRating,
 	rateableUnitKinds,
+	researchTiming,
+	researchTimings,
 	session,
 	todos,
 	user,
@@ -245,5 +262,6 @@ export type {
 	LlmProviderKind,
 	RateableUnitKey,
 	RateableUnitKind,
+	ResearchTiming,
 	WatchStatus,
 };
