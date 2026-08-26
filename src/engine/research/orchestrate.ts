@@ -181,7 +181,13 @@ const runResearchPass = async (
 		...(deps.simkl === undefined ? {} : { simkl: deps.simkl }),
 	});
 
-	const agentResult = await deps.agent({ continuity, provider, tools });
+	const agentResult = await (async (): Promise<ResearchAgentResult> => {
+		try {
+			return await deps.agent({ continuity, provider, tools });
+		} catch {
+			return { proposals: [], residue: continuity.targetServices };
+		}
+	})();
 	const published = await publishResearchProposals(
 		deps.db,
 		agentResult.proposals,

@@ -109,11 +109,19 @@ const buildResearchTools = (input: BuildToolsetInput): ResearchToolset => {
 	return {
 		fetchCatalogue: async (service, serviceId) => {
 			const client = clients[service];
-			if (client === undefined) {
-				throw new Error(`research tools: no catalogue client for ${service}`);
-			}
 			const ref = { service, serviceId };
-			const url = resolveCatalogueUrl(client, service, serviceId);
+			const url = catalogueRequestUrl(service);
+			if (client === undefined) {
+				return {
+					kind: "api",
+					operator: service,
+					ref,
+					unavailable: true,
+					url,
+					validated: false,
+				};
+			}
+			const resolvedUrl = resolveCatalogueUrl(client, service, serviceId);
 			const raw =
 				client.fetchCatalogue === undefined
 					? await client.fetchTitle(serviceId)
@@ -124,7 +132,7 @@ const buildResearchTools = (input: BuildToolsetInput): ResearchToolset => {
 					operator: service,
 					ref,
 					unavailable: true,
-					url,
+					url: resolvedUrl,
 					validated: false,
 				};
 			}
@@ -137,7 +145,7 @@ const buildResearchTools = (input: BuildToolsetInput): ResearchToolset => {
 					operator: service,
 					ref,
 					unavailable: true,
-					url,
+					url: resolvedUrl,
 					validated: false,
 				};
 			}
@@ -154,7 +162,7 @@ const buildResearchTools = (input: BuildToolsetInput): ResearchToolset => {
 				persisted,
 				record,
 				ref,
-				url,
+				url: resolvedUrl,
 				validated: true,
 			};
 		},

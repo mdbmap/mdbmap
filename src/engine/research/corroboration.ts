@@ -74,6 +74,7 @@ const corroborate = (
 	}
 
 	const corroborating = eligible
+		.filter((item) => item.kind !== "api" || item.validated)
 		.map((item) => ({
 			item,
 			operator: item.operator.trim().toLowerCase(),

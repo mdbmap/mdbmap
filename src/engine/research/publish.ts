@@ -880,7 +880,12 @@ const publishRemaining = async (
 	if (head === undefined) {
 		return done;
 	}
-	const result = await publishProposal(db, head);
+	let result: PublishedResearch | undefined;
+	try {
+		result = await publishProposal(db, head);
+	} catch {
+		return publishRemaining(db, tail, enqueueReview, done);
+	}
 	if (result === undefined) {
 		return publishRemaining(db, tail, enqueueReview, done);
 	}
