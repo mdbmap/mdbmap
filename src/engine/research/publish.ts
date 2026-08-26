@@ -42,6 +42,17 @@ interface ExistingAssertion {
 	readonly source: AssertionSource;
 }
 
+const isUniqueViolation = (error: unknown): boolean => {
+	let current: unknown = error;
+	while (current instanceof Error) {
+		if (/unique/iu.test(current.message)) {
+			return true;
+		}
+		current = current.cause;
+	}
+	return false;
+};
+
 type LowConfidenceEvidence = Extract<
 	CandidateEvidence,
 	{ kind: "low-confidence-flag" }
@@ -384,17 +395,6 @@ const endpointConflicts = async (
 			),
 		)
 		.all();
-
-const isUniqueViolation = (error: unknown): boolean => {
-	let current: unknown = error;
-	while (current instanceof Error) {
-		if (/unique/iu.test(current.message)) {
-			return true;
-		}
-		current = current.cause;
-	}
-	return false;
-};
 
 const queueCompetingRelations = async (
 	db: Db,

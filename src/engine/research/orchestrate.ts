@@ -1,4 +1,4 @@
-import { eq } from "drizzle-orm";
+import { eq, inArray } from "drizzle-orm";
 import type { Promisable } from "type-fest";
 
 import type { Db } from "@/db";
@@ -69,6 +69,7 @@ const servicesFromProposals = async (
 	proposals: readonly ResearchProposal[],
 ): Promise<ReadonlySet<string>> => {
 	const services = new Set<string>();
+	const instalmentIds: number[] = [];
 	for (const proposal of proposals) {
 		switch (proposal.kind) {
 			case "title": {
@@ -82,21 +83,23 @@ const servicesFromProposals = async (
 				break;
 			}
 			case "instalment": {
-				const owners = await db
-					.select({ service: serviceTitles.service })
-					.from(serviceInstalments)
-					.innerJoin(
-						serviceTitles,
-						eq(serviceInstalments.titleId, serviceTitles.id),
-					)
-					.where(eq(serviceInstalments.id, proposal.instalmentId))
-					.all();
-				const owner = owners[0]?.service;
-				if (owner !== undefined) {
-					services.add(owner);
-				}
+				instalmentIds.push(proposal.instalmentId);
 				break;
 			}
+		}
+	}
+	if (instalmentIds.length > 0) {
+		const owners = await db
+			.select({ service: serviceTitles.service })
+			.from(serviceInstalments)
+			.innerJoin(
+				serviceTitles,
+				eq(serviceInstalments.titleId, serviceTitles.id),
+			)
+			.where(inArray(serviceInstalments.id, instalmentIds))
+			.all();
+		for (const owner of owners) {
+			services.add(owner.service);
 		}
 	}
 	return services;
