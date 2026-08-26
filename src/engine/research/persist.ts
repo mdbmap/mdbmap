@@ -1,5 +1,6 @@
 import { and, eq } from "drizzle-orm";
 
+import { one } from "@/db";
 import type { Db } from "@/db";
 import {
 	serviceInstalments,
@@ -7,6 +8,8 @@ import {
 } from "@/db/engine-schema";
 
 import type { ResearchCatalogueRecord } from "./catalogue.ts";
+
+const ROW_MISSING = "research persist: expected an inserted row";
 
 interface ServiceRef {
 	readonly service: string;
@@ -22,14 +25,6 @@ interface PersistedTitle {
 	readonly spokes: readonly PersistedSpoke[];
 	readonly titleId: number;
 }
-
-const one = <Row>(rows: readonly Row[]): Row => {
-	const [row] = rows;
-	if (row === undefined) {
-		throw new Error("research persist: expected an inserted row");
-	}
-	return row;
-};
 
 const findTitle = async (
 	db: Db,
@@ -86,6 +81,7 @@ const ensureTitle = async (
 			})
 			.returning()
 			.all(),
+		ROW_MISSING,
 	).id;
 };
 
@@ -125,6 +121,7 @@ const insertMissingSpokes = async (
 					})
 					.returning()
 					.all(),
+				ROW_MISSING,
 			),
 		),
 	);

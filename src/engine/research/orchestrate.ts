@@ -44,20 +44,30 @@ type ResearchAgent = (input: {
 	readonly tools: ResearchToolset;
 }) => Promisable<ResearchAgentResult>;
 
-interface ResearchPassDeps {
+type ResearchJudgeDeps = Pick<ReviewTaskDeps, "escalate" | "judge">;
+
+// Callers must wire the #61 reviewer: either a custom enqueue, or judge/escalate
+// so the default path always runs `reviewResearchProposal`.
+type ResearchReviewWiring =
+	| {
+			readonly enqueueReview: ReviewEnqueue;
+			readonly review?: ResearchJudgeDeps;
+	  }
+	| {
+			readonly enqueueReview?: undefined;
+			readonly review: ResearchJudgeDeps;
+	  };
+
+type ResearchPassDeps = {
 	readonly agent: ResearchAgent;
 	readonly clients: ResearchCatalogueClients;
 	readonly db: Db;
 	readonly masterKey: string;
 	readonly providerId: string;
-	// Optional override; default wires `reviewResearchProposal` with injected
-	// judge/escalate so #61 stays the sole promotion path.
-	readonly enqueueReview?: ReviewEnqueue;
-	readonly review?: Pick<ReviewTaskDeps, "escalate" | "judge">;
 	readonly scrape?: ScrapeClient;
 	readonly simkl?: SimklClient;
 	readonly timing: ResearchTimingStore;
-}
+} & ResearchReviewWiring;
 
 type ResearchPassOutcome =
 	| {
@@ -73,17 +83,11 @@ type ResearchPassOutcome =
 			readonly residue: readonly string[];
 	  };
 
-const noopEnqueue: ReviewEnqueue = async () => {
-	/* review optional when caller only asserts publish shape */
-};
-
-const defaultEnqueue = (
-	deps: Pick<ResearchPassDeps, "db" | "review">,
-): ReviewEnqueue => {
-	const { review } = deps;
-	if (review === undefined) {
-		return noopEnqueue;
+const resolveEnqueue = (deps: ResearchPassDeps): ReviewEnqueue => {
+	if (deps.enqueueReview !== undefined) {
+		return deps.enqueueReview;
 	}
+	const { review } = deps;
 	return async (proposal) =>
 		reviewResearchProposal(proposal, {
 			db: deps.db,
@@ -131,11 +135,10 @@ const runResearchPass = async (
 	});
 
 	const agentResult = await deps.agent({ continuity, provider, tools });
-	const enqueue = deps.enqueueReview ?? defaultEnqueue(deps);
 	const published = await publishResearchProposals(
 		deps.db,
 		agentResult.proposals,
-		enqueue,
+		resolveEnqueue(deps),
 	);
 
 	return {

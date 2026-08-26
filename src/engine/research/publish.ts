@@ -1,6 +1,7 @@
 import { and, eq } from "drizzle-orm";
 import type { Promisable } from "type-fest";
 
+import { one } from "@/db";
 import type { Db } from "@/db";
 import type { CandidateEvidence, CandidateSubject } from "@/db/engine-schema";
 import {
@@ -23,6 +24,7 @@ import { findTitle } from "./persist.ts";
 import type { ServiceRef } from "./persist.ts";
 
 const RESEARCH = "llm-research" as const;
+const ROW_MISSING = "research publish: expected an inserted row";
 
 interface TitleProposal {
 	readonly claim: string;
@@ -61,14 +63,6 @@ interface PublishedResearch {
 }
 
 type ReviewEnqueue = (proposal: ReviewProposal) => Promisable<unknown>;
-
-const one = <Row>(rows: readonly Row[]): Row => {
-	const [row] = rows;
-	if (row === undefined) {
-		throw new Error("research publish: expected an inserted row");
-	}
-	return row;
-};
 
 const ascendingPair = (
 	left: number,
@@ -247,6 +241,7 @@ const publishTitleProposal = async (
 				})
 				.returning()
 				.all(),
+			ROW_MISSING,
 		).id;
 
 	if (decision.reviewFlag !== undefined) {
@@ -278,6 +273,7 @@ const publishRelationProposal = async (
 			})
 			.returning()
 			.all(),
+		ROW_MISSING,
 	).id;
 
 	if (decision.reviewFlag !== undefined) {
@@ -298,7 +294,10 @@ const publishInstalmentProposal = async (
 	const decision = corroborate(proposal.evidence);
 	const unitId =
 		proposal.unitId ??
-		one(await db.insert(contentUnits).values({}).returning().all()).id;
+		one(
+			await db.insert(contentUnits).values({}).returning().all(),
+			ROW_MISSING,
+		).id;
 	const assertionId = one(
 		await db
 			.insert(instalmentAssertions)
@@ -310,6 +309,7 @@ const publishInstalmentProposal = async (
 			})
 			.returning()
 			.all(),
+		ROW_MISSING,
 	).id;
 
 	if (decision.reviewFlag !== undefined) {
@@ -319,6 +319,7 @@ const publishInstalmentProposal = async (
 				.from(serviceInstalments)
 				.where(eq(serviceInstalments.id, proposal.instalmentId))
 				.all(),
+			ROW_MISSING,
 		);
 		await queueInstalmentFlag(db, {
 			assertionConfidence: decision.confidence,

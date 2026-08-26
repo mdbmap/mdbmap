@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it } from "vitest";
 
 import {
 	pendingGroupCandidates,
+	relationAssertions,
 	serviceInstalments,
 	serviceTitles,
 	titleAssertions,
@@ -161,6 +162,32 @@ const singleSourceAgent: ResearchAgent = async ({ tools }) => {
 				kind: "title",
 				left: left.ref,
 				right: right.ref,
+			},
+		],
+		residue: [],
+	};
+};
+
+const weakRelationAgent: ResearchAgent = async ({ tools }) => {
+	const from = await tools.fetchCatalogue("tmdb", "1");
+	const to = await tools.fetchCatalogue("tvdb", "2");
+	return {
+		proposals: [
+			{
+				claim: "weak relation claim",
+				evidence: [
+					{
+						kind: "api",
+						official: true,
+						operator: "tmdb",
+						stance: "corroborates",
+						url: from.url,
+						validated: true,
+					},
+				],
+				from: from.ref,
+				kind: "relation",
+				to: to.ref,
 			},
 		],
 		residue: [],
@@ -353,6 +380,7 @@ describe("runResearchPass timing gates", () => {
 			agent,
 			clients: {},
 			db,
+			enqueueReview: noopReview,
 			masterKey,
 			providerId,
 			timing: createMemoryTimingStore("off"),
@@ -372,6 +400,7 @@ describe("runResearchPass timing gates", () => {
 			agent: emptyResidueAgent,
 			clients: {},
 			db,
+			enqueueReview: noopReview,
 			masterKey,
 			providerId,
 			timing: createMemoryTimingStore("after-residue"),
@@ -505,9 +534,79 @@ describe("runResearchPass publish path", () => {
 		expect(flags).toHaveLength(1);
 		expect(flags[0]?.kind).toBe("low-confidence-flag");
 		expect(flags[0]?.evidence).toMatchObject({ target: "title" });
+		expect(flags[0]?.subject).toMatchObject({ subjectType: "title-pair" });
 		expect(outcome.published[0]?.review.evidence[0]?.url).toMatch(
 			/^https:\/\/api\.themoviedb\.org\//u,
 		);
+	});
+
+	it("queues a low-confidence flag for a weak relation proposal", async () => {
+		const outcome = await runResearchPass(continuity, "after-residue", {
+			agent: weakRelationAgent,
+			clients: {
+				tmdb: clientFor({
+					"1": catalogue({ instalments: [{ locator: "1:1" }], title: "From" }),
+				}),
+				tvdb: clientFor({
+					"2": catalogue({ instalments: [{ locator: "1:1" }], title: "To" }),
+				}),
+			},
+			db,
+			enqueueReview: noopReview,
+			masterKey,
+			providerId,
+			timing: createMemoryTimingStore("after-residue"),
+		});
+
+		expect(outcome.kind).toBe("completed");
+		if (outcome.kind !== "completed") {
+			return;
+		}
+		expect(outcome.published[0]?.confidence).toBe("low");
+		expect(outcome.published[0]?.reviewFlag).toBe("low-confidence-flag");
+		expect(await db.select().from(relationAssertions).all()).toMatchObject([
+			{ confidence: "low", source: "llm-research" },
+		]);
+		const flags = await db.select().from(pendingGroupCandidates).all();
+		expect(flags).toHaveLength(1);
+		expect(flags[0]?.kind).toBe("low-confidence-flag");
+		expect(flags[0]?.evidence).toMatchObject({ target: "relation" });
+		expect(flags[0]?.subject).toMatchObject({ subjectType: "title-pair" });
+	});
+
+	it("wires the #61 reviewer when only judge/escalate deps are supplied", async () => {
+		const judged: string[] = [];
+		const outcome = await runResearchPass(continuity, "after-residue", {
+			agent: singleSourceAgent,
+			clients: {
+				tmdb: clientFor({
+					"1": catalogue({ instalments: [{ locator: "1:1" }], title: "Alone" }),
+				}),
+				tvdb: clientFor({
+					"2": catalogue({ instalments: [{ locator: "1:1" }], title: "Alone" }),
+				}),
+			},
+			db,
+			masterKey,
+			providerId,
+			review: {
+				escalate: async () => {
+					await Promise.resolve();
+				},
+				judge: async (proposal) => {
+					await Promise.resolve();
+					judged.push(proposal.claim);
+					return {
+						rationale: "not enough evidence",
+						verdict: "unable-to-tell",
+					};
+				},
+			},
+			timing: createMemoryTimingStore("after-residue"),
+		});
+
+		expect(outcome.kind).toBe("completed");
+		expect(judged).toEqual(["weak single-source claim"]);
 	});
 
 	it("leaves unresolved residue for the deterministic fan-out", async () => {
@@ -515,6 +614,7 @@ describe("runResearchPass publish path", () => {
 			agent: emptyResidueAgent,
 			clients: {},
 			db,
+			enqueueReview: noopReview,
 			masterKey,
 			providerId,
 			timing: createMemoryTimingStore("before-builds"),
@@ -592,6 +692,7 @@ describe("runResearchPass tools", () => {
 			agent: refuseWikiAgent,
 			clients: {},
 			db,
+			enqueueReview: noopReview,
 			masterKey,
 			providerId,
 			scrape: {
