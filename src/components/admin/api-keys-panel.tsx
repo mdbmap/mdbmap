@@ -208,8 +208,9 @@ export function ApiKeysPanel() {
 			</h1>
 			{query.isError ? (
 				<p className="text-sm text-neutral-600 dark:text-neutral-400">{DENIED}</p>
-			) : undefined}
-			<MintForm onMint={onMint} pending={minting} />
+			) : (
+				<MintForm onMint={onMint} pending={minting} />
+			)}
 			{mintedSecret === undefined ? undefined : (
 				<SecretBanner onDismiss={onDismissSecret} secret={mintedSecret} />
 			)}
