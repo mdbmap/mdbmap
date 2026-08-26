@@ -7,9 +7,9 @@ import type {
 	SimklEntry,
 } from "@/engine/discovery";
 
-import { researchCatalogueSchema } from "./catalogue.ts";
 import type { ResearchCatalogueRecord } from "./catalogue.ts";
 import { catalogueRequestUrl, isOfficialOperatorUrl } from "./domains.ts";
+import { fetchCatalogueRecord } from "./fetch-catalogue-record.ts";
 import { persistCatalogueSpokes } from "./persist.ts";
 import type { PersistedTitle, ServiceRef } from "./persist.ts";
 
@@ -91,9 +91,6 @@ interface BuildToolsetInput {
 	readonly simkl?: SimklClient;
 }
 
-const objectPayload = (raw: unknown): object | undefined =>
-	raw instanceof Object ? raw : undefined;
-
 const resolveCatalogueUrl = (
 	client: ResearchCatalogueClient,
 	service: string,
@@ -121,13 +118,8 @@ const buildResearchTools = (input: BuildToolsetInput): ResearchToolset => {
 				};
 			}
 			const resolvedUrl = resolveCatalogueUrl(client, service, serviceId);
-			let raw: unknown;
-			try {
-				raw =
-					client.fetchCatalogue === undefined
-						? await client.fetchTitle(serviceId)
-						: await client.fetchCatalogue(serviceId);
-			} catch {
+			const record = await fetchCatalogueRecord(client, serviceId);
+			if (record === undefined) {
 				return {
 					kind: "api",
 					operator: service,
@@ -137,30 +129,6 @@ const buildResearchTools = (input: BuildToolsetInput): ResearchToolset => {
 					validated: false,
 				};
 			}
-			if (raw === undefined) {
-				return {
-					kind: "api",
-					operator: service,
-					ref,
-					unavailable: true,
-					url: resolvedUrl,
-					validated: false,
-				};
-			}
-			const parsed = researchCatalogueSchema.safeParse(
-				objectPayload(raw) ?? raw,
-			);
-			if (!parsed.success) {
-				return {
-					kind: "api",
-					operator: service,
-					ref,
-					unavailable: true,
-					url: resolvedUrl,
-					validated: false,
-				};
-			}
-			const record: ResearchCatalogueRecord = parsed.data;
 			const persisted = await persistCatalogueSpokes(
 				db,
 				groupId,

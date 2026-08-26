@@ -18,11 +18,9 @@ import type { BudgetLedger } from "@/engine/matcher";
 
 import type { ResearchAssertion } from "./assertions.ts";
 import { listResearchAssertions, RESEARCH } from "./assertions.ts";
-import {
-	researchCatalogueSchema,
-	toCatalogueTitle,
-} from "./catalogue.ts";
+import { toCatalogueTitle } from "./catalogue.ts";
 import type { ResearchCatalogueRecord } from "./catalogue.ts";
+import { fetchCatalogueRecord } from "./fetch-catalogue-record.ts";
 import type { ResearchCatalogueClients } from "./tools.ts";
 
 const FETCH_COST = 1;
@@ -75,31 +73,6 @@ const queueFlag = async (
 		.run();
 };
 
-const fetchLiveCatalogue = async (
-	clients: ResearchCatalogueClients,
-	service: string,
-	serviceId: string,
-): Promise<ResearchCatalogueRecord | undefined> => {
-	const client = clients[service];
-	if (client === undefined) {
-		return undefined;
-	}
-	let raw: unknown;
-	try {
-		raw =
-			client.fetchCatalogue === undefined
-				? await client.fetchTitle(serviceId)
-				: await client.fetchCatalogue(serviceId);
-	} catch {
-		return undefined;
-	}
-	if (raw === undefined) {
-		return undefined;
-	}
-	const parsed = researchCatalogueSchema.safeParse(raw);
-	return parsed.success ? parsed.data : undefined;
-};
-
 const fetchPair = async (
 	clients: ResearchCatalogueClients,
 	left: { readonly service: string; readonly serviceId: string },
@@ -112,17 +85,15 @@ const fetchPair = async (
 	if (!budget.spend(FETCH_COST)) {
 		return { kind: "unavailable" };
 	}
-	const leftRecord = await fetchLiveCatalogue(
-		clients,
-		left.service,
+	const leftRecord = await fetchCatalogueRecord(
+		clients[left.service],
 		left.serviceId,
 	);
 	if (!budget.spend(FETCH_COST)) {
 		return { kind: "unavailable" };
 	}
-	const rightRecord = await fetchLiveCatalogue(
-		clients,
-		right.service,
+	const rightRecord = await fetchCatalogueRecord(
+		clients[right.service],
 		right.serviceId,
 	);
 	if (leftRecord === undefined || rightRecord === undefined) {
@@ -197,7 +168,6 @@ const recheckRelation = async (
 		return "disagrees";
 	}
 
-	// Mainline edge semantics need operator relation APIs; endpoint liveness only.
 	return "agrees";
 };
 
@@ -209,9 +179,8 @@ const recheckInstalment = async (
 	if (!budget.spend(FETCH_COST)) {
 		return "unavailable";
 	}
-	const record = await fetchLiveCatalogue(
-		clients,
-		assertion.ref.service,
+	const record = await fetchCatalogueRecord(
+		clients[assertion.ref.service],
 		assertion.ref.serviceId,
 	);
 	if (record === undefined) {
@@ -354,7 +323,7 @@ const sampleResearchRecheck = async (
 			input.budget,
 		);
 		checked += 1;
-		if (verdict === "disagrees" || verdict === "unavailable") {
+		if (verdict === "disagrees") {
 			await demoteAndFlag(db, assertion);
 			flagged += 1;
 		}

@@ -1,5 +1,4 @@
 import type { Db } from "@/db";
-import { readRevalidationMembers } from "@/engine/discovery";
 import { createBudget } from "@/engine/matcher";
 import type { BudgetSnapshot, TierId } from "@/engine/matcher";
 import { recomputeGroup } from "@/engine/recompute/recompute.ts";
@@ -37,7 +36,6 @@ const revalidateGroup = async (
 	db: Db,
 	input: RevalidateGroupInput,
 ): Promise<RevalidateGroupOutcome> => {
-	const members = await readRevalidationMembers(db, input.groupId);
 	const budget = createBudget(input.budgetLimit);
 
 	const recompute = await recomputeGroup(db, {
@@ -60,7 +58,7 @@ const revalidateGroup = async (
 	return {
 		budget: budget.snapshot(),
 		kind: "applied",
-		members: members.length,
+		members: recompute.plan.precondition.memberTitleIds.length,
 		recheck,
 		recompute,
 	};

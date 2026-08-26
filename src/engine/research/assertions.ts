@@ -1,4 +1,4 @@
-import { and, eq } from "drizzle-orm";
+import { and, eq, inArray } from "drizzle-orm";
 
 import type { Db } from "@/db";
 import { ascendingPair } from "@/db";
@@ -73,6 +73,11 @@ const listResearchAssertions = async (
 		.all();
 	const titleById = new Map(titlesInGroup.map((row) => [row.id, row]));
 
+	const titleIds = titlesInGroup.map((row) => row.id);
+	if (titleIds.length === 0) {
+		return [];
+	}
+
 	const titleAssertionRows = await db
 		.select({
 			confidence: titleAssertions.confidence,
@@ -81,7 +86,13 @@ const listResearchAssertions = async (
 			titleBId: titleAssertions.titleBId,
 		})
 		.from(titleAssertions)
-		.where(eq(titleAssertions.source, RESEARCH))
+		.where(
+			and(
+				eq(titleAssertions.source, RESEARCH),
+				inArray(titleAssertions.titleAId, titleIds),
+				inArray(titleAssertions.titleBId, titleIds),
+			),
+		)
 		.all();
 
 	const titleResearch = titleAssertionRows.flatMap((row) => {
@@ -112,7 +123,13 @@ const listResearchAssertions = async (
 			toTitleId: relationAssertions.toTitleId,
 		})
 		.from(relationAssertions)
-		.where(eq(relationAssertions.source, RESEARCH))
+		.where(
+			and(
+				eq(relationAssertions.source, RESEARCH),
+				inArray(relationAssertions.fromTitleId, titleIds),
+				inArray(relationAssertions.toTitleId, titleIds),
+			),
+		)
 		.all();
 
 	const relationResearch = relationRows.flatMap((row) => {

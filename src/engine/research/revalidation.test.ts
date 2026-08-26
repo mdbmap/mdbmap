@@ -240,7 +240,7 @@ describe("sampleResearchRecheck", () => {
 		expect(assertion.confidence).toBe("low");
 	});
 
-	it("flags relation assertions when a live endpoint is unavailable", async () => {
+	it("skips relation assertions when a live endpoint is unavailable", async () => {
 		const group = await seedGroup(db);
 		const from = await seedTitle(db, group.id, "tmdb", "1");
 		const to = await seedTitle(db, group.id, "imdb", "tt2");
@@ -254,7 +254,7 @@ describe("sampleResearchRecheck", () => {
 			})
 			.run();
 
-		await sampleResearchRecheck(db, {
+		const outcome = await sampleResearchRecheck(db, {
 			budget: createBudget(2),
 			clients: {
 				imdb: clientFor({ tt2: catalogue("Sequel Show") }),
@@ -262,13 +262,55 @@ describe("sampleResearchRecheck", () => {
 			groupId: group.id,
 		});
 
+		expect(outcome.checked).toBe(1);
+		expect(outcome.flagged).toBe(0);
+
 		const assertion = one(
 			await db
 				.select({ confidence: relationAssertions.confidence })
 				.from(relationAssertions)
 				.all(),
 		);
-		expect(assertion.confidence).toBe("low");
+		expect(assertion.confidence).toBe("high");
+	});
+
+	it("flags relation assertions when a live endpoint returns an empty title", async () => {
+		const group = await seedGroup(db);
+		const from = await seedTitle(db, group.id, "tmdb", "1");
+		const to = await seedTitle(db, group.id, "imdb", "tt2");
+		const assertion = one(
+			await db
+				.insert(relationAssertions)
+				.values({
+					confidence: "high",
+					fromTitleId: from.id,
+					source: "llm-research",
+					toTitleId: to.id,
+				})
+				.returning()
+				.all(),
+		);
+
+		const outcome = await sampleResearchRecheck(db, {
+			budget: createBudget(2),
+			clients: {
+				imdb: clientFor({ tt2: catalogue("Sequel Show") }),
+				tmdb: clientFor({ "1": catalogue(" ") }),
+			},
+			groupId: group.id,
+		});
+
+		expect(outcome.checked).toBe(1);
+		expect(outcome.flagged).toBe(1);
+
+		const demoted = one(
+			await db
+				.select({ confidence: relationAssertions.confidence })
+				.from(relationAssertions)
+				.where(eq(relationAssertions.id, assertion.id))
+				.all(),
+		);
+		expect(demoted.confidence).toBe("low");
 	});
 });
 
