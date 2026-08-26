@@ -70,4 +70,26 @@ describe("provider-config envelope encryption", () => {
 			decryptEnvelope(envelope, masterKey, crypto.randomUUID()),
 		).rejects.toThrow();
 	});
+
+	it("reports ciphertext authentication failures at the module boundary", async () => {
+		const masterKey = randomMasterKey();
+		const additionalData = crypto.randomUUID();
+		const envelope = await encryptEnvelope(
+			"top secret",
+			masterKey,
+			additionalData,
+		);
+		const firstCharacter = envelope.ciphertext.startsWith("A") ? "B" : "A";
+
+		await expect(
+			decryptEnvelope(
+				{
+					...envelope,
+					ciphertext: firstCharacter + envelope.ciphertext.slice(1),
+				},
+				masterKey,
+				additionalData,
+			),
+		).rejects.toThrow("provider-config: encrypted config failed authentication");
+	});
 });

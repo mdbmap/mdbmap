@@ -25,35 +25,8 @@ type OpenAiCompatibleProviderConfig = z.infer<
 	typeof OpenAiCompatibleProviderConfigSchema
 >;
 
-// Spelled out per literal (rather than mapped from `vercelAiSdkProviderKinds`)
-// so the union stays a fixed-length tuple for `z.discriminatedUnion`; the
-// assertion below fails loudly if a kind is added to one list but not both.
-const discriminatedVercelKinds = [
-	"openai",
-	"anthropic",
-	"google",
-	"mistral",
-	"groq",
-	"xai",
-] as const;
-if (
-	discriminatedVercelKinds.length !== vercelAiSdkProviderKinds.length ||
-	discriminatedVercelKinds.some(
-		(kind, index) => kind !== vercelAiSdkProviderKinds[index],
-	)
-) {
-	throw new Error(
-		"provider-config: discriminatedVercelKinds drifted from db schema",
-	);
-}
-
-const ProviderConfigSchema = z.discriminatedUnion("kind", [
-	VercelAiSdkProviderConfigSchema.extend({ kind: z.literal("openai") }),
-	VercelAiSdkProviderConfigSchema.extend({ kind: z.literal("anthropic") }),
-	VercelAiSdkProviderConfigSchema.extend({ kind: z.literal("google") }),
-	VercelAiSdkProviderConfigSchema.extend({ kind: z.literal("mistral") }),
-	VercelAiSdkProviderConfigSchema.extend({ kind: z.literal("groq") }),
-	VercelAiSdkProviderConfigSchema.extend({ kind: z.literal("xai") }),
+const ProviderConfigSchema = z.union([
+	VercelAiSdkProviderConfigSchema,
 	OpenAiCompatibleProviderConfigSchema,
 ]);
 type ProviderConfig = z.infer<typeof ProviderConfigSchema>;

@@ -105,12 +105,18 @@ const decryptEnvelope = async (
 	}
 
 	const dataKey = await importKey(new Uint8Array(dataKeyBytes), "decrypt");
-	const plaintext = await crypto.subtle.decrypt(
-		encryptionParams(base64ToBytes(envelope.dataIv), additionalData),
-		dataKey,
-		base64ToBytes(envelope.ciphertext),
-	);
-	return new TextDecoder().decode(plaintext);
+	try {
+		const plaintext = await crypto.subtle.decrypt(
+			encryptionParams(base64ToBytes(envelope.dataIv), additionalData),
+			dataKey,
+			base64ToBytes(envelope.ciphertext),
+		);
+		return new TextDecoder().decode(plaintext);
+	} catch (error) {
+		throw new Error("provider-config: encrypted config failed authentication", {
+			cause: error,
+		});
+	}
 };
 
 export { bytesToBase64, decryptEnvelope, encryptEnvelope };

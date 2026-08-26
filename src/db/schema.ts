@@ -40,7 +40,6 @@ const vercelAiSdkProviderKinds = [
 	"groq",
 	"xai",
 ] as const;
-type VercelAiSdkProviderKind = (typeof vercelAiSdkProviderKinds)[number];
 
 const llmProviderKinds = [
 	...vercelAiSdkProviderKinds,
@@ -247,6 +246,5 @@ export type {
 	LlmProviderKind,
 	RateableUnitKey,
 	RateableUnitKind,
-	VercelAiSdkProviderKind,
 	WatchStatus,
 };
