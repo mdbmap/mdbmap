@@ -43,6 +43,11 @@ const reviewResearchProposal = async (
 		proposal.kind,
 		proposal.assertionId,
 	);
+	if (promoted === "missing") {
+		const result = { kind: "escalated", reason: "missing-assertion" } as const;
+		await deps.escalate(proposal, result.reason);
+		return result;
+	}
 	return promoted === "promoted" ? { kind: "promoted" } : { kind: "stale" };
 };
 

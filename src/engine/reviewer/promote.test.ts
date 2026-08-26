@@ -168,7 +168,7 @@ describe("promoteAssertion", () => {
 		expect(await promoteAssertion(db, "title", id)).toBe("already-moved");
 	});
 
-	it("reports already-moved for an id that does not exist", async () => {
-		expect(await promoteAssertion(db, "title", 999_999)).toBe("already-moved");
+	it("reports missing for an id that does not exist", async () => {
+		expect(await promoteAssertion(db, "title", 999_999)).toBe("missing");
 	});
 });

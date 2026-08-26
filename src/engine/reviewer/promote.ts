@@ -9,60 +9,21 @@ import {
 
 import type { ProposalKind } from "./types.ts";
 
-type PromoteResult = "already-moved" | "promoted";
+type PromoteResult = "already-moved" | "missing" | "promoted";
 
 const RESEARCH = "llm-research" as const;
 const VERIFIED = "llm-verified" as const;
 
-// One D1 UPDATE per table, each conditioned on the row still carrying
-// `llm-research` so the caller learns whether its own promote applied.
-const promoteRow = async (
-	db: Db,
-	kind: ProposalKind,
-	assertionId: number,
-): Promise<number> => {
-	switch (kind) {
-		case "instalment": {
-			const result = await db
-				.update(instalmentAssertions)
-				.set({ source: VERIFIED })
-				.where(
-					and(
-						eq(instalmentAssertions.id, assertionId),
-						eq(instalmentAssertions.source, RESEARCH),
-					),
-				)
-				.run();
-			return result.meta.changes;
-		}
-		case "relation": {
-			const result = await db
-				.update(relationAssertions)
-				.set({ source: VERIFIED })
-				.where(
-					and(
-						eq(relationAssertions.id, assertionId),
-						eq(relationAssertions.source, RESEARCH),
-					),
-				)
-				.run();
-			return result.meta.changes;
-		}
-		case "title": {
-			const result = await db
-				.update(titleAssertions)
-				.set({ source: VERIFIED })
-				.where(
-					and(
-						eq(titleAssertions.id, assertionId),
-						eq(titleAssertions.source, RESEARCH),
-					),
-				)
-				.run();
-			return result.meta.changes;
-		}
-	}
-};
+const assertionTables = {
+	instalment: instalmentAssertions,
+	relation: relationAssertions,
+	title: titleAssertions,
+} as const satisfies Record<
+	ProposalKind,
+	| typeof instalmentAssertions
+	| typeof relationAssertions
+	| typeof titleAssertions
+>;
 
 // CAS the assertion's provenance from `llm-research` to `llm-verified` — epic
 // #28's derived source precedence already ranks the latter above the former,
@@ -74,8 +35,22 @@ const promoteAssertion = async (
 	kind: ProposalKind,
 	assertionId: number,
 ): Promise<PromoteResult> => {
-	const changes = await promoteRow(db, kind, assertionId);
-	return changes > 0 ? "promoted" : "already-moved";
+	const table = assertionTables[kind];
+	const result = await db
+		.update(table)
+		.set({ source: VERIFIED })
+		.where(and(eq(table.id, assertionId), eq(table.source, RESEARCH)))
+		.run();
+	if (result.meta.changes > 0) {
+		return "promoted";
+	}
+
+	const existing = await db
+		.select({ id: table.id })
+		.from(table)
+		.where(eq(table.id, assertionId))
+		.get();
+	return existing === undefined ? "missing" : "already-moved";
 };
 
 export { promoteAssertion };

@@ -9,7 +9,11 @@ import type { RawVerdict } from "./verdict-schema.ts";
 // directly; the provider store (#57/#58) supplies the real model call.
 type ReviewJudge = (proposal: ReviewProposal) => Promisable<unknown>;
 
-type EscalationReason = "disputing" | "malformed-output" | "unable-to-tell";
+type EscalationReason =
+	| "disputing"
+	| "malformed-output"
+	| "missing-assertion"
+	| "unable-to-tell";
 
 type ReviewOutcome =
 	| { readonly kind: "escalated"; readonly reason: EscalationReason }

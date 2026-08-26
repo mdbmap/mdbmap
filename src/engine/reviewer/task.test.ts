@@ -170,4 +170,23 @@ describe("reviewResearchProposal", () => {
 		expect(result).toEqual({ kind: "stale" });
 		expect(await readSource(db, proposal.assertionId)).toBe("manual");
 	});
+
+	it("escalates a supporting verdict for a missing assertion", async () => {
+		const proposal = {
+			...(await seedProposal(db)),
+			assertionId: 999_999,
+		};
+		const escalations: Escalation[] = [];
+		const result = await reviewResearchProposal(
+			proposal,
+			deps(db, { rationale: "both sides agree", verdict: "supporting" }, escalations),
+		);
+		expect(result).toEqual({
+			kind: "escalated",
+			reason: "missing-assertion",
+		});
+		expect(escalations).toEqual([
+			{ proposal, reason: "missing-assertion" },
+		]);
+	});
 });
