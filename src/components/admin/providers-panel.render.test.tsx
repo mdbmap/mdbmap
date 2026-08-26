@@ -81,5 +81,7 @@ describe("ProvidersPanel", () => {
 		expect(html).toContain("gpt-5");
 		expect(html).not.toContain("sk-");
 		expect(html).toContain("never shown again");
+		expect(html).toContain('type="password"');
+		expect(html).toMatch(/value=""/);
 	});
 });

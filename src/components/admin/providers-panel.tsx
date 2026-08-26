@@ -376,6 +376,7 @@ export function ProvidersPanel() {
 	const listQuery = useQuery(orpc.providers.list.queryOptions());
 	const timingQuery = useQuery(orpc.providers.getTiming.queryOptions());
 	const [editing, setEditing] = useState<ProviderRow | undefined>(undefined);
+	const [createFormKey, setCreateFormKey] = useState(0);
 
 	const invalidate = useCallback(async () => {
 		await Promise.all([
@@ -385,7 +386,12 @@ export function ProvidersPanel() {
 	}, [listKey, queryClient, timingKey]);
 
 	const createMutation = useMutation(
-		orpc.providers.create.mutationOptions({ onSuccess: invalidate }),
+		orpc.providers.create.mutationOptions({
+			onSuccess: async () => {
+				setCreateFormKey((key) => key + 1);
+				await invalidate();
+			},
+		}),
 	);
 	const updateMutation = useMutation(
 		orpc.providers.update.mutationOptions({
@@ -479,7 +485,7 @@ export function ProvidersPanel() {
 				{editing === undefined ? (
 					<ProviderForm
 						editing={undefined}
-						key="create"
+						key={`create-${String(createFormKey)}`}
 						onCancel={onCancelEdit}
 						onSubmit={onCreate}
 						pending={creating}
