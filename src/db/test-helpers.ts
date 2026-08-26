@@ -1,36 +1,18 @@
 /// <reference types="@cloudflare/vitest-pool-workers/types" />
 
+import { getTableName } from "drizzle-orm";
 import { env } from "cloudflare:workers";
 
-import { createDb } from "./index.ts";
+import { createDb, schema } from "./index.ts";
 
-const tables = [
-	"absence_assertions",
-	"atomic_write_gates",
-	"instalment_assertions",
-	"relation_assertions",
-	"title_assertions",
-	"title_group_aliases",
-	"service_instalments",
-	"service_titles",
-	"title_groups",
-	"content_units",
-	"service_coverages",
-	"pending_group_candidates",
-	"account",
-	"episode_progress",
-	"personal_rating",
-	"session",
-	"watch_status",
-	"user",
-	"verification",
-	"todos",
-] as const;
+const tables = Object.values(schema).map((table) => getTableName(table));
 
 const freshDb = async () => {
 	await env.DB.batch([
+		env.DB.prepare("PRAGMA foreign_keys = OFF"),
 		...tables.map((table) => env.DB.prepare(`DELETE FROM ${table}`)),
 		env.DB.prepare("DELETE FROM sqlite_sequence"),
+		env.DB.prepare("PRAGMA foreign_keys = ON"),
 	]);
 	return createDb(env.DB);
 };

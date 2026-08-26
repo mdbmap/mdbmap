@@ -35,12 +35,9 @@ export default defineConfig({
 			},
 		},
 		{
-			// Node-only test harness: builds throwaway SQLite files for the async
-			// driver, so the Workers-runtime import ban does not apply.
-			files: ["src/db/test-helpers.ts"],
+			files: ["src/server.ts"],
 			rules: {
-				"import/no-nodejs-modules": "off",
-				"node/no-sync": "off",
+				"import/no-default-export": "off",
 			},
 		},
 	],

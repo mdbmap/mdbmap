@@ -1,12 +1,12 @@
 import { and, eq, inArray } from "drizzle-orm";
 
+import { runAtomicBatch } from "@/db/atomic";
+import type { PreparedBatch } from "@/db/atomic";
 import {
-	absenceAssertions,
 	candidateSubjectKey,
 	contentUnits,
 	instalmentAssertions,
 	pendingGroupCandidates,
-	relationAssertions,
 	serviceTitles,
 	titleAssertions,
 	titleGroups,
@@ -64,6 +64,7 @@ type MembershipOutcome =
 	| { readonly kind: "missing" }
 	| { readonly kind: "not-open" }
 	| { readonly kind: "rejected" }
+	| { readonly kind: "stale" }
 	| { readonly kind: "wrong-kind" };
 
 // The union of the competing groups' member titles, ranked survivor-first then by
@@ -170,7 +171,13 @@ const acceptMembership = async (
 		if (result.kind === "accepted") {
 			return { attachedTitleIds: result.attachedTitleIds, kind: "accepted" };
 		}
-		return result.kind === "not-open" ? { kind: "not-open" } : { kind: "missing" };
+		if (result.kind === "not-open") {
+			return { kind: "not-open" };
+		}
+		if (result.kind === "stale") {
+			return { kind: "stale" };
+		}
+		return { kind: "missing" };
 	}
 	if (candidate.kind === "structural") {
 		return acceptStructural(db, candidate);
@@ -229,86 +236,76 @@ type SettleOutcome =
 // `wrong-kind` when the evidence names no edge to write.
 type ProposalWrite = "collision" | "written" | "wrong-kind";
 
-const wroteRow = (rows: readonly unknown[]): ProposalWrite =>
-	rows[0] === undefined ? "collision" : "written";
+type ProposalInsert =
+	| {
+			readonly binds: readonly unknown[];
+			readonly kind: "insert";
+			readonly sql: string;
+	  }
+	| { readonly kind: "wrong-kind" };
 
-// Attach the proposed side of a conflict as a `manual` assertion — the curated
-// evidence a recompute preserves. Each kind writes exactly the edge its evidence
-// describes, and reports whether the insert actually landed so a silent collision
-// never closes the candidate as accepted.
-const acceptProposal = async (
-	db: GatewayDb,
+// INSERT OR IGNORE … SELECT form so the gate row can suppress the write when the
+// CAS batch lost, and so `changes()` after the statement reports a real insert.
+const proposalInsert = (
 	evidence: ConflictEvidence,
 	relationIndex: number,
-): Promise<ProposalWrite> => {
+): ProposalInsert => {
 	switch (evidence.kind) {
 		case "absence-assertion-conflict": {
-			return wroteRow(
-				await db
-					.insert(absenceAssertions)
-					.values({
-						coverageRevision: evidence.coverageRevision,
-						source: MANUAL,
-						targetService: evidence.targetService,
-						unitId: evidence.unitId,
-					})
-					.onConflictDoNothing()
-					.returning()
-					.all(),
-			);
+			return {
+				binds: [
+					evidence.coverageRevision,
+					evidence.targetService,
+					evidence.unitId,
+				],
+				kind: "insert",
+				sql: `INSERT OR IGNORE INTO absence_assertions
+					(coverage_revision, source, target_service, unit_id)
+					SELECT ?, 'manual', ?, ?
+					WHERE EXISTS (SELECT 1 FROM atomic_write_gates WHERE operation_id = ?)`,
+			};
 		}
 		case "continuity-conflict": {
 			const relation = evidence.competingRelations[relationIndex];
 			if (relation === undefined) {
-				return "wrong-kind";
+				return { kind: "wrong-kind" };
 			}
-			return wroteRow(
-				await db
-					.insert(relationAssertions)
-					.values({
-						confidence: "high",
-						fromTitleId: relation.fromTitleId,
-						source: MANUAL,
-						toTitleId: relation.toTitleId,
-					})
-					.onConflictDoNothing()
-					.returning()
-					.all(),
-			);
+			return {
+				binds: [relation.fromTitleId, relation.toTitleId],
+				kind: "insert",
+				sql: `INSERT OR IGNORE INTO relation_assertions
+					(confidence, from_title_id, source, to_title_id)
+					SELECT 'high', ?, 'manual', ?
+					WHERE EXISTS (SELECT 1 FROM atomic_write_gates WHERE operation_id = ?)`,
+			};
 		}
 		case "instalment-assertion-conflict": {
-			return wroteRow(
-				await db
-					.insert(instalmentAssertions)
-					.values({
-						confidence: evidence.proposed.confidence,
-						instalmentId: evidence.instalmentId,
-						source: MANUAL,
-						unitId: evidence.proposed.unitId,
-					})
-					.onConflictDoNothing()
-					.returning()
-					.all(),
-			);
+			return {
+				binds: [
+					evidence.proposed.confidence,
+					evidence.instalmentId,
+					evidence.proposed.unitId,
+				],
+				kind: "insert",
+				sql: `INSERT OR IGNORE INTO instalment_assertions
+					(confidence, instalment_id, source, unit_id)
+					SELECT ?, ?, 'manual', ?
+					WHERE EXISTS (SELECT 1 FROM atomic_write_gates WHERE operation_id = ?)`,
+			};
 		}
 		case "title-assertion-conflict": {
 			const { highId, lowId } = canonicalTitlePair(
 				evidence.proposed.titleAId,
 				evidence.proposed.titleBId,
 			);
-			return wroteRow(
-				await db
-					.insert(titleAssertions)
-					.values({
-						confidence: evidence.proposed.confidence,
-						source: MANUAL,
-						titleAId: lowId,
-						titleBId: highId,
-					})
-					.onConflictDoNothing()
-					.returning()
-					.all(),
-			);
+			return {
+				binds: [evidence.proposed.confidence, lowId, highId],
+				kind: "insert",
+				sql: `INSERT OR IGNORE INTO title_assertions
+					(confidence, source, title_a_id, title_b_id)
+					SELECT ?, 'manual', ?, ?
+					WHERE EXISTS (SELECT 1 FROM atomic_write_gates WHERE operation_id = ?)`,
+			};
 		}
 	}
 };
@@ -322,9 +319,23 @@ const conflictEvidence = (row: CandidateRow): ConflictEvidence | undefined => {
 		: evidence;
 };
 
+const settleGateLost = async (
+	db: GatewayDb,
+	candidateId: number,
+): Promise<SettleOutcome> => {
+	const current = await loadCandidate(db, candidateId);
+	if (current === undefined) {
+		return { kind: "missing" };
+	}
+	// Still open after a lost gate: concurrent writer raced; leave the row for retry.
+	return current.status === "open" ? { kind: "collision" } : { kind: "not-open" };
+};
+
 // Settle a queued conflict. Accepting publishes the proposed side as a `manual`
 // assertion and closes the row; rejecting records the verdict and leaves the
 // published side standing, so readers keep the previous complete revision.
+// Accept and reject both run as one gated D1 batch so two moderators cannot both
+// pass an open check and leave a published assertion with the row still open.
 const settleConflict = async (
 	db: GatewayDb,
 	input: SettleInput,
@@ -341,27 +352,81 @@ const settleConflict = async (
 		return { kind: "wrong-kind" };
 	}
 	if (!input.accept) {
-		await db
-			.update(pendingGroupCandidates)
-			.set({ status: "rejected" })
-			.where(eq(pendingGroupCandidates.id, input.candidateId))
-			.run();
+		const { acquired } = await runAtomicBatch(db, (database, operationId) => {
+			const statements: PreparedBatch = [
+				database
+					.prepare(
+						`INSERT INTO atomic_write_gates (operation_id)
+							SELECT ? WHERE EXISTS (
+								SELECT 1 FROM pending_group_candidates
+								WHERE id = ? AND status = 'open'
+							)
+							RETURNING operation_id`,
+					)
+					.bind(operationId, input.candidateId),
+				database
+					.prepare(
+						`UPDATE pending_group_candidates SET status = 'rejected'
+							WHERE id = ? AND status = 'open' AND EXISTS (
+								SELECT 1 FROM atomic_write_gates WHERE operation_id = ?
+							)`,
+					)
+					.bind(input.candidateId, operationId),
+				database
+					.prepare("DELETE FROM atomic_write_gates WHERE operation_id = ?")
+					.bind(operationId),
+			];
+			return statements;
+		});
+		if (!acquired) {
+			return settleGateLost(db, input.candidateId);
+		}
 		return { kind: "rejected" };
 	}
-	const write = await acceptProposal(db, evidence, input.relationIndex ?? 0);
-	if (write === "wrong-kind") {
+	const insert = proposalInsert(evidence, input.relationIndex ?? 0);
+	if (insert.kind === "wrong-kind") {
 		return { kind: "wrong-kind" };
 	}
-	// A silent collision published nothing, so the row stays open for a moderator
-	// to settle against whatever already occupies the edge.
+	const { acquired, results } = await runAtomicBatch(db, (database, operationId) => {
+		const statements: PreparedBatch = [
+			database
+				.prepare(
+					`INSERT INTO atomic_write_gates (operation_id)
+						SELECT ? WHERE EXISTS (
+							SELECT 1 FROM pending_group_candidates
+							WHERE id = ? AND status = 'open'
+						)
+						RETURNING operation_id`,
+				)
+				.bind(operationId, input.candidateId),
+			database.prepare(insert.sql).bind(...insert.binds, operationId),
+			database
+				.prepare(
+					`UPDATE pending_group_candidates SET status = 'accepted'
+						WHERE id = ? AND status = 'open'
+						AND EXISTS (
+							SELECT 1 FROM atomic_write_gates WHERE operation_id = ?
+						)
+						AND changes() > 0`,
+				)
+				.bind(input.candidateId, operationId),
+			database
+				.prepare("DELETE FROM atomic_write_gates WHERE operation_id = ?")
+				.bind(operationId),
+		];
+		return statements;
+	});
+	if (!acquired) {
+		return settleGateLost(db, input.candidateId);
+	}
+	const [, writeResult] = results;
+	const write: ProposalWrite =
+		writeResult !== undefined && writeResult.meta.changes > 0
+			? "written"
+			: "collision";
 	if (write === "collision") {
 		return { kind: "collision" };
 	}
-	await db
-		.update(pendingGroupCandidates)
-		.set({ status: "accepted" })
-		.where(eq(pendingGroupCandidates.id, input.candidateId))
-		.run();
 	return { kind: "settled" };
 };
 
