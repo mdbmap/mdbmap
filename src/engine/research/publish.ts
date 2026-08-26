@@ -26,6 +26,11 @@ import type { ServiceRef } from "./persist.ts";
 const RESEARCH = "llm-research" as const;
 const ROW_MISSING = "research publish: expected an inserted row";
 
+type LowConfidenceEvidence = Extract<
+	CandidateEvidence,
+	{ kind: "low-confidence-flag" }
+>;
+
 interface TitleProposal {
 	readonly claim: string;
 	readonly evidence: readonly CorroborationEvidence[];
@@ -108,11 +113,32 @@ const publishedResult = (
 	reviewFlag: decision.reviewFlag,
 });
 
+const flagEvidenceHash = (evidence: LowConfidenceEvidence): string => {
+	switch (evidence.target) {
+		case "instalment": {
+			return `low-confidence-flag:${evidence.instalmentId}:${evidence.unitId}`;
+		}
+		case "title": {
+			const [titleAId, titleBId] = ascendingPair(
+				evidence.titleAId,
+				evidence.titleBId,
+			);
+			return `low-confidence-flag:title:${titleAId}:${titleBId}`;
+		}
+		case "relation": {
+			const [fromTitleId, toTitleId] = ascendingPair(
+				evidence.fromTitleId,
+				evidence.toTitleId,
+			);
+			return `low-confidence-flag:relation:${fromTitleId}:${toTitleId}`;
+		}
+	}
+};
+
 const queueFlag = async (
 	db: Db,
 	input: {
-		readonly evidence: CandidateEvidence;
-		readonly evidenceHash: string;
+		readonly evidence: LowConfidenceEvidence;
 		readonly subject: CandidateSubject;
 	},
 ): Promise<void> => {
@@ -120,7 +146,7 @@ const queueFlag = async (
 		.insert(pendingGroupCandidates)
 		.values({
 			evidence: input.evidence,
-			evidenceHash: input.evidenceHash,
+			evidenceHash: flagEvidenceHash(input.evidence),
 			kind: "low-confidence-flag",
 			subject: input.subject,
 			subjectKey: candidateSubjectKey(input.subject),
@@ -138,10 +164,6 @@ const queueInstalmentFlag = async (
 		readonly unitId: string;
 	},
 ): Promise<void> => {
-	const subject = {
-		subjectType: "title" as const,
-		titleId: input.titleId,
-	};
 	await queueFlag(db, {
 		evidence: {
 			confidence: input.assertionConfidence,
@@ -151,8 +173,10 @@ const queueInstalmentFlag = async (
 			target: "instalment",
 			unitId: input.unitId,
 		},
-		evidenceHash: `low-confidence-flag:${input.instalmentId}:${input.unitId}`,
-		subject,
+		subject: {
+			subjectType: "title",
+			titleId: input.titleId,
+		},
 	});
 };
 
@@ -164,22 +188,21 @@ const queueTitlePairFlag = async (
 		readonly titleBId: number;
 	},
 ): Promise<void> => {
-	const subject = {
-		subjectType: "title-pair" as const,
-		titleAId: input.titleAId,
-		titleBId: input.titleBId,
-	};
+	const [titleAId, titleBId] = ascendingPair(input.titleAId, input.titleBId);
 	await queueFlag(db, {
 		evidence: {
 			confidence: input.assertionConfidence,
 			kind: "low-confidence-flag",
 			source: RESEARCH,
 			target: "title",
-			titleAId: input.titleAId,
-			titleBId: input.titleBId,
+			titleAId,
+			titleBId,
 		},
-		evidenceHash: `low-confidence-flag:title:${input.titleAId}:${input.titleBId}`,
-		subject,
+		subject: {
+			subjectType: "title-pair",
+			titleAId,
+			titleBId,
+		},
 	});
 };
 
@@ -191,11 +214,10 @@ const queueRelationFlag = async (
 		readonly toTitleId: number;
 	},
 ): Promise<void> => {
-	const subject = {
-		subjectType: "title-pair" as const,
-		titleAId: input.fromTitleId,
-		titleBId: input.toTitleId,
-	};
+	const [titleAId, titleBId] = ascendingPair(
+		input.fromTitleId,
+		input.toTitleId,
+	);
 	await queueFlag(db, {
 		evidence: {
 			confidence: input.assertionConfidence,
@@ -205,8 +227,11 @@ const queueRelationFlag = async (
 			target: "relation",
 			toTitleId: input.toTitleId,
 		},
-		evidenceHash: `low-confidence-flag:relation:${input.fromTitleId}:${input.toTitleId}`,
-		subject,
+		subject: {
+			subjectType: "title-pair",
+			titleAId,
+			titleBId,
+		},
 	});
 };
 
@@ -255,6 +280,46 @@ const publishTitleProposal = async (
 	return publishedResult(proposal, assertionId, decision);
 };
 
+const existingRelationAssertion = async (
+	db: Db,
+	fromTitleId: number,
+	toTitleId: number,
+): Promise<number | undefined> => {
+	const existing = await db
+		.select({ id: relationAssertions.id })
+		.from(relationAssertions)
+		.where(
+			and(
+				eq(relationAssertions.fromTitleId, fromTitleId),
+				eq(relationAssertions.toTitleId, toTitleId),
+			),
+		)
+		.all();
+	return existing[0]?.id;
+};
+
+const insertRelationAssertion = async (
+	db: Db,
+	input: {
+		readonly confidence: "high" | "low";
+		readonly fromTitleId: number;
+		readonly toTitleId: number;
+	},
+): Promise<number> =>
+	one(
+		await db
+			.insert(relationAssertions)
+			.values({
+				confidence: input.confidence,
+				fromTitleId: input.fromTitleId,
+				source: RESEARCH,
+				toTitleId: input.toTitleId,
+			})
+			.returning()
+			.all(),
+		ROW_MISSING,
+	).id;
+
 const publishRelationProposal = async (
 	db: Db,
 	proposal: RelationProposal,
@@ -262,19 +327,13 @@ const publishRelationProposal = async (
 	const decision = corroborate(proposal.evidence);
 	const fromTitleId = await requireTitleId(db, proposal.from);
 	const toTitleId = await requireTitleId(db, proposal.to);
-	const assertionId = one(
-		await db
-			.insert(relationAssertions)
-			.values({
-				confidence: decision.confidence,
-				fromTitleId,
-				source: RESEARCH,
-				toTitleId,
-			})
-			.returning()
-			.all(),
-		ROW_MISSING,
-	).id;
+	const assertionId =
+		(await existingRelationAssertion(db, fromTitleId, toTitleId)) ??
+		(await insertRelationAssertion(db, {
+			confidence: decision.confidence,
+			fromTitleId,
+			toTitleId,
+		}));
 
 	if (decision.reviewFlag !== undefined) {
 		await queueRelationFlag(db, {
@@ -287,30 +346,72 @@ const publishRelationProposal = async (
 	return publishedResult(proposal, assertionId, decision);
 };
 
-const publishInstalmentProposal = async (
+const resolveInstalmentUnitId = async (
 	db: Db,
 	proposal: InstalmentProposal,
-): Promise<PublishedResearch> => {
-	const decision = corroborate(proposal.evidence);
-	const unitId =
-		proposal.unitId ??
-		one(
-			await db.insert(contentUnits).values({}).returning().all(),
-			ROW_MISSING,
-		).id;
-	const assertionId = one(
+): Promise<string> => {
+	if (proposal.unitId !== undefined) {
+		return proposal.unitId;
+	}
+	return one(
+		await db.insert(contentUnits).values({}).returning().all(),
+		ROW_MISSING,
+	).id;
+};
+
+const existingInstalmentAssertion = async (
+	db: Db,
+	instalmentId: number,
+	unitId: string,
+): Promise<number | undefined> => {
+	const existing = await db
+		.select({ id: instalmentAssertions.id })
+		.from(instalmentAssertions)
+		.where(
+			and(
+				eq(instalmentAssertions.instalmentId, instalmentId),
+				eq(instalmentAssertions.unitId, unitId),
+			),
+		)
+		.all();
+	return existing[0]?.id;
+};
+
+const insertInstalmentAssertion = async (
+	db: Db,
+	input: {
+		readonly confidence: "high" | "low";
+		readonly instalmentId: number;
+		readonly unitId: string;
+	},
+): Promise<number> =>
+	one(
 		await db
 			.insert(instalmentAssertions)
 			.values({
-				confidence: decision.confidence,
-				instalmentId: proposal.instalmentId,
+				confidence: input.confidence,
+				instalmentId: input.instalmentId,
 				source: RESEARCH,
-				unitId,
+				unitId: input.unitId,
 			})
 			.returning()
 			.all(),
 		ROW_MISSING,
 	).id;
+
+const publishInstalmentProposal = async (
+	db: Db,
+	proposal: InstalmentProposal,
+): Promise<PublishedResearch> => {
+	const decision = corroborate(proposal.evidence);
+	const unitId = await resolveInstalmentUnitId(db, proposal);
+	const assertionId =
+		(await existingInstalmentAssertion(db, proposal.instalmentId, unitId)) ??
+		(await insertInstalmentAssertion(db, {
+			confidence: decision.confidence,
+			instalmentId: proposal.instalmentId,
+			unitId,
+		}));
 
 	if (decision.reviewFlag !== undefined) {
 		const spoke = one(
@@ -364,8 +465,6 @@ const publishRemaining = async (
 	return publishRemaining(db, tail, enqueueReview, [...done, result]);
 };
 
-// Corroborate, persist as `llm-research`, then hand each proposal to the
-// existing reviewer (issue #61) for promotion. The gate never skips.
 const publishResearchProposals = async (
 	db: Db,
 	proposals: readonly ResearchProposal[],

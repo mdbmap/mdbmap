@@ -1,6 +1,3 @@
-// Official operator hosts the research scrape tool may hit (ADR-0004). Community
-// wikis and fan sites are never admitted — they also never count toward the
-// corroboration gate.
 const officialOperatorHosts: Readonly<Record<string, readonly string[]>> = {
 	anidb: ["anidb.net", "api.anidb.net"],
 	anilist: ["anilist.co", "graphql.anilist.co"],
@@ -19,21 +16,17 @@ const hostOf = (url: string): string | undefined => {
 	}
 };
 
-// Prefer the operator's API host so catalogue tool results carry a real
-// official endpoint URL rather than a placeholder provenance string.
-const catalogueRequestUrl = (service: string, serviceId: string): string => {
+// Official API origin only — never invent path segments the client did not hit.
+const catalogueRequestUrl = (service: string): string => {
 	const hosts = officialOperatorHosts[service.toLowerCase()] ?? [];
 	const host =
 		hosts.find((candidate) => candidate.startsWith("api")) ?? hosts[0];
 	if (host === undefined) {
 		throw new Error(`research domains: no official host for ${service}`);
 	}
-	return `https://${host}/title/${encodeURIComponent(serviceId)}`;
+	return `https://${host}`;
 };
 
-// Exact host match only — `wiki.anidb.net` must not ride on `anidb.net`.
-// True when `url` belongs to an official operator domain for the named service
-// (or any mapping service when `operator` is omitted).
 const isOfficialOperatorUrl = (
 	url: string,
 	operator?: string,

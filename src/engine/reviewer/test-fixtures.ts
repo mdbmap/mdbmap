@@ -1,15 +1,9 @@
 import { serviceTitles, titleGroups } from "@/db/engine-schema";
 import type { freshDb } from "@/db/test-helpers";
 
-type TestDb = Awaited<ReturnType<typeof freshDb>>;
+import { one } from "@/db";
 
-const one = <Row>(rows: readonly Row[]): Row => {
-	const [row] = rows;
-	if (row === undefined) {
-		throw new Error("expected an inserted row");
-	}
-	return row;
-};
+type TestDb = Awaited<ReturnType<typeof freshDb>>;
 
 const ascendingPair = (left: number, right: number): readonly [number, number] =>
 	left < right ? [left, right] : [right, left];
@@ -31,5 +25,6 @@ const seedTitle = async (db: TestDb, service: string, serviceId: string) => {
 	);
 };
 
-export { ascendingPair, one, seedTitle };
+export { one } from "@/db";
+export { ascendingPair, seedTitle };
 export type { TestDb };

@@ -50,7 +50,9 @@ export type {
 } from "./timing.ts";
 export { buildResearchTools } from "./tools.ts";
 export type {
+	BoundApiAvailableResult,
 	BoundApiToolResult,
+	BoundApiUnavailableResult,
 	BoundHintToolResult,
 	BoundScrapeToolResult,
 	BoundToolResult,

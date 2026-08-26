@@ -13,16 +13,10 @@ import { catalogueRequestUrl, isOfficialOperatorUrl } from "./domains.ts";
 import { persistCatalogueSpokes } from "./persist.ts";
 import type { PersistedTitle, ServiceRef } from "./persist.ts";
 
-// Per-service catalogue fetch used by research tools. Real wiring shares the
-// same client the verify/discovery path uses; tests inject fixtures.
 type ResearchCatalogueClient = CatalogueClient & {
-	// Optional richer fetch that already carries instalment locators so the
-	// tool can persist spokes without a second round trip.
 	readonly fetchCatalogue?: (
 		serviceId: string,
 	) => Promisable<unknown>;
-	// Optional override for the HTTP URL this client hits; defaults to the
-	// operator's official API host from the domain allowlist.
 	readonly requestUrl?: (serviceId: string) => string;
 };
 
@@ -39,15 +33,27 @@ interface ScrapeClient {
 	readonly fetchPage: (request: ScrapeRequest) => Promisable<unknown>;
 }
 
-interface BoundApiToolResult {
+interface BoundApiAvailableResult {
 	readonly kind: "api";
 	readonly operator: string;
 	readonly persisted: PersistedTitle;
 	readonly record: ResearchCatalogueRecord;
 	readonly ref: ServiceRef;
+	readonly unavailable?: undefined;
 	readonly url: string;
 	readonly validated: true;
 }
+
+interface BoundApiUnavailableResult {
+	readonly kind: "api";
+	readonly operator: string;
+	readonly ref: ServiceRef;
+	readonly unavailable: true;
+	readonly url: string;
+	readonly validated: false;
+}
+
+type BoundApiToolResult = BoundApiAvailableResult | BoundApiUnavailableResult;
 
 interface BoundHintToolResult {
 	readonly entry: SimklEntry;
@@ -88,6 +94,15 @@ interface BuildToolsetInput {
 const objectPayload = (raw: unknown): object | undefined =>
 	raw instanceof Object ? raw : undefined;
 
+const resolveCatalogueUrl = (
+	client: ResearchCatalogueClient,
+	service: string,
+	serviceId: string,
+): string =>
+	client.requestUrl === undefined
+		? catalogueRequestUrl(service)
+		: client.requestUrl(serviceId);
+
 const buildResearchTools = (input: BuildToolsetInput): ResearchToolset => {
 	const { clients, db, groupId, scrape, simkl } = input;
 
@@ -97,25 +112,25 @@ const buildResearchTools = (input: BuildToolsetInput): ResearchToolset => {
 			if (client === undefined) {
 				throw new Error(`research tools: no catalogue client for ${service}`);
 			}
+			const ref = { service, serviceId };
+			const url = resolveCatalogueUrl(client, service, serviceId);
 			const raw =
 				client.fetchCatalogue === undefined
 					? await client.fetchTitle(serviceId)
 					: await client.fetchCatalogue(serviceId);
 			if (raw === undefined) {
-				throw new Error(
-					`research tools: ${service}:${serviceId} returned nothing`,
-				);
+				return {
+					kind: "api",
+					operator: service,
+					ref,
+					unavailable: true,
+					url,
+					validated: false,
+				};
 			}
 			const objectRaw = objectPayload(raw);
-			const record = parseResearchCatalogue(
-				objectRaw ?? raw,
-			);
-			const ref = { service, serviceId };
+			const record = parseResearchCatalogue(objectRaw ?? raw);
 			const persisted = await persistCatalogueSpokes(db, groupId, ref, record);
-			const url =
-				client.requestUrl === undefined
-					? catalogueRequestUrl(service, serviceId)
-					: client.requestUrl(serviceId);
 			return {
 				kind: "api",
 				operator: service,
@@ -135,8 +150,6 @@ const buildResearchTools = (input: BuildToolsetInput): ResearchToolset => {
 			if (entry === undefined) {
 				throw new Error(`research tools: SIMKL entry ${simklId} missing`);
 			}
-			// SIMKL is a hint source only (ADR-0004) — never persisted as a spoke
-			// and never counted toward corroboration.
 			return { entry, kind: "simkl-hint" };
 		},
 
@@ -162,7 +175,9 @@ const buildResearchTools = (input: BuildToolsetInput): ResearchToolset => {
 
 export { buildResearchTools };
 export type {
+	BoundApiAvailableResult,
 	BoundApiToolResult,
+	BoundApiUnavailableResult,
 	BoundHintToolResult,
 	BoundScrapeToolResult,
 	BoundToolResult,

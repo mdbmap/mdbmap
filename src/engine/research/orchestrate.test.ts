@@ -1,7 +1,10 @@
 import { eq } from "drizzle-orm";
 import { beforeEach, describe, expect, it } from "vitest";
 
+import { one } from "@/db";
 import {
+	contentUnits,
+	instalmentAssertions,
 	pendingGroupCandidates,
 	relationAssertions,
 	serviceInstalments,
@@ -21,17 +24,9 @@ import {
 	createMemoryTimingStore,
 	shouldRunResearch,
 } from "./timing.ts";
-import type { ResearchCatalogueClient } from "./tools.ts";
+import type { ResearchCatalogueClient, ResearchToolset } from "./tools.ts";
 
 type TestDb = Awaited<ReturnType<typeof freshDb>>;
-
-const one = <Row>(rows: readonly Row[]): Row => {
-	const [row] = rows;
-	if (row === undefined) {
-		throw new Error("expected a row");
-	}
-	return row;
-};
 
 const seedGroup = async (db: TestDb) =>
 	one(
@@ -105,10 +100,22 @@ const noopReview = async (): Promise<void> => {
 	await Promise.resolve();
 };
 
+const requireAvailable = async (
+	tools: ResearchToolset,
+	service: string,
+	serviceId: string,
+) => {
+	const fetched = await tools.fetchCatalogue(service, serviceId);
+	if (fetched.unavailable) {
+		throw new Error(`expected catalogue for ${service}:${serviceId}`);
+	}
+	return fetched;
+};
+
 const highTitleAgent: ResearchAgent = async ({ tools, provider }) => {
 	expect(provider.model).toBe("gpt-test");
-	const left = await tools.fetchCatalogue("tmdb", "1396");
-	const right = await tools.fetchCatalogue("tvdb", "81189");
+	const left = await requireAvailable(tools, "tmdb", "1396");
+	const right = await requireAvailable(tools, "tvdb", "81189");
 	expect(left.validated).toBe(true);
 	expect(right.persisted.spokes).toHaveLength(2);
 	return {
@@ -143,8 +150,8 @@ const highTitleAgent: ResearchAgent = async ({ tools, provider }) => {
 };
 
 const singleSourceAgent: ResearchAgent = async ({ tools }) => {
-	const left = await tools.fetchCatalogue("tmdb", "1");
-	const right = await tools.fetchCatalogue("tvdb", "2");
+	const left = await requireAvailable(tools, "tmdb", "1");
+	const right = await requireAvailable(tools, "tvdb", "2");
 	return {
 		proposals: [
 			{
@@ -169,8 +176,8 @@ const singleSourceAgent: ResearchAgent = async ({ tools }) => {
 };
 
 const weakRelationAgent: ResearchAgent = async ({ tools }) => {
-	const from = await tools.fetchCatalogue("tmdb", "1");
-	const to = await tools.fetchCatalogue("tvdb", "2");
+	const from = await requireAvailable(tools, "tmdb", "1");
+	const to = await requireAvailable(tools, "tvdb", "2");
 	return {
 		proposals: [
 			{
@@ -206,8 +213,8 @@ const simklHintAgent: ResearchAgent = async ({ tools }) => {
 	const hint = await tools.fetchSimklHint("999");
 	expect(hint.kind).toBe("simkl-hint");
 	expect(hint.entry.externalIds.mal).toBe("10");
-	const left = await tools.fetchCatalogue("tmdb", "100");
-	const right = await tools.fetchCatalogue("mal", "10");
+	const left = await requireAvailable(tools, "tmdb", "100");
+	const right = await requireAvailable(tools, "mal", "10");
 	return {
 		proposals: [
 			{
@@ -250,7 +257,7 @@ const refuseWikiAgent: ResearchAgent = async ({ tools, continuity }) => {
 };
 
 const weakInstalmentAgent: ResearchAgent = async ({ tools }) => {
-	const fetched = await tools.fetchCatalogue("tmdb", "42");
+	const fetched = await requireAvailable(tools, "tmdb", "42");
 	const spokeId = fetched.persisted.spokes[0]?.instalmentId;
 	if (spokeId === undefined) {
 		throw new Error("expected a spoke");
@@ -281,7 +288,7 @@ const weakInstalmentAgent: ResearchAgent = async ({ tools }) => {
 };
 
 const multiUnitWeakInstalment: ResearchAgent = async ({ tools }) => {
-	const fetched = await tools.fetchCatalogue("tmdb", "42");
+	const fetched = await requireAvailable(tools, "tmdb", "42");
 	const spokeId = fetched.persisted.spokes[0]?.instalmentId;
 	if (spokeId === undefined) {
 		throw new Error("expected a spoke");
@@ -317,6 +324,98 @@ const multiUnitWeakInstalment: ResearchAgent = async ({ tools }) => {
 		residue: [],
 	};
 };
+
+const silentSkipAgent: ResearchAgent = async ({ tools }) => {
+	const left = await requireAvailable(tools, "tmdb", "1");
+	const right = await requireAvailable(tools, "tvdb", "2");
+	return {
+		proposals: [
+			{
+				claim: "resolved pair only",
+				evidence: [
+					{
+						kind: "api",
+						official: true,
+						operator: "tmdb",
+						stance: "corroborates",
+						url: left.url,
+						validated: true,
+					},
+					{
+						kind: "api",
+						official: true,
+						operator: "tvdb",
+						stance: "corroborates",
+						url: right.url,
+						validated: true,
+					},
+				],
+				kind: "title",
+				left: left.ref,
+				right: right.ref,
+			},
+		],
+		residue: [],
+	};
+};
+
+const unavailableContinueAgent: ResearchAgent = async ({
+	tools,
+	continuity,
+}) => {
+	const missing = await tools.fetchCatalogue("tmdb", "missing");
+	expect(missing.unavailable).toBe(true);
+	expect(missing.validated).toBe(false);
+	return { proposals: [], residue: continuity.targetServices };
+};
+
+const idempotentRelationAgent: ResearchAgent = async ({ tools }) => {
+	const from = await requireAvailable(tools, "tmdb", "1");
+	const to = await requireAvailable(tools, "tvdb", "2");
+	const proposal = {
+		claim: "idempotent relation",
+		evidence: [
+			{
+				kind: "api" as const,
+				official: true as const,
+				operator: "tmdb",
+				stance: "corroborates" as const,
+				url: from.url,
+				validated: true as const,
+			},
+		],
+		from: from.ref,
+		kind: "relation" as const,
+		to: to.ref,
+	};
+	return { proposals: [proposal, proposal], residue: [] };
+};
+
+const idempotentInstalmentAgent = (unitId: string): ResearchAgent =>
+	async ({ tools }) => {
+		const fetched = await requireAvailable(tools, "tmdb", "42");
+		const spokeId = fetched.persisted.spokes[0]?.instalmentId;
+		if (spokeId === undefined) {
+			throw new Error("expected a spoke");
+		}
+		const proposal = {
+			claim: "idempotent instalment",
+			evidence: [
+				{
+					kind: "api" as const,
+					official: true as const,
+					operator: "tmdb",
+					stance: "corroborates" as const,
+					url: fetched.url,
+					validated: true as const,
+				},
+			],
+			instalmentId: spokeId,
+			kind: "instalment" as const,
+			unitId,
+		};
+		return { proposals: [proposal, proposal], residue: [] };
+	};
 
 describe("research timing policy", () => {
 	it("runs only when the configured timing matches the pipeline phase", () => {
@@ -535,8 +634,8 @@ describe("runResearchPass publish path", () => {
 		expect(flags[0]?.kind).toBe("low-confidence-flag");
 		expect(flags[0]?.evidence).toMatchObject({ target: "title" });
 		expect(flags[0]?.subject).toMatchObject({ subjectType: "title-pair" });
-		expect(outcome.published[0]?.review.evidence[0]?.url).toMatch(
-			/^https:\/\/api\.themoviedb\.org\//u,
+		expect(outcome.published[0]?.review.evidence[0]?.url).toBe(
+			"https://api.themoviedb.org",
 		);
 	});
 
@@ -770,5 +869,111 @@ describe("runResearchPass tools", () => {
 			expect(outcome.published).toHaveLength(2);
 		}
 		expect(await db.select().from(pendingGroupCandidates).all()).toHaveLength(2);
+	});
+
+	it("treats an undefined catalogue as unavailable without aborting the pass", async () => {
+		const outcome = await runResearchPass(continuity, "before-builds", {
+			agent: unavailableContinueAgent,
+			clients: {
+				tmdb: {
+					fetchTitle: async () => {
+						await Promise.resolve();
+						return;
+					},
+					requestUrl: () => "https://api.themoviedb.org/3/tv/missing",
+				},
+			},
+			db,
+			enqueueReview: noopReview,
+			masterKey,
+			providerId,
+			timing: createMemoryTimingStore("before-builds"),
+		});
+		expect(outcome).toMatchObject({
+			kind: "completed",
+			published: [],
+			residue: ["tmdb", "tvdb", "mal"],
+		});
+		expect(await db.select().from(serviceTitles).all()).toHaveLength(0);
+	});
+
+	it("keeps silently skipped target services in residue", async () => {
+		const outcome = await runResearchPass(continuity, "before-builds", {
+			agent: silentSkipAgent,
+			clients: {
+				tmdb: clientFor({
+					"1": catalogue({ instalments: [{ locator: "1:1" }], title: "A" }),
+				}),
+				tvdb: clientFor({
+					"2": catalogue({ instalments: [{ locator: "1:1" }], title: "A" }),
+				}),
+			},
+			db,
+			enqueueReview: noopReview,
+			masterKey,
+			providerId,
+			timing: createMemoryTimingStore("before-builds"),
+		});
+		expect(outcome).toMatchObject({
+			kind: "completed",
+			residue: ["mal"],
+		});
+	});
+
+	it("re-publishing the same relation does not UNIQUE-crash", async () => {
+		const outcome = await runResearchPass(continuity, "before-builds", {
+			agent: idempotentRelationAgent,
+			clients: {
+				tmdb: clientFor({
+					"1": catalogue({ instalments: [{ locator: "1:1" }], title: "From" }),
+				}),
+				tvdb: clientFor({
+					"2": catalogue({ instalments: [{ locator: "1:1" }], title: "To" }),
+				}),
+			},
+			db,
+			enqueueReview: noopReview,
+			masterKey,
+			providerId,
+			timing: createMemoryTimingStore("before-builds"),
+		});
+		expect(outcome.kind).toBe("completed");
+		if (outcome.kind === "completed") {
+			expect(outcome.published).toHaveLength(2);
+			expect(outcome.published[0]?.assertionId).toBe(
+				outcome.published[1]?.assertionId,
+			);
+		}
+		expect(await db.select().from(relationAssertions).all()).toHaveLength(1);
+	});
+
+	it("re-publishing the same instalment unit does not UNIQUE-crash", async () => {
+		const unit = one(
+			await db.insert(contentUnits).values({}).returning().all(),
+		);
+		const outcome = await runResearchPass(continuity, "before-builds", {
+			agent: idempotentInstalmentAgent(unit.id),
+			clients: {
+				tmdb: clientFor({
+					"42": catalogue({
+						instalments: [{ locator: "1:1" }],
+						title: "Show",
+					}),
+				}),
+			},
+			db,
+			enqueueReview: noopReview,
+			masterKey,
+			providerId,
+			timing: createMemoryTimingStore("before-builds"),
+		});
+		expect(outcome.kind).toBe("completed");
+		if (outcome.kind === "completed") {
+			expect(outcome.published).toHaveLength(2);
+			expect(outcome.published[0]?.assertionId).toBe(
+				outcome.published[1]?.assertionId,
+			);
+		}
+		expect(await db.select().from(instalmentAssertions).all()).toHaveLength(1);
 	});
 });

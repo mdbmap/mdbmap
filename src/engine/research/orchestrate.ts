@@ -21,8 +21,6 @@ import type {
 	ScrapeClient,
 } from "./tools.ts";
 
-// One continuity the pass investigates across every mapping service at once
-// (ADR-0004) — never a single deterministic pair.
 interface ResearchContinuity {
 	readonly groupId: number;
 	readonly id: string;
@@ -31,13 +29,9 @@ interface ResearchContinuity {
 
 interface ResearchAgentResult {
 	readonly proposals: readonly ResearchProposal[];
-	// Services the pass could not resolve; the deterministic fan-out is the
-	// fallback for this residue (ADR-0004).
 	readonly residue: readonly string[];
 }
 
-// Injected LLM loop. Production wires the Vercel AI SDK against the decrypted
-// provider config; tests mock the agent and the tools.
 type ResearchAgent = (input: {
 	readonly continuity: ResearchContinuity;
 	readonly provider: ProviderConfig;
@@ -46,8 +40,6 @@ type ResearchAgent = (input: {
 
 type ResearchJudgeDeps = Pick<ReviewTaskDeps, "escalate" | "judge">;
 
-// Callers must wire the #61 reviewer: either a custom enqueue, or judge/escalate
-// so the default path always runs `reviewResearchProposal`.
 type ResearchReviewWiring =
 	| {
 			readonly enqueueReview: ReviewEnqueue;
@@ -96,10 +88,57 @@ const resolveEnqueue = (deps: ResearchPassDeps): ReviewEnqueue => {
 		});
 };
 
-// Agentic research pass for one continuity. Honours the timing policy, loads
-// the configured provider from the encrypted store, runs tools that persist
-// validated spokes, publishes through the corroboration gate, and leaves
-// unresolved services as deterministic residue.
+const servicesFromProposals = (
+	proposals: readonly ResearchProposal[],
+): ReadonlySet<string> => {
+	const services = new Set<string>();
+	for (const proposal of proposals) {
+		switch (proposal.kind) {
+			case "title": {
+				services.add(proposal.left.service);
+				services.add(proposal.right.service);
+				break;
+			}
+			case "relation": {
+				services.add(proposal.from.service);
+				services.add(proposal.to.service);
+				break;
+			}
+			case "instalment": {
+				for (const item of proposal.evidence) {
+					if (item.kind === "api" || item.kind === "scrape") {
+						services.add(item.operator);
+					}
+				}
+				break;
+			}
+		}
+	}
+	return services;
+};
+
+const mergeResidue = (
+	targetServices: readonly string[],
+	agentResidue: readonly string[],
+	proposals: readonly ResearchProposal[],
+): readonly string[] => {
+	const accounted = new Set([
+		...agentResidue,
+		...servicesFromProposals(proposals),
+	]);
+	const skipped = targetServices.filter((service) => !accounted.has(service));
+	const seen = new Set<string>();
+	const merged: string[] = [];
+	for (const service of [...agentResidue, ...skipped]) {
+		if (seen.has(service)) {
+			continue;
+		}
+		seen.add(service);
+		merged.push(service);
+	}
+	return merged;
+};
+
 const runResearchPass = async (
 	continuity: ResearchContinuity,
 	phase: ResearchPhase,
@@ -144,7 +183,11 @@ const runResearchPass = async (
 	return {
 		kind: "completed",
 		published,
-		residue: agentResult.residue,
+		residue: mergeResidue(
+			continuity.targetServices,
+			agentResult.residue,
+			agentResult.proposals,
+		),
 	};
 };
 
