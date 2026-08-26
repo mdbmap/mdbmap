@@ -1,6 +1,8 @@
+import { eq } from "drizzle-orm";
 import type { Promisable } from "type-fest";
 
 import type { Db } from "@/db";
+import { serviceInstalments, serviceTitles } from "@/db/engine-schema";
 import type { SimklClient } from "@/engine/discovery";
 import type { ProviderConfig } from "@/lib/provider-config";
 import { getProviderConfig } from "@/lib/provider-config";
@@ -62,9 +64,10 @@ type ResearchPassOutcome =
 			readonly residue: readonly string[];
 	  };
 
-const servicesFromProposals = (
+const servicesFromProposals = async (
+	db: Db,
 	proposals: readonly ResearchProposal[],
-): ReadonlySet<string> => {
+): Promise<ReadonlySet<string>> => {
 	const services = new Set<string>();
 	for (const proposal of proposals) {
 		switch (proposal.kind) {
@@ -79,10 +82,18 @@ const servicesFromProposals = (
 				break;
 			}
 			case "instalment": {
-				for (const item of proposal.evidence) {
-					if (item.kind === "api" || item.kind === "scrape") {
-						services.add(item.operator);
-					}
+				const owners = await db
+					.select({ service: serviceTitles.service })
+					.from(serviceInstalments)
+					.innerJoin(
+						serviceTitles,
+						eq(serviceInstalments.titleId, serviceTitles.id),
+					)
+					.where(eq(serviceInstalments.id, proposal.instalmentId))
+					.all();
+				const owner = owners[0]?.service;
+				if (owner !== undefined) {
+					services.add(owner);
 				}
 				break;
 			}
@@ -91,14 +102,15 @@ const servicesFromProposals = (
 	return services;
 };
 
-const mergeResidue = (
+const mergeResidue = async (
+	db: Db,
 	targetServices: readonly string[],
 	agentResidue: readonly string[],
 	proposals: readonly ResearchProposal[],
-): readonly string[] => {
+): Promise<readonly string[]> => {
 	const accounted = new Set([
 		...agentResidue,
-		...servicesFromProposals(proposals),
+		...(await servicesFromProposals(db, proposals)),
 	]);
 	const skipped = targetServices.filter((service) => !accounted.has(service));
 	const seen = new Set<string>();
@@ -157,7 +169,8 @@ const runResearchPass = async (
 	return {
 		kind: "completed",
 		published,
-		residue: mergeResidue(
+		residue: await mergeResidue(
+			deps.db,
 			continuity.targetServices,
 			agentResult.residue,
 			agentResult.proposals,

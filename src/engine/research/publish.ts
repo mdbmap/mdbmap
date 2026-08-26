@@ -237,14 +237,11 @@ const queueRelationFlag = async (
 	});
 };
 
-const publishTitleProposal = async (
+const loadTitleAssertion = async (
 	db: Db,
-	proposal: TitleProposal,
-): Promise<PublishedResearch> => {
-	const decision = corroborate(proposal.evidence);
-	const leftId = await requireTitleId(db, proposal.left);
-	const rightId = await requireTitleId(db, proposal.right);
-	const [titleAId, titleBId] = ascendingPair(leftId, rightId);
+	titleAId: number,
+	titleBId: number,
+): Promise<ExistingAssertion | undefined> => {
 	const existing = await db
 		.select({
 			confidence: titleAssertions.confidence,
@@ -259,26 +256,64 @@ const publishTitleProposal = async (
 			),
 		)
 		.all();
-	const assertionId =
-		existing[0]?.id ??
-		one(
-			await db
-				.insert(titleAssertions)
-				.values({
-					confidence: decision.confidence,
-					source: RESEARCH,
-					titleAId,
-					titleBId,
-				})
-				.returning()
-				.all(),
-			ROW_MISSING,
-		).id;
+	return existing[0];
+};
+
+const insertTitleAssertion = async (
+	db: Db,
+	input: {
+		readonly confidence: "high" | "low";
+		readonly titleAId: number;
+		readonly titleBId: number;
+	},
+): Promise<number> =>
+	one(
+		await db
+			.insert(titleAssertions)
+			.values({
+				confidence: input.confidence,
+				source: RESEARCH,
+				titleAId: input.titleAId,
+				titleBId: input.titleBId,
+			})
+			.returning()
+			.all(),
+		ROW_MISSING,
+	).id;
+
+const publishTitleProposal = async (
+	db: Db,
+	proposal: TitleProposal,
+): Promise<PublishedResearch> => {
+	const decision = corroborate(proposal.evidence);
+	const leftId = await requireTitleId(db, proposal.left);
+	const rightId = await requireTitleId(db, proposal.right);
+	const [titleAId, titleBId] = ascendingPair(leftId, rightId);
+	let existing = await loadTitleAssertion(db, titleAId, titleBId);
+	let assertionId = existing?.id;
+	if (assertionId === undefined) {
+		try {
+			assertionId = await insertTitleAssertion(db, {
+				confidence: decision.confidence,
+				titleAId,
+				titleBId,
+			});
+		} catch (error) {
+			if (!isUniqueViolation(error)) {
+				throw error;
+			}
+			existing = await loadTitleAssertion(db, titleAId, titleBId);
+			assertionId = existing?.id;
+			if (assertionId === undefined) {
+				throw error;
+			}
+		}
+	}
 
 	if (
-		existing[0] !== undefined &&
-		!outranksResearch(existing[0].source) &&
-		existing[0].confidence !== decision.confidence
+		existing !== undefined &&
+		!outranksResearch(existing.source) &&
+		existing.confidence !== decision.confidence
 	) {
 		await db
 			.update(titleAssertions)
@@ -288,7 +323,7 @@ const publishTitleProposal = async (
 	}
 
 	const ownsResearchRow =
-		existing[0] === undefined || !outranksResearch(existing[0].source);
+		existing === undefined || !outranksResearch(existing.source);
 	if (decision.reviewFlag !== undefined && ownsResearchRow) {
 		await queueTitlePairFlag(db, {
 			assertionConfidence: decision.confidence,
@@ -582,18 +617,34 @@ const publishInstalmentProposal = async (
 ): Promise<PublishedResearch> => {
 	const decision = corroborate(proposal.evidence);
 	const unitId = await resolveInstalmentUnitId(db, proposal);
-	const existing = await existingInstalmentAssertion(
+	let existing = await existingInstalmentAssertion(
 		db,
 		proposal.instalmentId,
 		unitId,
 	);
-	const assertionId =
-		existing?.id ??
-		(await insertInstalmentAssertion(db, {
-			confidence: decision.confidence,
-			instalmentId: proposal.instalmentId,
-			unitId,
-		}));
+	let assertionId = existing?.id;
+	if (assertionId === undefined) {
+		try {
+			assertionId = await insertInstalmentAssertion(db, {
+				confidence: decision.confidence,
+				instalmentId: proposal.instalmentId,
+				unitId,
+			});
+		} catch (error) {
+			if (!isUniqueViolation(error)) {
+				throw error;
+			}
+			existing = await existingInstalmentAssertion(
+				db,
+				proposal.instalmentId,
+				unitId,
+			);
+			assertionId = existing?.id;
+			if (assertionId === undefined) {
+				throw error;
+			}
+		}
+	}
 
 	if (
 		existing !== undefined &&
