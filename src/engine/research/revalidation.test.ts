@@ -6,6 +6,7 @@ import {
 	contentUnits,
 	instalmentAssertions,
 	pendingGroupCandidates,
+	relationAssertions,
 	serviceInstalments,
 	serviceTitles,
 	titleAssertions,
@@ -234,6 +235,37 @@ describe("sampleResearchRecheck", () => {
 			await db
 				.select({ confidence: instalmentAssertions.confidence })
 				.from(instalmentAssertions)
+				.all(),
+		);
+		expect(assertion.confidence).toBe("low");
+	});
+
+	it("flags relation assertions when a live endpoint is unavailable", async () => {
+		const group = await seedGroup(db);
+		const from = await seedTitle(db, group.id, "tmdb", "1");
+		const to = await seedTitle(db, group.id, "imdb", "tt2");
+		await db
+			.insert(relationAssertions)
+			.values({
+				confidence: "high",
+				fromTitleId: from.id,
+				source: "llm-research",
+				toTitleId: to.id,
+			})
+			.run();
+
+		await sampleResearchRecheck(db, {
+			budget: createBudget(2),
+			clients: {
+				imdb: clientFor({ tt2: catalogue("Sequel Show") }),
+			},
+			groupId: group.id,
+		});
+
+		const assertion = one(
+			await db
+				.select({ confidence: relationAssertions.confidence })
+				.from(relationAssertions)
 				.all(),
 		);
 		expect(assertion.confidence).toBe("low");

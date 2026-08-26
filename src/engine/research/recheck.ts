@@ -1,4 +1,4 @@
-import { eq } from "drizzle-orm";
+import { eq, inArray } from "drizzle-orm";
 
 import type { Db } from "@/db";
 import type {
@@ -10,6 +10,7 @@ import {
 	instalmentAssertions,
 	pendingGroupCandidates,
 	relationAssertions,
+	serviceTitles,
 	titleAssertions,
 } from "@/db/engine-schema";
 import { titleSimilarity } from "@/engine/matcher";
@@ -146,15 +147,57 @@ const recheckTitle = async (
 		: "disagrees";
 };
 
+const titleRowMatches = (
+	row: { readonly service: string; readonly serviceId: string },
+	ref: { readonly service: string; readonly serviceId: string },
+): boolean => row.service === ref.service && row.serviceId === ref.serviceId;
+
 const recheckRelation = async (
+	db: Db,
 	assertion: Extract<ResearchAssertion, { kind: "relation" }>,
 	clients: ResearchCatalogueClients,
 	budget: BudgetLedger,
 ): Promise<RecheckVerdict> => {
+	const rows = await db
+		.select({
+			id: serviceTitles.id,
+			service: serviceTitles.service,
+			serviceId: serviceTitles.serviceId,
+		})
+		.from(serviceTitles)
+		.where(
+			inArray(serviceTitles.id, [
+				assertion.fromTitleId,
+				assertion.toTitleId,
+			]),
+		)
+		.all();
+	if (rows.length !== 2) {
+		return "disagrees";
+	}
+	const fromRow = rows.find((row) => row.id === assertion.fromTitleId);
+	const toRow = rows.find((row) => row.id === assertion.toTitleId);
+	if (
+		fromRow === undefined ||
+		toRow === undefined ||
+		!titleRowMatches(fromRow, assertion.from) ||
+		!titleRowMatches(toRow, assertion.to)
+	) {
+		return "disagrees";
+	}
+
 	const fetched = await fetchPair(clients, assertion.from, assertion.to, budget);
 	if (fetched.kind === "unavailable") {
 		return "unavailable";
 	}
+
+	const fromTitle = toCatalogueTitle(fetched.left).title.trim();
+	const toTitle = toCatalogueTitle(fetched.right).title.trim();
+	if (fromTitle.length === 0 || toTitle.length === 0) {
+		return "disagrees";
+	}
+
+	// Mainline edge semantics need operator relation APIs; endpoint liveness only.
 	return "agrees";
 };
 
@@ -184,6 +227,7 @@ const fetchCostFor = (assertion: ResearchAssertion): number =>
 	assertion.kind === "instalment" ? FETCH_COST : FETCH_COST * 2;
 
 const recheckAssertion = async (
+	db: Db,
 	assertion: ResearchAssertion,
 	clients: ResearchCatalogueClients,
 	budget: BudgetLedger,
@@ -193,7 +237,7 @@ const recheckAssertion = async (
 			return recheckTitle(assertion, clients, budget);
 		}
 		case "relation": {
-			return recheckRelation(assertion, clients, budget);
+			return recheckRelation(db, assertion, clients, budget);
 		}
 		case "instalment": {
 			return recheckInstalment(assertion, clients, budget);
@@ -304,6 +348,7 @@ const sampleResearchRecheck = async (
 			return;
 		}
 		const verdict = await recheckAssertion(
+			db,
 			assertion,
 			input.clients,
 			input.budget,
