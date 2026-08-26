@@ -205,8 +205,9 @@ const personalRating = sqliteTable(
 
 // AES-GCM envelope encryption (ADR-0005): `ciphertext` holds the encrypted
 // provider config JSON, `wrappedKey` its per-record data key encrypted under
-// the deploy-time master key. `kind` and `label` stay plaintext so an admin
-// listing never has to decrypt every row just to show one.
+// the deploy-time master key. `kind` and `label` stay plaintext for identity
+// and filtering without decrypt; the admin list still decrypts each row for
+// public config fields (model / baseUrl) shown in the panel.
 const llmProvider = sqliteTable("llm_provider", {
 	ciphertext: text().notNull(),
 	createdAt: timestamp("created_at"),
@@ -221,6 +222,18 @@ const llmProvider = sqliteTable("llm_provider", {
 	wrappedKey: text("wrapped_key").notNull(),
 });
 
+// ADR-0004 deployment policy: when the research pass runs relative to the
+// deterministic build. Singleton row (`id = "default"`); absent means `off`.
+const researchTimings = ["before-builds", "after-residue", "off"] as const;
+type ResearchTiming = (typeof researchTimings)[number];
+const DEFAULT_RESEARCH_TIMING: ResearchTiming = "off";
+
+const researchPolicy = sqliteTable("research_policy", {
+	id: text().primaryKey(),
+	timing: text({ enum: researchTimings }).notNull(),
+	updatedAt: timestamp("updated_at").$onUpdateFn(() => new Date()),
+});
+
 export {
 	account,
 	apiKey,
@@ -230,6 +243,9 @@ export {
 	llmProviderKinds,
 	personalRating,
 	rateableUnitKinds,
+	researchPolicy,
+	researchTimings,
+	DEFAULT_RESEARCH_TIMING,
 	session,
 	todos,
 	user,
@@ -245,5 +261,6 @@ export type {
 	LlmProviderKind,
 	RateableUnitKey,
 	RateableUnitKind,
+	ResearchTiming,
 	WatchStatus,
 };

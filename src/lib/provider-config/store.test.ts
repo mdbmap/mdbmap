@@ -6,7 +6,14 @@ import { beforeEach, describe, expect, it } from "vitest";
 import { llmProvider } from "@/db/schema";
 import { freshDb } from "@/db/test-helpers.ts";
 
-import { getProviderConfig, storeProvider } from "./store.ts";
+import {
+	ProviderNotFoundError,
+	getProviderConfig,
+	listProviders,
+	removeProvider,
+	storeProvider,
+	updateProvider,
+} from "./store.ts";
 import { randomMasterKey } from "./test-support.ts";
 import type {
 	OpenAiCompatibleProviderConfig,
@@ -70,6 +77,17 @@ describe("provider config store", () => {
 					model: "",
 				},
 				label: "Invalid",
+			}),
+		).rejects.toThrow();
+
+		await expect(
+			storeProvider(db, masterKey, {
+				config: {
+					apiKey: "   ",
+					kind: "openai",
+					model: "gpt-5",
+				},
+				label: "Whitespace key",
 			}),
 		).rejects.toThrow();
 
@@ -159,6 +177,109 @@ describe("provider config store", () => {
 	it("rejects an unknown provider id", async () => {
 		await expect(
 			getProviderConfig(db, masterKey, crypto.randomUUID()),
-		).rejects.toThrow();
+		).rejects.toBeInstanceOf(ProviderNotFoundError);
+		await expect(removeProvider(db, crypto.randomUUID())).rejects.toBeInstanceOf(
+			ProviderNotFoundError,
+		);
+	});
+
+	it("lists providers without returning api keys", async () => {
+		await storeProvider(db, masterKey, {
+			config: {
+				apiKey: "sk-secret-never-list",
+				kind: "openai",
+				model: "gpt-5",
+			},
+			label: "OpenAI",
+		});
+
+		const listed = await listProviders(db, masterKey);
+		expect(listed).toHaveLength(1);
+		expect(listed[0]).toMatchObject({
+			config: { kind: "openai", model: "gpt-5" },
+			kind: "openai",
+			label: "OpenAI",
+		});
+		expect(listed[0]).not.toHaveProperty("apiKey");
+		expect(JSON.stringify(listed)).not.toContain("sk-secret-never-list");
+	});
+
+	it("updates a provider and keeps the key when omitted", async () => {
+		const record = await storeProvider(db, masterKey, {
+			config: {
+				apiKey: "sk-original",
+				kind: "openai",
+				model: "gpt-4",
+			},
+			label: "OpenAI",
+		});
+
+		await updateProvider(db, masterKey, {
+			config: { kind: "openai", model: "gpt-5" },
+			id: record.id,
+			label: "OpenAI (prod)",
+		});
+
+		await expect(getProviderConfig(db, masterKey, record.id)).resolves.toEqual({
+			apiKey: "sk-original",
+			kind: "openai",
+			model: "gpt-5",
+		});
+
+		await updateProvider(db, masterKey, {
+			config: {
+				apiKey: "sk-rotated",
+				kind: "anthropic",
+				model: "claude-sonnet",
+			},
+			id: record.id,
+			label: "Anthropic",
+		});
+
+		await expect(getProviderConfig(db, masterKey, record.id)).resolves.toEqual({
+			apiKey: "sk-rotated",
+			kind: "anthropic",
+			model: "claude-sonnet",
+		});
+	});
+
+	it("rejects a kind change that omits the api key", async () => {
+		const record = await storeProvider(db, masterKey, {
+			config: {
+				apiKey: "sk-openai-only",
+				kind: "openai",
+				model: "gpt-5",
+			},
+			label: "OpenAI",
+		});
+
+		await expect(
+			updateProvider(db, masterKey, {
+				config: { kind: "anthropic", model: "claude-sonnet" },
+				id: record.id,
+				label: "Anthropic",
+			}),
+		).rejects.toThrow("API key is required when changing provider kind");
+
+		await expect(getProviderConfig(db, masterKey, record.id)).resolves.toEqual({
+			apiKey: "sk-openai-only",
+			kind: "openai",
+			model: "gpt-5",
+		});
+	});
+
+	it("removes a provider", async () => {
+		const record = await storeProvider(db, masterKey, {
+			config: {
+				apiKey: "sk-gone",
+				kind: "google",
+				model: "gemini-pro",
+			},
+			label: "Gemini",
+		});
+
+		await removeProvider(db, record.id);
+		await expect(listProviders(db, masterKey)).resolves.toEqual([]);
+		await expect(getProviderConfig(db, masterKey, record.id)).rejects.toThrow();
 	});
 });

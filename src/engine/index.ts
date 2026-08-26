@@ -55,3 +55,9 @@ export type {
 	ResolveResult,
 	Segment,
 } from "./seam.ts";
+export { corroborate, resolveResearchSchedule } from "./research/index.ts";
+export type {
+	CorroborationDecision,
+	CorroborationEvidence,
+	ResearchSchedule,
+} from "./research/index.ts";
