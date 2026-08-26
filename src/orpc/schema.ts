@@ -62,7 +62,7 @@ const MarkMatchedInput = z.object({
 
 const ManualPairInput = z.object({
 	instalmentIds: z.array(z.number().int().min(1)).min(1),
-	unitId: z.number().int().min(1).optional(),
+	unitId: z.uuid().optional(),
 });
 
 interface RateableUnit {

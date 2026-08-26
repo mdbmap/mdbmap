@@ -1,5 +1,6 @@
 import { eq } from "drizzle-orm";
 import { beforeEach, describe, expect, it } from "vitest";
+
 import {
 	candidateSubjectKey,
 	contentUnits,
@@ -12,7 +13,9 @@ import {
 	titleGroupAliases,
 	titleGroups,
 } from "./engine-schema.ts";
-import { freshDb } from "./test-helpers.ts";
+import { freshDb, rejectionText } from "./test-helpers.ts";
+
+type Db = Awaited<ReturnType<typeof freshDb>>;
 
 const one = <Row>(rows: Row[]): Row => {
 	const [row] = rows;
@@ -22,23 +25,19 @@ const one = <Row>(rows: Row[]): Row => {
 	return row;
 };
 
-const seedGroup = (db: ReturnType<typeof freshDb>) =>
+const seedGroup = async (db: Db) =>
 	one(
-		db
+		await db
 			.insert(titleGroups)
 			.values({ ladderComplete: false, source: "t1-structure" })
 			.returning()
 			.all(),
 	);
 
-const seedTitle = (
-	db: ReturnType<typeof freshDb>,
-	service: string,
-	serviceId: string,
-) => {
-	const group = seedGroup(db);
+const seedTitle = async (db: Db, service: string, serviceId: string) => {
+	const group = await seedGroup(db);
 	return one(
-		db
+		await db
 			.insert(serviceTitles)
 			.values({ groupId: group.id, service, serviceId })
 			.returning()
@@ -46,36 +45,33 @@ const seedTitle = (
 	);
 };
 
-const seedInstalment = (
-	db: ReturnType<typeof freshDb>,
-	titleId: number,
-	locator: string,
-) =>
+const seedInstalment = async (db: Db, titleId: number, locator: string) =>
 	one(
-		db
+		await db
 			.insert(serviceInstalments)
 			.values({ locator, locatorKind: "position", titleId })
 			.returning()
 			.all(),
 	);
 
-const seedUnit = (db: ReturnType<typeof freshDb>) =>
-	one(db.insert(contentUnits).values({}).returning().all());
+const seedUnit = async (db: Db) =>
+	one(await db.insert(contentUnits).values({}).returning().all());
 
 describe("hub-and-spoke coverage edges", () => {
-	let db: ReturnType<typeof freshDb>;
+	let db: Db;
 
-	beforeEach(() => {
-		db = freshDb();
+	beforeEach(async () => {
+		db = await freshDb();
 	});
 
-	it("lets a merged instalment cover two content units", () => {
-		const title = seedTitle(db, "tmdb", "1396");
-		const instalment = seedInstalment(db, title.id, "s1e12");
-		const unitA = seedUnit(db);
-		const unitB = seedUnit(db);
+	it("lets a merged instalment cover two content units", async () => {
+		const title = await seedTitle(db, "tmdb", "1396");
+		const instalment = await seedInstalment(db, title.id, "s1e12");
+		const unitA = await seedUnit(db);
+		const unitB = await seedUnit(db);
 
-		db.insert(instalmentAssertions)
+		await db
+			.insert(instalmentAssertions)
 			.values(
 				[unitA, unitB].map((unit) => ({
 					confidence: "high" as const,
@@ -86,23 +82,24 @@ describe("hub-and-spoke coverage edges", () => {
 			)
 			.run();
 
-		const rows = db
+		const rows = await db
 			.select()
 			.from(instalmentAssertions)
 			.where(eq(instalmentAssertions.instalmentId, instalment.id))
 			.all();
-		expect(rows.map((row) => row.unitId).toSorted((left, right) => left - right)).toEqual(
-			[unitA.id, unitB.id].toSorted((left, right) => left - right),
+		expect(rows.map((row) => row.unitId).toSorted()).toEqual(
+			[unitA.id, unitB.id].toSorted(),
 		);
 	});
 
-	it("lets one content unit be covered by two spokes of a split", () => {
-		const title = seedTitle(db, "imdb", "tt0903747");
-		const spokeA = seedInstalment(db, title.id, "s1e1");
-		const spokeB = seedInstalment(db, title.id, "s1e2");
-		const unit = seedUnit(db);
+	it("lets one content unit be covered by two spokes of a split", async () => {
+		const title = await seedTitle(db, "imdb", "tt0903747");
+		const spokeA = await seedInstalment(db, title.id, "s1e1");
+		const spokeB = await seedInstalment(db, title.id, "s1e2");
+		const unit = await seedUnit(db);
 
-		db.insert(instalmentAssertions)
+		await db
+			.insert(instalmentAssertions)
 			.values(
 				[spokeA, spokeB].map((spoke) => ({
 					confidence: "high" as const,
@@ -113,19 +110,21 @@ describe("hub-and-spoke coverage edges", () => {
 			)
 			.run();
 
-		const rows = db.select().from(instalmentAssertions).all();
-		expect(rows.map((row) => row.instalmentId).toSorted((left, right) => left - right)).toEqual(
-			[spokeA.id, spokeB.id].toSorted((left, right) => left - right),
-		);
+		const rows = await db.select().from(instalmentAssertions).all();
+		expect(
+			rows
+				.map((row) => row.instalmentId)
+				.toSorted((left, right) => left - right),
+		).toEqual([spokeA.id, spokeB.id].toSorted((left, right) => left - right));
 	});
 
-	it("rejects a title overlap edge that is reversed or self-referential", () => {
-		const first = seedTitle(db, "tmdb", "first");
-		const second = seedTitle(db, "tmdb", "second");
+	it("rejects a title overlap edge that is reversed or self-referential", async () => {
+		const first = await seedTitle(db, "tmdb", "first");
+		const second = await seedTitle(db, "tmdb", "second");
 		const [lower, higher] =
 			first.id < second.id ? [first, second] : [second, first];
 
-		const insertPair = (titleAId: number, titleBId: number) =>
+		const insertPair = async (titleAId: number, titleBId: number) =>
 			db
 				.insert(titleAssertions)
 				.values({
@@ -136,17 +135,22 @@ describe("hub-and-spoke coverage edges", () => {
 				})
 				.run();
 
-		expect(() => insertPair(higher.id, lower.id)).toThrow(/constraint/iu);
-		expect(() => insertPair(lower.id, lower.id)).toThrow(/constraint/iu);
-		expect(() => insertPair(lower.id, higher.id)).not.toThrow();
+		expect(await rejectionText(insertPair(higher.id, lower.id))).toMatch(
+			/constraint/iu,
+		);
+		expect(await rejectionText(insertPair(lower.id, lower.id))).toMatch(
+			/constraint/iu,
+		);
+		await insertPair(lower.id, higher.id);
 	});
 
-	it("rejects a second immediate sequel for one title", () => {
-		const from = seedTitle(db, "tmdb", "from");
-		const sequel = seedTitle(db, "tmdb", "sequel");
-		const rival = seedTitle(db, "tmdb", "rival");
+	it("rejects a second immediate sequel for one title", async () => {
+		const from = await seedTitle(db, "tmdb", "from");
+		const sequel = await seedTitle(db, "tmdb", "sequel");
+		const rival = await seedTitle(db, "tmdb", "rival");
 
-		db.insert(relationAssertions)
+		await db
+			.insert(relationAssertions)
 			.values({
 				confidence: "high",
 				fromTitleId: from.id,
@@ -155,41 +159,46 @@ describe("hub-and-spoke coverage edges", () => {
 			})
 			.run();
 
-		expect(() =>
-			db
-				.insert(relationAssertions)
-				.values({
-					confidence: "high",
-					fromTitleId: from.id,
-					source: "llm-verified",
-					toTitleId: rival.id,
-				})
-				.run(),
-		).toThrow(/unique/iu);
+		expect(
+			await rejectionText(
+				db
+					.insert(relationAssertions)
+					.values({
+						confidence: "high",
+						fromTitleId: from.id,
+						source: "llm-verified",
+						toTitleId: rival.id,
+					})
+					.run(),
+			),
+		).toMatch(/unique/iu);
 	});
 
-	it("rejects a relation asserting a title relates to itself", () => {
-		const title = seedTitle(db, "tmdb", "self");
+	it("rejects a relation asserting a title relates to itself", async () => {
+		const title = await seedTitle(db, "tmdb", "self");
 
-		expect(() =>
-			db
-				.insert(relationAssertions)
-				.values({
-					confidence: "high",
-					fromTitleId: title.id,
-					source: "llm-verified",
-					toTitleId: title.id,
-				})
-				.run(),
-		).toThrow(/constraint/iu);
+		expect(
+			await rejectionText(
+				db
+					.insert(relationAssertions)
+					.values({
+						confidence: "high",
+						fromTitleId: title.id,
+						source: "llm-verified",
+						toTitleId: title.id,
+					})
+					.run(),
+			),
+		).toMatch(/constraint/iu);
 	});
 
-	it("rejects a second immediate prequel for one title", () => {
-		const to = seedTitle(db, "tmdb", "to");
-		const prequel = seedTitle(db, "tmdb", "prequel");
-		const rival = seedTitle(db, "tmdb", "rival");
+	it("rejects a second immediate prequel for one title", async () => {
+		const to = await seedTitle(db, "tmdb", "to");
+		const prequel = await seedTitle(db, "tmdb", "prequel");
+		const rival = await seedTitle(db, "tmdb", "rival");
 
-		db.insert(relationAssertions)
+		await db
+			.insert(relationAssertions)
 			.values({
 				confidence: "high",
 				fromTitleId: prequel.id,
@@ -198,28 +207,30 @@ describe("hub-and-spoke coverage edges", () => {
 			})
 			.run();
 
-		expect(() =>
-			db
-				.insert(relationAssertions)
-				.values({
-					confidence: "high",
-					fromTitleId: rival.id,
-					source: "llm-verified",
-					toTitleId: to.id,
-				})
-				.run(),
-		).toThrow(/unique/iu);
+		expect(
+			await rejectionText(
+				db
+					.insert(relationAssertions)
+					.values({
+						confidence: "high",
+						fromTitleId: rival.id,
+						source: "llm-verified",
+						toTitleId: to.id,
+					})
+					.run(),
+			),
+		).toMatch(/unique/iu);
 	});
 });
 
 describe("pending group candidates", () => {
-	let db: ReturnType<typeof freshDb>;
+	let db: Db;
 
-	beforeEach(() => {
-		db = freshDb();
+	beforeEach(async () => {
+		db = await freshDb();
 	});
 
-	it("coalesces a repeat open candidate but reopens on a differing evidence hash", () => {
+	it("coalesces a repeat open candidate but reopens on a differing evidence hash", async () => {
 		const subject = { subjectType: "title" as const, titleId: 1 };
 		const evidence = {
 			competingGroupIds: [1, 2],
@@ -227,7 +238,8 @@ describe("pending group candidates", () => {
 			proposedMembers: [{ service: "tmdb", serviceId: "1396" }],
 		};
 
-		db.insert(pendingGroupCandidates)
+		await db
+			.insert(pendingGroupCandidates)
 			.values({
 				evidence,
 				evidenceHash: "hash-a",
@@ -237,36 +249,39 @@ describe("pending group candidates", () => {
 			})
 			.run();
 
-		expect(() =>
-			db
-				.insert(pendingGroupCandidates)
-				.values({
-					evidence,
-					evidenceHash: "hash-a",
-					kind: "structural",
-					subject,
-					subjectKey: candidateSubjectKey(subject),
-				})
-				.run(),
-		).toThrow(/unique/iu);
+		const subjectKey = candidateSubjectKey(subject);
+		expect(
+			await rejectionText(
+				db
+					.insert(pendingGroupCandidates)
+					.values({
+						evidence,
+						evidenceHash: "hash-a",
+						kind: "structural",
+						subject,
+						subjectKey,
+					})
+					.run(),
+			),
+		).toMatch(/unique/iu);
 
-		expect(() =>
-			db
-				.insert(pendingGroupCandidates)
-				.values({
-					evidence,
-					evidenceHash: "hash-b",
-					kind: "structural",
-					subject,
-					subjectKey: candidateSubjectKey(subject),
-				})
-				.run(),
-		).not.toThrow();
+		await db
+			.insert(pendingGroupCandidates)
+			.values({
+				evidence,
+				evidenceHash: "hash-b",
+				kind: "structural",
+				subject,
+				subjectKey: candidateSubjectKey(subject),
+			})
+			.run();
 
-		expect(db.select().from(pendingGroupCandidates).all()).toHaveLength(2);
+		expect(await db.select().from(pendingGroupCandidates).all()).toHaveLength(
+			2,
+		);
 	});
 
-	it("coalesces subjects that differ only in json key order", () => {
+	it("coalesces subjects that differ only in json key order", async () => {
 		const evidence = {
 			competingGroupIds: [1, 2],
 			kind: "structural" as const,
@@ -277,7 +292,8 @@ describe("pending group candidates", () => {
 		const titleField = { titleId: 42 };
 		const reordered = { ...titleField, subjectType: "title" as const };
 
-		db.insert(pendingGroupCandidates)
+		await db
+			.insert(pendingGroupCandidates)
 			.values({
 				evidence,
 				evidenceHash: "hash-a",
@@ -287,37 +303,40 @@ describe("pending group candidates", () => {
 			})
 			.run();
 
-		expect(() =>
-			db
-				.insert(pendingGroupCandidates)
-				.values({
-					evidence,
-					evidenceHash: "hash-a",
-					kind: "structural",
-					subject: reordered,
-					subjectKey: candidateSubjectKey(reordered),
-				})
-				.run(),
-		).toThrow(/unique/iu);
+		const reorderedKey = candidateSubjectKey(reordered);
+		expect(
+			await rejectionText(
+				db
+					.insert(pendingGroupCandidates)
+					.values({
+						evidence,
+						evidenceHash: "hash-a",
+						kind: "structural",
+						subject: reordered,
+						subjectKey: reorderedKey,
+					})
+					.run(),
+			),
+		).toMatch(/unique/iu);
 
 		const other = { subjectType: "title" as const, titleId: 99 };
-		expect(() =>
-			db
-				.insert(pendingGroupCandidates)
-				.values({
-					evidence,
-					evidenceHash: "hash-a",
-					kind: "structural",
-					subject: other,
-					subjectKey: candidateSubjectKey(other),
-				})
-				.run(),
-		).not.toThrow();
+		await db
+			.insert(pendingGroupCandidates)
+			.values({
+				evidence,
+				evidenceHash: "hash-a",
+				kind: "structural",
+				subject: other,
+				subjectKey: candidateSubjectKey(other),
+			})
+			.run();
 
-		expect(db.select().from(pendingGroupCandidates).all()).toHaveLength(2);
+		expect(await db.select().from(pendingGroupCandidates).all()).toHaveLength(
+			2,
+		);
 	});
 
-	it("names the title pair as the subject of a title-assertion conflict", () => {
+	it("names the title pair as the subject of a title-assertion conflict", async () => {
 		const subject = {
 			subjectType: "title-pair" as const,
 			titleAId: 3,
@@ -339,7 +358,8 @@ describe("pending group candidates", () => {
 			},
 		};
 
-		db.insert(pendingGroupCandidates)
+		await db
+			.insert(pendingGroupCandidates)
 			.values({
 				evidence,
 				evidenceHash: "hash-pair",
@@ -349,12 +369,12 @@ describe("pending group candidates", () => {
 			})
 			.run();
 
-		const row = one(db.select().from(pendingGroupCandidates).all());
+		const row = one(await db.select().from(pendingGroupCandidates).all());
 		expect(row.subject).toEqual(subject);
 		expect(row.evidence).toEqual(evidence);
 	});
 
-	it("lets a resolved candidate coexist with a fresh open row for the same question", () => {
+	it("lets a resolved candidate coexist with a fresh open row for the same question", async () => {
 		const subject = { subjectType: "title" as const, titleId: 7 };
 		const evidence = {
 			competingGroupIds: [],
@@ -362,7 +382,8 @@ describe("pending group candidates", () => {
 			proposedMembers: [],
 		};
 
-		db.insert(pendingGroupCandidates)
+		await db
+			.insert(pendingGroupCandidates)
 			.values({
 				evidence,
 				evidenceHash: "hash-c",
@@ -373,38 +394,37 @@ describe("pending group candidates", () => {
 			})
 			.run();
 
-		expect(() =>
-			db
-				.insert(pendingGroupCandidates)
-				.values({
-					evidence,
-					evidenceHash: "hash-c",
-					kind: "structural",
-					subject,
-					subjectKey: candidateSubjectKey(subject),
-				})
-				.run(),
-		).not.toThrow();
+		await db
+			.insert(pendingGroupCandidates)
+			.values({
+				evidence,
+				evidenceHash: "hash-c",
+				kind: "structural",
+				subject,
+				subjectKey: candidateSubjectKey(subject),
+			})
+			.run();
 	});
 });
 
 describe("title group aliases", () => {
-	let db: ReturnType<typeof freshDb>;
+	let db: Db;
 
-	beforeEach(() => {
-		db = freshDb();
+	beforeEach(async () => {
+		db = await freshDb();
 	});
 
-	it("resolves an alias to its survivor in one hop after a merge", () => {
-		const survivor = seedGroup(db);
-		const retired = seedGroup(db);
+	it("resolves an alias to its survivor in one hop after a merge", async () => {
+		const survivor = await seedGroup(db);
+		const retired = await seedGroup(db);
 
-		db.insert(titleGroupAliases)
+		await db
+			.insert(titleGroupAliases)
 			.values({ retiredGroupId: retired.id, survivorGroupId: survivor.id })
 			.run();
 
 		const alias = one(
-			db
+			await db
 				.select()
 				.from(titleGroupAliases)
 				.where(eq(titleGroupAliases.retiredGroupId, retired.id))
@@ -413,23 +433,26 @@ describe("title group aliases", () => {
 		expect(alias.survivorGroupId).toBe(survivor.id);
 	});
 
-	it("flattens a later merge so the original retired id still resolves in one hop", () => {
-		const finalSurvivor = seedGroup(db);
-		const middle = seedGroup(db);
-		const original = seedGroup(db);
+	it("flattens a later merge so the original retired id still resolves in one hop", async () => {
+		const finalSurvivor = await seedGroup(db);
+		const middle = await seedGroup(db);
+		const original = await seedGroup(db);
 
 		// original merges into middle first.
-		db.insert(titleGroupAliases)
+		await db
+			.insert(titleGroupAliases)
 			.values({ retiredGroupId: original.id, survivorGroupId: middle.id })
 			.run();
 
 		// middle later merges into finalSurvivor; the writer flattens the
 		// existing alias instead of leaving an alias-of-alias chain.
-		db.update(titleGroupAliases)
+		await db
+			.update(titleGroupAliases)
 			.set({ survivorGroupId: finalSurvivor.id })
 			.where(eq(titleGroupAliases.retiredGroupId, original.id))
 			.run();
-		db.insert(titleGroupAliases)
+		await db
+			.insert(titleGroupAliases)
 			.values({
 				retiredGroupId: middle.id,
 				survivorGroupId: finalSurvivor.id,
@@ -437,7 +460,7 @@ describe("title group aliases", () => {
 			.run();
 
 		const resolved = one(
-			db
+			await db
 				.select()
 				.from(titleGroupAliases)
 				.where(eq(titleGroupAliases.retiredGroupId, original.id))
@@ -446,14 +469,16 @@ describe("title group aliases", () => {
 		expect(resolved.survivorGroupId).toBe(finalSurvivor.id);
 	});
 
-	it("rejects an alias that points a group to itself", () => {
-		const group = seedGroup(db);
+	it("rejects an alias that points a group to itself", async () => {
+		const group = await seedGroup(db);
 
-		expect(() =>
-			db
-				.insert(titleGroupAliases)
-				.values({ retiredGroupId: group.id, survivorGroupId: group.id })
-				.run(),
-		).toThrow(/constraint/iu);
+		expect(
+			await rejectionText(
+				db
+					.insert(titleGroupAliases)
+					.values({ retiredGroupId: group.id, survivorGroupId: group.id })
+					.run(),
+			),
+		).toMatch(/constraint/iu);
 	});
 });

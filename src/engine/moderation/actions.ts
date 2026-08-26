@@ -1,12 +1,11 @@
 import { and, eq, inArray } from "drizzle-orm";
 
+import { runAtomicBatch } from "@/db/atomic";
+import type { PreparedBatch } from "@/db/atomic";
 import {
-	absenceAssertions,
 	candidateSubjectKey,
-	contentUnits,
 	instalmentAssertions,
 	pendingGroupCandidates,
-	relationAssertions,
 	serviceTitles,
 	titleAssertions,
 	titleGroups,
@@ -64,19 +63,20 @@ type MembershipOutcome =
 	| { readonly kind: "missing" }
 	| { readonly kind: "not-open" }
 	| { readonly kind: "rejected" }
+	| { readonly kind: "stale" }
 	| { readonly kind: "wrong-kind" };
 
 // The union of the competing groups' member titles, ranked survivor-first then by
 // each group's stored order, so the merged positions are reproducible.
-const rankedUnion = (
+const rankedUnion = async (
 	db: GatewayDb,
 	survivorId: number,
 	retiredIds: readonly number[],
-): readonly { readonly ordinal: number; readonly titleId: number }[] => {
+): Promise<readonly { readonly ordinal: number; readonly titleId: number }[]> => {
 	const groupIds = [survivorId, ...retiredIds];
 	const rankOf = (groupId: number): number =>
 		groupId === survivorId ? 0 : retiredIds.indexOf(groupId) + 1;
-	const members = db
+	const members = await db
 		.select({
 			groupId: serviceTitles.groupId,
 			id: serviceTitles.id,
@@ -99,28 +99,31 @@ const rankedUnion = (
 // merge reuses converge's CAS batch (`commitMerge`), so a concurrent write that
 // moved any involved group aborts untouched; the follow-up stamps the survivor
 // `manual` and closes the candidate.
-const acceptStructural = (
+const acceptStructural = async (
 	db: GatewayDb,
 	candidate: CandidateRow,
-): MembershipOutcome => {
+): Promise<MembershipOutcome> => {
 	const { evidence } = candidate;
 	if (evidence.kind !== "structural") {
 		return { kind: "wrong-kind" };
 	}
-	const groupIds = [
-		...new Set(evidence.competingGroupIds.map((groupId) => survivorGroupId(db, groupId))),
-	].toSorted(ascending);
+	const resolved = await Promise.all(
+		evidence.competingGroupIds.map(async (groupId) => survivorGroupId(db, groupId)),
+	);
+	const groupIds = [...new Set(resolved)].toSorted(ascending);
 	const [survivorId] = groupIds;
 	if (survivorId === undefined) {
 		return { kind: "missing" };
 	}
 	const retiredIds = groupIds.filter((groupId) => groupId !== survivorId);
-	const stampAndClose = (): MembershipOutcome => {
-		db.update(titleGroups)
+	const stampAndClose = async (): Promise<MembershipOutcome> => {
+		await db
+			.update(titleGroups)
 			.set({ source: MANUAL })
 			.where(eq(titleGroups.id, survivorId))
 			.run();
-		db.update(pendingGroupCandidates)
+		await db
+			.update(pendingGroupCandidates)
 			.set({ status: "accepted" })
 			.where(eq(pendingGroupCandidates.id, candidate.id))
 			.run();
@@ -129,13 +132,16 @@ const acceptStructural = (
 	if (retiredIds.length === 0) {
 		return stampAndClose();
 	}
-	const snapshots = groupIds
-		.map((groupId) => readGroupSnapshot(db, groupId))
-		.filter((snapshot): snapshot is GroupSnapshot => snapshot !== undefined);
-	const outcome: ConvergeOutcome = commitMerge(db, {
+	const snapshotRows = await Promise.all(
+		groupIds.map(async (groupId) => readGroupSnapshot(db, groupId)),
+	);
+	const snapshots = snapshotRows.filter(
+		(snapshot): snapshot is GroupSnapshot => snapshot !== undefined,
+	);
+	const outcome: ConvergeOutcome = await commitMerge(db, {
 		kind: "merge",
 		precondition: { snapshots },
-		reassignments: rankedUnion(db, survivorId, retiredIds),
+		reassignments: await rankedUnion(db, survivorId, retiredIds),
 		retiredIds,
 		survivorId,
 	});
@@ -148,8 +154,11 @@ const acceptStructural = (
 // Accept a membership candidate through the curated attach path: a fuzzy proposal
 // joins the subject's group (stamping `manual`), a structural collision merges its
 // competing groups. Both leave the merged membership for the recompute to preserve.
-const acceptMembership = (db: GatewayDb, candidateId: number): MembershipOutcome => {
-	const candidate = loadCandidate(db, candidateId);
+const acceptMembership = async (
+	db: GatewayDb,
+	candidateId: number,
+): Promise<MembershipOutcome> => {
+	const candidate = await loadCandidate(db, candidateId);
 	if (candidate === undefined) {
 		return { kind: "missing" };
 	}
@@ -157,11 +166,17 @@ const acceptMembership = (db: GatewayDb, candidateId: number): MembershipOutcome
 		return { kind: "not-open" };
 	}
 	if (candidate.kind === "fuzzy-group") {
-		const result = acceptFuzzyCandidate(db, candidateId);
+		const result = await acceptFuzzyCandidate(db, candidateId);
 		if (result.kind === "accepted") {
 			return { attachedTitleIds: result.attachedTitleIds, kind: "accepted" };
 		}
-		return result.kind === "not-open" ? { kind: "not-open" } : { kind: "missing" };
+		if (result.kind === "not-open") {
+			return { kind: "not-open" };
+		}
+		if (result.kind === "stale") {
+			return { kind: "stale" };
+		}
+		return { kind: "missing" };
 	}
 	if (candidate.kind === "structural") {
 		return acceptStructural(db, candidate);
@@ -171,8 +186,11 @@ const acceptMembership = (db: GatewayDb, candidateId: number): MembershipOutcome
 
 // Reject a membership candidate, recording the verdict so a repeat discovery of the
 // same proposal finds it. Fuzzy rejection reuses the discovery path's rejection.
-const rejectMembership = (db: GatewayDb, candidateId: number): MembershipOutcome => {
-	const candidate = loadCandidate(db, candidateId);
+const rejectMembership = async (
+	db: GatewayDb,
+	candidateId: number,
+): Promise<MembershipOutcome> => {
+	const candidate = await loadCandidate(db, candidateId);
 	if (candidate === undefined) {
 		return { kind: "missing" };
 	}
@@ -180,11 +198,12 @@ const rejectMembership = (db: GatewayDb, candidateId: number): MembershipOutcome
 		return { kind: "not-open" };
 	}
 	if (candidate.kind === "fuzzy-group") {
-		const result = rejectFuzzyCandidate(db, candidateId);
+		const result = await rejectFuzzyCandidate(db, candidateId);
 		return result.kind === "rejected" ? { kind: "rejected" } : { kind: result.kind };
 	}
 	if (candidate.kind === "structural") {
-		db.update(pendingGroupCandidates)
+		await db
+			.update(pendingGroupCandidates)
 			.set({ status: "rejected" })
 			.where(eq(pendingGroupCandidates.id, candidateId))
 			.run();
@@ -216,86 +235,76 @@ type SettleOutcome =
 // `wrong-kind` when the evidence names no edge to write.
 type ProposalWrite = "collision" | "written" | "wrong-kind";
 
-const wroteRow = (rows: readonly unknown[]): ProposalWrite =>
-	rows[0] === undefined ? "collision" : "written";
+type ProposalInsert =
+	| {
+			readonly binds: readonly unknown[];
+			readonly kind: "insert";
+			readonly sql: string;
+	  }
+	| { readonly kind: "wrong-kind" };
 
-// Attach the proposed side of a conflict as a `manual` assertion — the curated
-// evidence a recompute preserves. Each kind writes exactly the edge its evidence
-// describes, and reports whether the insert actually landed so a silent collision
-// never closes the candidate as accepted.
-const acceptProposal = (
-	db: GatewayDb,
+// INSERT OR IGNORE … SELECT form so the gate row can suppress the write when the
+// CAS batch lost, and so `changes()` after the statement reports a real insert.
+const proposalInsert = (
 	evidence: ConflictEvidence,
 	relationIndex: number,
-): ProposalWrite => {
+): ProposalInsert => {
 	switch (evidence.kind) {
 		case "absence-assertion-conflict": {
-			return wroteRow(
-				db
-					.insert(absenceAssertions)
-					.values({
-						coverageRevision: evidence.coverageRevision,
-						source: MANUAL,
-						targetService: evidence.targetService,
-						unitId: evidence.unitId,
-					})
-					.onConflictDoNothing()
-					.returning()
-					.all(),
-			);
+			return {
+				binds: [
+					evidence.coverageRevision,
+					evidence.targetService,
+					evidence.unitId,
+				],
+				kind: "insert",
+				sql: `INSERT OR IGNORE INTO absence_assertions
+					(coverage_revision, source, target_service, unit_id)
+					SELECT ?, 'manual', ?, ?
+					WHERE EXISTS (SELECT 1 FROM atomic_write_gates WHERE operation_id = ?)`,
+			};
 		}
 		case "continuity-conflict": {
 			const relation = evidence.competingRelations[relationIndex];
 			if (relation === undefined) {
-				return "wrong-kind";
+				return { kind: "wrong-kind" };
 			}
-			return wroteRow(
-				db
-					.insert(relationAssertions)
-					.values({
-						confidence: "high",
-						fromTitleId: relation.fromTitleId,
-						source: MANUAL,
-						toTitleId: relation.toTitleId,
-					})
-					.onConflictDoNothing()
-					.returning()
-					.all(),
-			);
+			return {
+				binds: [relation.fromTitleId, relation.toTitleId],
+				kind: "insert",
+				sql: `INSERT OR IGNORE INTO relation_assertions
+					(confidence, from_title_id, source, to_title_id)
+					SELECT 'high', ?, 'manual', ?
+					WHERE EXISTS (SELECT 1 FROM atomic_write_gates WHERE operation_id = ?)`,
+			};
 		}
 		case "instalment-assertion-conflict": {
-			return wroteRow(
-				db
-					.insert(instalmentAssertions)
-					.values({
-						confidence: evidence.proposed.confidence,
-						instalmentId: evidence.instalmentId,
-						source: MANUAL,
-						unitId: evidence.proposed.unitId,
-					})
-					.onConflictDoNothing()
-					.returning()
-					.all(),
-			);
+			return {
+				binds: [
+					evidence.proposed.confidence,
+					evidence.instalmentId,
+					evidence.proposed.unitId,
+				],
+				kind: "insert",
+				sql: `INSERT OR IGNORE INTO instalment_assertions
+					(confidence, instalment_id, source, unit_id)
+					SELECT ?, ?, 'manual', ?
+					WHERE EXISTS (SELECT 1 FROM atomic_write_gates WHERE operation_id = ?)`,
+			};
 		}
 		case "title-assertion-conflict": {
 			const { highId, lowId } = canonicalTitlePair(
 				evidence.proposed.titleAId,
 				evidence.proposed.titleBId,
 			);
-			return wroteRow(
-				db
-					.insert(titleAssertions)
-					.values({
-						confidence: evidence.proposed.confidence,
-						source: MANUAL,
-						titleAId: lowId,
-						titleBId: highId,
-					})
-					.onConflictDoNothing()
-					.returning()
-					.all(),
-			);
+			return {
+				binds: [evidence.proposed.confidence, lowId, highId],
+				kind: "insert",
+				sql: `INSERT OR IGNORE INTO title_assertions
+					(confidence, source, title_a_id, title_b_id)
+					SELECT ?, 'manual', ?, ?
+					WHERE EXISTS (SELECT 1 FROM atomic_write_gates WHERE operation_id = ?)`,
+			};
 		}
 	}
 };
@@ -309,44 +318,116 @@ const conflictEvidence = (row: CandidateRow): ConflictEvidence | undefined => {
 		: evidence;
 };
 
+const settleGateLost = async (
+	db: GatewayDb,
+	candidateId: number,
+): Promise<SettleOutcome> => {
+	const current = await loadCandidate(db, candidateId);
+	if (current === undefined) {
+		return { kind: "missing" };
+	}
+	// Still open after a lost gate: concurrent writer raced; leave the row for retry.
+	return current.status === "open" ? { kind: "collision" } : { kind: "not-open" };
+};
+
 // Settle a queued conflict. Accepting publishes the proposed side as a `manual`
 // assertion and closes the row; rejecting records the verdict and leaves the
 // published side standing, so readers keep the previous complete revision.
-const settleConflict = (db: GatewayDb, input: SettleInput): SettleOutcome =>
-	db.transaction((tx): SettleOutcome => {
-		const candidate = loadCandidate(tx, input.candidateId);
-		if (candidate === undefined) {
-			return { kind: "missing" };
+// Accept and reject both run as one gated D1 batch so two moderators cannot both
+// pass an open check and leave a published assertion with the row still open.
+const settleConflict = async (
+	db: GatewayDb,
+	input: SettleInput,
+): Promise<SettleOutcome> => {
+	const candidate = await loadCandidate(db, input.candidateId);
+	if (candidate === undefined) {
+		return { kind: "missing" };
+	}
+	if (candidate.status !== "open") {
+		return { kind: "not-open" };
+	}
+	const evidence = conflictEvidence(candidate);
+	if (evidence === undefined) {
+		return { kind: "wrong-kind" };
+	}
+	if (!input.accept) {
+		const { acquired } = await runAtomicBatch(db, (database, operationId) => {
+			const statements: PreparedBatch = [
+				database
+					.prepare(
+						`INSERT INTO atomic_write_gates (operation_id)
+							SELECT ? WHERE EXISTS (
+								SELECT 1 FROM pending_group_candidates
+								WHERE id = ? AND status = 'open'
+							)
+							RETURNING operation_id`,
+					)
+					.bind(operationId, input.candidateId),
+				database
+					.prepare(
+						`UPDATE pending_group_candidates SET status = 'rejected'
+							WHERE id = ? AND status = 'open' AND EXISTS (
+								SELECT 1 FROM atomic_write_gates WHERE operation_id = ?
+							)`,
+					)
+					.bind(input.candidateId, operationId),
+				database
+					.prepare("DELETE FROM atomic_write_gates WHERE operation_id = ?")
+					.bind(operationId),
+			];
+			return statements;
+		});
+		if (!acquired) {
+			return settleGateLost(db, input.candidateId);
 		}
-		if (candidate.status !== "open") {
-			return { kind: "not-open" };
-		}
-		const evidence = conflictEvidence(candidate);
-		if (evidence === undefined) {
-			return { kind: "wrong-kind" };
-		}
-		if (!input.accept) {
-			tx.update(pendingGroupCandidates)
-				.set({ status: "rejected" })
-				.where(eq(pendingGroupCandidates.id, input.candidateId))
-				.run();
-			return { kind: "rejected" };
-		}
-		const write = acceptProposal(tx, evidence, input.relationIndex ?? 0);
-		if (write === "wrong-kind") {
-			return { kind: "wrong-kind" };
-		}
-		// A silent collision published nothing, so the row stays open for a moderator
-		// to settle against whatever already occupies the edge.
-		if (write === "collision") {
-			return { kind: "collision" };
-		}
-		tx.update(pendingGroupCandidates)
-			.set({ status: "accepted" })
-			.where(eq(pendingGroupCandidates.id, input.candidateId))
-			.run();
-		return { kind: "settled" };
+		return { kind: "rejected" };
+	}
+	const insert = proposalInsert(evidence, input.relationIndex ?? 0);
+	if (insert.kind === "wrong-kind") {
+		return { kind: "wrong-kind" };
+	}
+	const { acquired, results } = await runAtomicBatch(db, (database, operationId) => {
+		const statements: PreparedBatch = [
+			database
+				.prepare(
+					`INSERT INTO atomic_write_gates (operation_id)
+						SELECT ? WHERE EXISTS (
+							SELECT 1 FROM pending_group_candidates
+							WHERE id = ? AND status = 'open'
+						)
+						RETURNING operation_id`,
+				)
+				.bind(operationId, input.candidateId),
+			database.prepare(insert.sql).bind(...insert.binds, operationId),
+			database
+				.prepare(
+					`UPDATE pending_group_candidates SET status = 'accepted'
+						WHERE id = ? AND status = 'open'
+						AND EXISTS (
+							SELECT 1 FROM atomic_write_gates WHERE operation_id = ?
+						)
+						AND changes() > 0`,
+				)
+				.bind(input.candidateId, operationId),
+			database
+				.prepare("DELETE FROM atomic_write_gates WHERE operation_id = ?")
+				.bind(operationId),
+		];
+		return statements;
 	});
+	if (!acquired) {
+		return settleGateLost(db, input.candidateId);
+	}
+	const [, writeResult] = results;
+	const write: ProposalWrite =
+		writeResult !== undefined && writeResult.meta.changes > 0
+			? "written"
+			: "collision";
+	if (write === "collision") {
+		return { kind: "collision" };
+	}
+	return { kind: "settled" };
+};
 
 // --- Low-confidence review flag ---------------------------------------------
 
@@ -357,12 +438,12 @@ type FlagOutcome =
 	| { readonly kind: "not-open" }
 	| { readonly kind: "wrong-kind" };
 
-const withOpenFlag = (
+const withOpenFlag = async (
 	db: GatewayDb,
 	candidateId: number,
-	act: (row: CandidateRow) => FlagOutcome,
-): FlagOutcome => {
-	const candidate = loadCandidate(db, candidateId);
+	act: (row: CandidateRow) => Promise<FlagOutcome> | FlagOutcome,
+): Promise<FlagOutcome> => {
+	const candidate = await loadCandidate(db, candidateId);
 	if (candidate === undefined) {
 		return { kind: "missing" };
 	}
@@ -377,9 +458,13 @@ const withOpenFlag = (
 
 // Clear a review flag: the low-confidence link stays published and visible, the row
 // leaves the queue. The graph is untouched — only the flag is resolved.
-const clearReviewFlag = (db: GatewayDb, candidateId: number): FlagOutcome =>
-	withOpenFlag(db, candidateId, (candidate) => {
-		db.update(pendingGroupCandidates)
+const clearReviewFlag = async (
+	db: GatewayDb,
+	candidateId: number,
+): Promise<FlagOutcome> =>
+	withOpenFlag(db, candidateId, async (candidate) => {
+		await db
+			.update(pendingGroupCandidates)
 			.set({ status: "accepted" })
 			.where(eq(pendingGroupCandidates.id, candidate.id))
 			.run();
@@ -388,8 +473,10 @@ const clearReviewFlag = (db: GatewayDb, candidateId: number): FlagOutcome =>
 
 // Keep a review flag open for a later pass — an explicit no-op that leaves the row
 // in the queue.
-const keepReviewFlag = (db: GatewayDb, candidateId: number): FlagOutcome =>
-	withOpenFlag(db, candidateId, () => ({ kind: "kept" }));
+const keepReviewFlag = async (
+	db: GatewayDb,
+	candidateId: number,
+): Promise<FlagOutcome> => withOpenFlag(db, candidateId, () => ({ kind: "kept" }));
 
 // --- Group-level fiats ------------------------------------------------------
 
@@ -399,65 +486,92 @@ type MarkMatchedOutcome =
 
 // The "mark as matched" vouch (ADR-0002 §Provenance): the survivor group turns
 // `manual`, which a recompute preserves alongside its status and membership.
-const markAsMatched = (db: GatewayDb, groupId: number): MarkMatchedOutcome => {
-	const survivor = survivorGroupId(db, groupId);
+const markAsMatched = async (
+	db: GatewayDb,
+	groupId: number,
+): Promise<MarkMatchedOutcome> => {
+	const survivor = await survivorGroupId(db, groupId);
 	const group = takeFirst(
-		db.select().from(titleGroups).where(eq(titleGroups.id, survivor)).all(),
+		await db.select().from(titleGroups).where(eq(titleGroups.id, survivor)).all(),
 	);
 	if (group === undefined) {
 		return { kind: "missing" };
 	}
-	db.update(titleGroups).set({ source: MANUAL }).where(eq(titleGroups.id, survivor)).run();
+	await db
+		.update(titleGroups)
+		.set({ source: MANUAL })
+		.where(eq(titleGroups.id, survivor))
+		.run();
 	return { groupId: survivor, kind: "matched" };
 };
 
 interface ManualPairingInput {
 	readonly instalmentIds: readonly number[];
 	// Cover an existing unit, or omit to mint a fresh one for the pairing.
-	readonly unitId?: number | undefined;
+	readonly unitId?: string | undefined;
 }
 
 type ManualPairingOutcome =
 	| {
 			readonly assertionIds: readonly number[];
 			readonly kind: "paired";
-			readonly unitId: number;
+			readonly unitId: string;
 	  }
 	| { readonly kind: "empty" };
 
 // Pair instalments by hand onto one content unit through the curated attach path:
 // each spoke gets a `manual`, high-confidence instalment assertion. A merge or
 // split is just several spokes sharing the unit.
-const manualPairing = (
+const manualPairing = async (
 	db: GatewayDb,
 	input: ManualPairingInput,
-): ManualPairingOutcome =>
-	db.transaction((tx): ManualPairingOutcome => {
-		if (input.instalmentIds.length === 0) {
-			return { kind: "empty" };
-		}
-		const unitId =
-			input.unitId ??
-			takeFirst(tx.insert(contentUnits).values({}).returning().all())?.id;
-		if (unitId === undefined) {
-			throw new Error("content unit insert returned no row");
-		}
-		const assertionIds: number[] = [];
-		for (const instalmentId of input.instalmentIds) {
-			const inserted = takeFirst(
-				tx
-					.insert(instalmentAssertions)
-					.values({ confidence: "high", instalmentId, source: MANUAL, unitId })
-					.onConflictDoNothing()
-					.returning()
-					.all(),
-			);
-			if (inserted !== undefined) {
-				assertionIds.push(inserted.id);
+): Promise<ManualPairingOutcome> => {
+	if (input.instalmentIds.length === 0) {
+		return { kind: "empty" };
+	}
+	// One D1 batch so a failed assertion insert cannot strand a minted unit or a
+	// partial manual pairing (curation recompute treats as ground truth).
+	const minting = input.unitId === undefined;
+	const unitId = input.unitId ?? crypto.randomUUID();
+	const statements: D1PreparedStatement[] = [];
+	if (minting) {
+		statements.push(
+			db.$client.prepare("INSERT INTO content_units (id) VALUES (?)").bind(unitId),
+		);
+	}
+	for (const instalmentId of input.instalmentIds) {
+		statements.push(
+			db.$client
+				.prepare(
+					`INSERT INTO instalment_assertions (confidence, instalment_id, source, unit_id)
+						VALUES ('high', ?, 'manual', ?)
+						ON CONFLICT DO NOTHING
+						RETURNING id`,
+				)
+				.bind(instalmentId, unitId),
+		);
+	}
+	const [first, ...rest] = statements;
+	if (first === undefined) {
+		return { kind: "empty" };
+	}
+	const results = await db.$client.batch([first, ...rest]);
+	const assertionResults = minting ? results.slice(1) : results;
+	const assertionIds: number[] = [];
+	for (const result of assertionResults) {
+		for (const row of result.results) {
+			if (
+				typeof row === "object" &&
+				row !== null &&
+				"id" in row &&
+				typeof row.id === "number"
+			) {
+				assertionIds.push(row.id);
 			}
 		}
-		return { assertionIds, kind: "paired", unitId };
-	});
+	}
+	return { assertionIds, kind: "paired", unitId };
+};
 
 // --- Conflict producer guard ------------------------------------------------
 
@@ -496,26 +610,31 @@ const evidenceHashOf = (evidence: ConflictEvidence): string => {
 // A prior `manual` assertion already standing on the contested edge. Manual
 // evidence outranks algorithmic (ADR-0002 §Conflicts and review), so its presence
 // rejects a competing proposal outright rather than queuing it.
-const priorManualAssertion = (db: GatewayDb, evidence: ConflictEvidence): boolean => {
+const priorManualAssertion = async (
+	db: GatewayDb,
+	evidence: ConflictEvidence,
+): Promise<boolean> => {
 	if (evidence.kind === "instalment-assertion-conflict") {
-		return db
+		const rows = await db
 			.select({ source: instalmentAssertions.source })
 			.from(instalmentAssertions)
 			.where(eq(instalmentAssertions.instalmentId, evidence.instalmentId))
-			.all()
-			.some((row) => row.source === MANUAL);
+			.all();
+		return rows.some((row) => row.source === MANUAL);
 	}
 	if (evidence.kind === "title-assertion-conflict") {
 		const { highId, lowId } = canonicalTitlePair(
 			evidence.proposed.titleAId,
 			evidence.proposed.titleBId,
 		);
-		return db
+		const rows = await db
 			.select({ source: titleAssertions.source })
 			.from(titleAssertions)
-			.where(and(eq(titleAssertions.titleAId, lowId), eq(titleAssertions.titleBId, highId)))
-			.all()
-			.some((row) => row.source === MANUAL);
+			.where(
+				and(eq(titleAssertions.titleAId, lowId), eq(titleAssertions.titleBId, highId)),
+			)
+			.all();
+		return rows.some((row) => row.source === MANUAL);
 	}
 	return false;
 };
@@ -524,10 +643,10 @@ const priorManualAssertion = (db: GatewayDb, evidence: ConflictEvidence): boolea
 // paths contradict. A prior manual assertion auto-rejects the proposal (nothing is
 // published on either side, the manual edge stands); otherwise the conflict queues
 // as one open row, coalescing on repeat discovery.
-const queueAssertionConflict = (
+const queueAssertionConflict = async (
 	db: GatewayDb,
 	input: QueueConflictInput,
-): QueueConflictOutcome => {
+): Promise<QueueConflictOutcome> => {
 	const evidenceHash = evidenceHashOf(input.evidence);
 	const subjectKey = candidateSubjectKey(input.subject);
 	const values = {
@@ -537,9 +656,9 @@ const queueAssertionConflict = (
 		subject: input.subject,
 		subjectKey,
 	};
-	if (priorManualAssertion(db, input.evidence)) {
+	if (await priorManualAssertion(db, input.evidence)) {
 		const inserted = takeFirst(
-			db
+			await db
 				.insert(pendingGroupCandidates)
 				.values({ ...values, status: "rejected" })
 				.returning()
@@ -548,7 +667,12 @@ const queueAssertionConflict = (
 		return { candidateId: inserted?.id, kind: "auto-rejected" };
 	}
 	const inserted = takeFirst(
-		db.insert(pendingGroupCandidates).values(values).onConflictDoNothing().returning().all(),
+		await db
+			.insert(pendingGroupCandidates)
+			.values(values)
+			.onConflictDoNothing()
+			.returning()
+			.all(),
 	);
 	return { candidateId: inserted?.id, kind: "queued" };
 };

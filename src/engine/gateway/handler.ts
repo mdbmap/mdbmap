@@ -1,9 +1,9 @@
-import { db as defaultDb } from "@/db";
-
+import { resolveDb } from "@/db";
+import type { Db as GatewayDb } from "@/db";
 import type { Profile } from "@/engine/identity.ts";
+
 import { noColdLookup } from "./cold-lookup.ts";
 import type { ColdLookup } from "./cold-lookup.ts";
-import type { GatewayDb } from "./read.ts";
 import { resolveMapping } from "./resolve.ts";
 import { toResponse } from "./respond.ts";
 
@@ -21,7 +21,7 @@ const runMapping = async (
 	deps: GatewayDeps = {},
 ): Promise<Response> => {
 	const outcome = await resolveMapping(
-		deps.db ?? defaultDb,
+		deps.db ?? (await resolveDb()),
 		profile,
 		rawId,
 		deps.coldLookup ?? noColdLookup,

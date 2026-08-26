@@ -22,7 +22,7 @@ export {
 	coverageStatesFor,
 	seedPendingCoverage,
 } from "./coverage.ts";
-export type { CoverageDb } from "./coverage.ts";
+export type { Db as CoverageDb } from "@/db";
 export { defaultOverflowBudget, estimateBuild } from "./estimate.ts";
 export type {
 	EstimateInput,

@@ -8,9 +8,10 @@ import {
 } from "@/db/engine-schema";
 import type { InstalmentLocator } from "@/db/schema";
 
+import type { Db as GatewayDb } from "@/db";
+
 import { toLocator } from "./gateway/keys.ts";
 import { survivorGroupId } from "./gateway/read.ts";
-import type { GatewayDb } from "./gateway/read.ts";
 import type {
 	EngineRead,
 	MediaKind,
@@ -26,6 +27,7 @@ import { metadataProviderFor } from "./seam.ts";
 // content units they share — no group/spoke/unit internal crosses the seam.
 
 type TitleRow = typeof serviceTitles.$inferSelect;
+type UnitId = string;
 
 // Services the seam surfaces as members; other spokes in a group (imdb, tvdb,
 // kitsu) resolve too but have no MemberTitles slot to carry them.
@@ -70,8 +72,11 @@ const compareTitles = (left: TitleRow, right: TitleRow): number =>
 
 // The content units a title's spokes cover — the hub side of the assertion graph
 // (ADR-0002). Segment membership is decided by which titles share these units.
-const unitsCovered = (db: GatewayDb, titleId: number): ReadonlySet<number> => {
-	const spokes = db
+const unitsCovered = async (
+	db: GatewayDb,
+	titleId: number,
+): Promise<ReadonlySet<UnitId>> => {
+	const spokes = await db
 		.select({ id: serviceInstalments.id })
 		.from(serviceInstalments)
 		.where(eq(serviceInstalments.titleId, titleId))
@@ -79,7 +84,7 @@ const unitsCovered = (db: GatewayDb, titleId: number): ReadonlySet<number> => {
 	if (spokes.length === 0) {
 		return new Set();
 	}
-	const edges = db
+	const edges = await db
 		.select({ unitId: instalmentAssertions.unitId })
 		.from(instalmentAssertions)
 		.where(
@@ -93,8 +98,8 @@ const unitsCovered = (db: GatewayDb, titleId: number): ReadonlySet<number> => {
 };
 
 const countShared = (
-	left: ReadonlySet<number>,
-	right: ReadonlySet<number>,
+	left: ReadonlySet<UnitId>,
+	right: ReadonlySet<UnitId>,
 ): number => {
 	let shared = 0;
 	for (const unit of left) {
@@ -107,14 +112,14 @@ const countShared = (
 
 interface Candidate {
 	readonly title: TitleRow;
-	readonly units: ReadonlySet<number>;
+	readonly units: ReadonlySet<UnitId>;
 }
 
 // The candidate sharing the most content units with the segment's spine; ties go
 // to the earlier candidate, so pre-sorting by ordinal keeps the pick stable.
 const bestAligned = (
 	candidates: readonly Candidate[],
-	spineUnits: ReadonlySet<number>,
+	spineUnits: ReadonlySet<UnitId>,
 ): TitleRow | undefined => {
 	let best: { readonly shared: number; readonly title: TitleRow } | undefined;
 	for (const candidate of candidates) {
@@ -128,7 +133,7 @@ const bestAligned = (
 
 const buildMembers = (
 	byService: ReadonlyMap<MemberService, readonly Candidate[]>,
-	spineUnits: ReadonlySet<number>,
+	spineUnits: ReadonlySet<UnitId>,
 ): MemberTitles => {
 	const members: MemberTitles = {};
 	for (const service of memberServices) {
@@ -144,20 +149,26 @@ const buildMembers = (
 
 interface CandidateGraph {
 	readonly byService: ReadonlyMap<MemberService, readonly Candidate[]>;
-	readonly unitsByTitle: ReadonlyMap<number, ReadonlySet<number>>;
+	readonly unitsByTitle: ReadonlyMap<number, ReadonlySet<UnitId>>;
 }
 
-const candidateGraph = (
+const candidateGraph = async (
 	db: GatewayDb,
 	titles: readonly TitleRow[],
-): CandidateGraph => {
+): Promise<CandidateGraph> => {
+	const members = titles.filter(
+		(title): title is TitleRow & { service: MemberService } =>
+			isMemberService(title.service),
+	);
+	const covered = await Promise.all(
+		members.map(async (title) => ({
+			title,
+			units: await unitsCovered(db, title.id),
+		})),
+	);
 	const byService = new Map<MemberService, Candidate[]>();
-	const unitsByTitle = new Map<number, ReadonlySet<number>>();
-	for (const title of titles) {
-		if (!isMemberService(title.service)) {
-			continue;
-		}
-		const units = unitsCovered(db, title.id);
+	const unitsByTitle = new Map<number, ReadonlySet<UnitId>>();
+	for (const { title, units } of covered) {
 		unitsByTitle.set(title.id, units);
 		const list = byService.get(title.service) ?? [];
 		list.push({ title, units });
@@ -168,12 +179,12 @@ const candidateGraph = (
 
 // Only main-sequence spokes are trackable episodes; season-0 specials persist as
 // spokes too (ADR-0002) and stay out of the positional locator stream.
-const segmentLocators = (
+const segmentLocators = async (
 	db: GatewayDb,
 	provider: string,
 	spine: TitleRow,
-): InstalmentLocator[] => {
-	const spokes = db
+): Promise<InstalmentLocator[]> => {
+	const spokes = await db
 		.select({ locator: serviceInstalments.locator })
 		.from(serviceInstalments)
 		.where(eq(serviceInstalments.titleId, spine.id))
@@ -190,13 +201,16 @@ const segmentLocators = (
 	return locators;
 };
 
-const resolve = (db: GatewayDb, continuityId: string): ResolveResult => {
+const resolve = async (
+	db: GatewayDb,
+	continuityId: string,
+): Promise<ResolveResult> => {
 	const requested = parseGroupId(continuityId);
 	if (requested === undefined) {
 		throw new Error(`engine: malformed continuity ${continuityId}`);
 	}
-	const groupId = survivorGroupId(db, requested);
-	const group = db
+	const groupId = await survivorGroupId(db, requested);
+	const group = await db
 		.select()
 		.from(titleGroups)
 		.where(eq(titleGroups.id, groupId))
@@ -204,30 +218,30 @@ const resolve = (db: GatewayDb, continuityId: string): ResolveResult => {
 	if (group.length === 0) {
 		throw new Error(`engine: no continuity ${continuityId}`);
 	}
-	const titles = db
+	const titleRows = await db
 		.select()
 		.from(serviceTitles)
 		.where(eq(serviceTitles.groupId, groupId))
-		.all()
-		.toSorted(compareTitles);
+		.all();
+	const titles = titleRows.toSorted(compareTitles);
 	const mediaKind = detectMediaKind(titles);
 	const provider = metadataProviderFor(mediaKind);
 	const spine = titles.filter((title) => title.service === provider);
 	if (spine.length === 0) {
 		throw new Error(`engine: continuity ${continuityId} has no ${provider} spine`);
 	}
-	const { byService, unitsByTitle } = candidateGraph(db, titles);
-	const segments: Segment[] = spine.map(
-		(title): Segment => ({
-			instalments: segmentLocators(db, provider, title),
+	const { byService, unitsByTitle } = await candidateGraph(db, titles);
+	const segments: Segment[] = await Promise.all(
+		spine.map(async (title): Promise<Segment> => ({
+			instalments: await segmentLocators(db, provider, title),
 			members: buildMembers(byService, unitsByTitle.get(title.id) ?? new Set()),
-		}),
+		})),
 	);
 	return { mediaKind, segments };
 };
 
 const createEngine = (db: GatewayDb): EngineRead => ({
-	resolveContinuity: (continuityId) => resolve(db, continuityId),
+	resolveContinuity: async (continuityId) => resolve(db, continuityId),
 });
 
 export { createEngine };

@@ -1,8 +1,9 @@
 import { eq, inArray } from "drizzle-orm";
 
+import { runAtomicBatch } from "@/db/atomic";
+import type { PreparedBatch } from "@/db/atomic";
 import {
 	absenceAssertions,
-	contentUnits,
 	instalmentAssertions,
 	serviceInstalments,
 	serviceTitles,
@@ -22,9 +23,8 @@ import type { TierId } from "@/engine/matcher";
 // `llm-verified`) or a human's curation (`community`, `manual`) — cannot be
 // re-derived and is preserved rather than dropped, consistent with all four
 // outranking the tiers in the serializer's precedence.
-const algorithmicSources: ReadonlySet<AssertionSource> = new Set<AssertionSource>(
-	tierIds,
-);
+const algorithmicSources: ReadonlySet<AssertionSource> =
+	new Set<AssertionSource>(tierIds);
 
 // Every provenance the deterministic matcher does not itself produce. A recompute
 // re-derives the algorithmic links and merges around these (ADR-0002).
@@ -90,7 +90,9 @@ interface RecomputePlan {
 	readonly precondition: RecomputePrecondition;
 	// Absent when an admin vouched for the group itself: its stamp and source are
 	// preserved. Present otherwise, recording the highest tier this pass tried.
-	readonly stamp: { readonly ladderComplete: boolean; readonly source: GroupSource } | undefined;
+	readonly stamp:
+		| { readonly ladderComplete: boolean; readonly source: GroupSource }
+		| undefined;
 }
 
 type RecomputeOutcome =
@@ -103,33 +105,39 @@ const takeFirst = <Row>(rows: readonly Row[]): Row | undefined => rows[0];
 
 // Read the group's stamp, membership and every assertion on its spokes, splitting
 // curated provenance from algorithmic so the plan can preserve the former.
-const readGroupState = (db: GatewayDb, groupId: number): GroupState | undefined => {
+const readGroupState = async (
+	db: GatewayDb,
+	groupId: number,
+): Promise<GroupState | undefined> => {
 	const group = takeFirst(
-		db.select().from(titleGroups).where(eq(titleGroups.id, groupId)).all(),
+		await db
+			.select()
+			.from(titleGroups)
+			.where(eq(titleGroups.id, groupId))
+			.all(),
 	);
 	if (group === undefined) {
 		return undefined;
 	}
-	const memberTitleIds = db
+	const memberRows = await db
 		.select({ id: serviceTitles.id })
 		.from(serviceTitles)
 		.where(eq(serviceTitles.groupId, groupId))
-		.all()
-		.map((row) => row.id)
-		.toSorted(ascending);
-	const spokeIds =
+		.all();
+	const memberTitleIds = memberRows.map((row) => row.id).toSorted(ascending);
+	const spokeRows =
 		memberTitleIds.length === 0
 			? []
-			: db
+			: await db
 					.select({ id: serviceInstalments.id })
 					.from(serviceInstalments)
 					.where(inArray(serviceInstalments.titleId, memberTitleIds))
-					.all()
-					.map((row) => row.id);
+					.all();
+	const spokeIds = spokeRows.map((row) => row.id);
 	const assertions =
 		spokeIds.length === 0
 			? []
-			: db
+			: await db
 					.select()
 					.from(instalmentAssertions)
 					.where(inArray(instalmentAssertions.instalmentId, spokeIds))
@@ -140,7 +148,7 @@ const readGroupState = (db: GatewayDb, groupId: number): GroupState | undefined 
 	const absences =
 		coveredUnitIds.length === 0
 			? []
-			: db
+			: await db
 					.select()
 					.from(absenceAssertions)
 					.where(inArray(absenceAssertions.unitId, coveredUnitIds))
@@ -152,7 +160,9 @@ const readGroupState = (db: GatewayDb, groupId: number): GroupState | undefined 
 	return {
 		curatedSpokeIds: new Set(curated.map((row) => row.instalmentId)),
 		precondition: {
-			algorithmicAssertionIds: algorithmic.map((row) => row.id).toSorted(ascending),
+			algorithmicAssertionIds: algorithmic
+				.map((row) => row.id)
+				.toSorted(ascending),
 			curatedAbsenceIds,
 			curatedAssertionIds: curated.map((row) => row.id).toSorted(ascending),
 			groupId,
@@ -166,7 +176,10 @@ const readGroupState = (db: GatewayDb, groupId: number): GroupState | undefined 
 // Merge the fresh alignment around curation: drop every algorithmic link, keep
 // the curated ones, and materialise only the pairings that take no spoke curation
 // already holds. A `manual` group was vouched for whole, so its stamp is kept.
-const planRecompute = (state: GroupState, input: RecomputeInput): RecomputePlan => {
+const planRecompute = (
+	state: GroupState,
+	input: RecomputeInput,
+): RecomputePlan => {
 	const newUnits: PlannedUnit[] = [];
 	const droppedPairings: FreshPairing[] = [];
 	for (const pairing of input.pairings) {
@@ -197,58 +210,176 @@ const planRecompute = (state: GroupState, input: RecomputeInput): RecomputePlan 
 	};
 };
 
-const canonical = (precondition: RecomputePrecondition): string =>
-	JSON.stringify(precondition);
-
 // Compare-and-set: re-read the group inside the write and abort untouched if any
 // precondition moved since the plan was made. Otherwise drop the algorithmic
 // links, write the surviving pairings as fresh units, and restamp the group.
-const commitRecompute = (db: GatewayDb, plan: RecomputePlan): RecomputeOutcome =>
-	db.transaction((tx): RecomputeOutcome => {
-		const current = readGroupState(tx, plan.precondition.groupId);
-		if (
-			current === undefined ||
-			canonical(current.precondition) !== canonical(plan.precondition)
-		) {
-			return { kind: "aborted" };
-		}
+const commitRecompute = async (
+	db: GatewayDb,
+	plan: RecomputePlan,
+): Promise<RecomputeOutcome> => {
+	const { precondition } = plan;
+	const memberIds = JSON.stringify(precondition.memberTitleIds);
+	const algorithmicIds = JSON.stringify(precondition.algorithmicAssertionIds);
+	const curatedIds = JSON.stringify(precondition.curatedAssertionIds);
+	const curatedAbsenceIds = JSON.stringify(precondition.curatedAbsenceIds);
+	const sources = tierIds.map(() => "?").join(", ");
+	const { acquired } = await runAtomicBatch(db, (database, operationId) => {
+		const gate = database
+			.prepare(`INSERT INTO atomic_write_gates (operation_id)
+				SELECT ? WHERE EXISTS (
+					SELECT 1 FROM title_groups AS groups
+					WHERE groups.id = ? AND groups.source = ? AND groups.ladder_complete = ?
+					AND (SELECT count(*) FROM service_titles WHERE group_id = groups.id) = json_array_length(?)
+					AND NOT EXISTS (
+						SELECT 1 FROM json_each(?) AS expected
+						WHERE NOT EXISTS (
+							SELECT 1 FROM service_titles WHERE group_id = groups.id AND id = expected.value
+						)
+					)
+					AND (
+						SELECT count(*) FROM instalment_assertions AS assertions
+						JOIN service_instalments AS instalments ON instalments.id = assertions.instalment_id
+						JOIN service_titles AS titles ON titles.id = instalments.title_id
+						WHERE titles.group_id = groups.id AND assertions.source IN (${sources})
+					) = json_array_length(?)
+					AND NOT EXISTS (
+						SELECT 1 FROM json_each(?) AS expected
+						WHERE NOT EXISTS (
+							SELECT 1 FROM instalment_assertions AS assertions
+							JOIN service_instalments AS instalments ON instalments.id = assertions.instalment_id
+							JOIN service_titles AS titles ON titles.id = instalments.title_id
+							WHERE titles.group_id = groups.id AND assertions.id = expected.value
+							AND assertions.source IN (${sources})
+						)
+					)
+					AND (
+						SELECT count(*) FROM instalment_assertions AS assertions
+						JOIN service_instalments AS instalments ON instalments.id = assertions.instalment_id
+						JOIN service_titles AS titles ON titles.id = instalments.title_id
+						WHERE titles.group_id = groups.id AND assertions.source NOT IN (${sources})
+					) = json_array_length(?)
+					AND NOT EXISTS (
+						SELECT 1 FROM json_each(?) AS expected
+						WHERE NOT EXISTS (
+							SELECT 1 FROM instalment_assertions AS assertions
+							JOIN service_instalments AS instalments ON instalments.id = assertions.instalment_id
+							JOIN service_titles AS titles ON titles.id = instalments.title_id
+							WHERE titles.group_id = groups.id AND assertions.id = expected.value
+							AND assertions.source NOT IN (${sources})
+						)
+					)
+					AND (
+						SELECT count(*) FROM absence_assertions AS absences
+						WHERE absences.source NOT IN (${sources}) AND absences.unit_id IN (
+							SELECT assertions.unit_id FROM instalment_assertions AS assertions
+							JOIN service_instalments AS instalments ON instalments.id = assertions.instalment_id
+							JOIN service_titles AS titles ON titles.id = instalments.title_id
+							WHERE titles.group_id = groups.id
+						)
+					) = json_array_length(?)
+					AND NOT EXISTS (
+						SELECT 1 FROM json_each(?) AS expected
+						WHERE NOT EXISTS (
+							SELECT 1 FROM absence_assertions AS absences
+							WHERE absences.id = expected.value AND absences.source NOT IN (${sources})
+							AND absences.unit_id IN (
+								SELECT assertions.unit_id FROM instalment_assertions AS assertions
+								JOIN service_instalments AS instalments ON instalments.id = assertions.instalment_id
+								JOIN service_titles AS titles ON titles.id = instalments.title_id
+								WHERE titles.group_id = groups.id
+							)
+						)
+					)
+				)
+				RETURNING operation_id`)
+			.bind(
+				operationId,
+				precondition.groupId,
+				precondition.source,
+				Number(precondition.ladderComplete),
+				memberIds,
+				memberIds,
+				...tierIds,
+				algorithmicIds,
+				algorithmicIds,
+				...tierIds,
+				...tierIds,
+				curatedIds,
+				curatedIds,
+				...tierIds,
+				...tierIds,
+				curatedAbsenceIds,
+				curatedAbsenceIds,
+				...tierIds,
+			);
+		const statements: PreparedBatch = [gate];
 		if (plan.deleteAssertionIds.length > 0) {
-			tx.delete(instalmentAssertions)
-				.where(inArray(instalmentAssertions.id, [...plan.deleteAssertionIds]))
-				.run();
+			statements.push(
+				database
+					.prepare(`DELETE FROM instalment_assertions
+						WHERE id IN (${plan.deleteAssertionIds.map(() => "?").join(", ")})
+						AND EXISTS (SELECT 1 FROM atomic_write_gates WHERE operation_id = ?)`)
+					.bind(...plan.deleteAssertionIds, operationId),
+			);
 		}
 		for (const unit of plan.newUnits) {
-			const created = takeFirst(tx.insert(contentUnits).values({}).returning().all());
-			if (created === undefined) {
-				throw new Error("content unit insert returned no row");
-			}
-			for (const link of unit.links) {
-				tx.insert(instalmentAssertions)
-					.values({
-						confidence: link.confidence,
-						instalmentId: link.spokeId,
-						source: link.source,
-						unitId: created.id,
-					})
-					.run();
-			}
+			const unitId = crypto.randomUUID();
+			statements.push(
+				database
+					.prepare(`INSERT INTO content_units (id)
+						SELECT ? WHERE EXISTS (
+							SELECT 1 FROM atomic_write_gates WHERE operation_id = ?
+						)`)
+					.bind(unitId, operationId),
+				...unit.links.map((link) =>
+					database
+						.prepare(`INSERT INTO instalment_assertions
+							(instalment_id, unit_id, source, confidence)
+							SELECT ?, ?, ?, ? WHERE EXISTS (
+								SELECT 1 FROM atomic_write_gates WHERE operation_id = ?
+							)`)
+						.bind(
+							link.spokeId,
+							unitId,
+							link.source,
+							link.confidence,
+							operationId,
+						),
+				),
+			);
 		}
 		if (plan.stamp !== undefined) {
-			tx.update(titleGroups)
-				.set({ ladderComplete: plan.stamp.ladderComplete, source: plan.stamp.source })
-				.where(eq(titleGroups.id, plan.precondition.groupId))
-				.run();
+			statements.push(
+				database
+					.prepare(`UPDATE title_groups SET ladder_complete = ?, source = ?
+						WHERE id = ? AND EXISTS (
+							SELECT 1 FROM atomic_write_gates WHERE operation_id = ?
+						)`)
+					.bind(
+						Number(plan.stamp.ladderComplete),
+						plan.stamp.source,
+						precondition.groupId,
+						operationId,
+					),
+			);
 		}
-		return { kind: "applied", plan };
+		statements.push(
+			database
+				.prepare("DELETE FROM atomic_write_gates WHERE operation_id = ?")
+				.bind(operationId),
+		);
+		return statements;
 	});
+	return acquired ? { kind: "applied", plan } : { kind: "aborted" };
+};
 
 // Read, plan and commit in one pass for callers with no correction window to
 // model. The plan and commit stay separate so a caller can interleave reads.
-const recomputeGroup = (
+const recomputeGroup = async (
 	db: GatewayDb,
 	input: RecomputeInput,
-): RecomputeOutcome => {
-	const state = readGroupState(db, input.groupId);
+): Promise<RecomputeOutcome> => {
+	const state = await readGroupState(db, input.groupId);
 	if (state === undefined) {
 		return { kind: "aborted" };
 	}

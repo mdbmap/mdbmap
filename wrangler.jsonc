@@ -3,7 +3,7 @@
 	"name": "tanstack-start-app",
 	"compatibility_date": "2025-09-02",
 	"compatibility_flags": ["nodejs_compat"],
-	"main": "@tanstack/react-start/server-entry",
+	"main": "./src/server.ts",
 	// Set `id` to the real namespace before deploy: `wrangler kv namespace create METADATA_KV`.
 	"kv_namespaces": [{ "binding": "METADATA_KV", "id": "REPLACE_WITH_METADATA_KV_ID" }],
 	// Overflow builds run as durable Cloudflare Workflows (ADR-0002 §overflow).
@@ -13,6 +13,10 @@
 			"class_name": "OverflowBuildWorkflow",
 			"name": "overflow-build",
 		},
+	],
+	// Set `database_id` to the real database before deploy: `wrangler d1 create mdbmap`.
+	"d1_databases": [
+		{ "binding": "DB", "database_name": "mdbmap", "database_id": "REPLACE_WITH_D1_DATABASE_ID" },
 	],
 	"observability": {
 		"enabled": true,

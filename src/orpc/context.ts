@@ -1,12 +1,9 @@
-import type { BaseSQLiteDatabase } from "drizzle-orm/sqlite-core";
 import type { Promisable } from "type-fest";
 
+import type { Db } from "@/db";
 import type { EngineRead } from "@/engine";
 
 import type { Providers } from "./providers";
-
-// Accepts both the schema-typed production db and a schemaless in-memory db.
-type Db = BaseSQLiteDatabase<"sync", unknown, Record<string, unknown>>;
 
 interface SessionUser {
 	id: string;
@@ -30,4 +27,5 @@ interface ORPCContext {
 	resolveSession?: ResolveSession;
 }
 
-export type { Db, ORPCContext, ResolveSession, SessionUser };
+export type { Db } from "@/db";
+export type { ORPCContext, ResolveSession, SessionUser };

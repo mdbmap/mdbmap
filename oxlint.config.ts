@@ -34,6 +34,12 @@ export default defineConfig({
 				"eslint/max-lines-per-function": "off",
 			},
 		},
+		{
+			files: ["src/server.ts"],
+			rules: {
+				"import/no-default-export": "off",
+			},
+		},
 	],
 	plugins: [
 		"eslint",

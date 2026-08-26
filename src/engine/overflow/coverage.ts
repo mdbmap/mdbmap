@@ -1,15 +1,10 @@
 import { and, eq } from "drizzle-orm";
-import type { BaseSQLiteDatabase } from "drizzle-orm/sqlite-core";
 
+import type { Db as CoverageDb } from "@/db";
 import { serviceCoverages } from "@/db/engine-schema";
 import type { CoverageState } from "@/db/engine-schema";
 import type { ContinuityKey } from "@/db/schema.ts";
 import type { Service } from "@/engine/identity.ts";
-
-// D1 is the source of published mappings and coverage; the overflow build only
-// coordinates the per-service coverage state through it (ADR-0002 §overflow).
-// Accepts the schema-typed production db and a schemaless in-memory db alike.
-type CoverageDb = BaseSQLiteDatabase<"sync", unknown, Record<string, unknown>>;
 
 const revisionMatch = (
 	continuity: ContinuityKey,
@@ -25,13 +20,14 @@ const revisionMatch = (
 // Before a fan-out begins, every target service gets a `pending` row so a reader
 // observes pending, never a partial group. Idempotent: a rerun or a concurrent
 // request that seeded first leaves the existing row untouched.
-const seedPendingCoverage = (
+const seedPendingCoverage = async (
 	db: CoverageDb,
 	continuity: ContinuityKey,
 	revision: number,
 	service: Service,
-): void => {
-	db.insert(serviceCoverages)
+): Promise<void> => {
+	await db
+		.insert(serviceCoverages)
 		.values({
 			baselineContinuity: continuity,
 			revision,
@@ -46,13 +42,14 @@ const seedPendingCoverage = (
 // coverage flips to `complete` in a single row write. One service completing
 // never waits on another, so an outage elsewhere in the fan-out cannot hide this
 // service's verified mappings.
-const completeCoverage = (
+const completeCoverage = async (
 	db: CoverageDb,
 	continuity: ContinuityKey,
 	revision: number,
 	service: Service,
-): void => {
-	db.insert(serviceCoverages)
+): Promise<void> => {
+	await db
+		.insert(serviceCoverages)
 		.values({
 			baselineContinuity: continuity,
 			revision,
@@ -70,13 +67,13 @@ const completeCoverage = (
 		.run();
 };
 
-const coverageStateFor = (
+const coverageStateFor = async (
 	db: CoverageDb,
 	continuity: ContinuityKey,
 	revision: number,
 	service: Service,
-): CoverageState | undefined => {
-	const [row] = db
+): Promise<CoverageState | undefined> => {
+	const [row] = await db
 		.select()
 		.from(serviceCoverages)
 		.where(revisionMatch(continuity, service, revision))
@@ -86,12 +83,12 @@ const coverageStateFor = (
 
 // How the read side observes a build's progress for one continuity revision: the
 // state of each target service. A service still mid-build reads `pending`.
-const coverageStatesFor = (
+const coverageStatesFor = async (
 	db: CoverageDb,
 	continuity: ContinuityKey,
 	revision: number,
-): ReadonlyMap<string, CoverageState> => {
-	const rows = db
+): Promise<ReadonlyMap<string, CoverageState>> => {
+	const rows = await db
 		.select()
 		.from(serviceCoverages)
 		.where(
@@ -110,4 +107,3 @@ export {
 	coverageStatesFor,
 	seedPendingCoverage,
 };
-export type { CoverageDb };

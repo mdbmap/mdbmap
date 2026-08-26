@@ -46,7 +46,6 @@
 		"@tanstack/react-start": "latest",
 		"@urql/core": "^6.0.3",
 		"better-auth": "^1.5.3",
-		"better-sqlite3": "^12.6.2",
 		"drizzle-kit": "^0.31.9",
 		"drizzle-orm": "^0.45.1",
 		"graphql": "^17.0.2",
@@ -67,6 +66,7 @@
 	"devDependencies": {
 		"@0no-co/graphqlsp": "^1.17.4",
 		"@cloudflare/vite-plugin": "^1.26.0",
+		"@cloudflare/vitest-pool-workers": "0.22.0",
 		"@commitlint/cli": "^21.2.2",
 		"@commitlint/config-conventional": "^21.2.2",
 		"@csstools/stylelint-formatter-github": "^2.0.0",
@@ -76,7 +76,6 @@
 		"@rolldown/plugin-babel": "^0.2.3",
 		"@tanstack/devtools-vite": "latest",
 		"@tanstack/router-cli": "^1.132.0",
-		"@types/better-sqlite3": "^7.6.0",
 		"@types/node": "^22.10.2",
 		"@types/react": "^19.2.0",
 		"@types/react-dom": "^19.2.0",
@@ -116,8 +115,7 @@
 			"esbuild",
 			"lightningcss",
 			"sharp",
-			"workerd",
-			"better-sqlite3"
+			"workerd"
 		]
 	}
 }

@@ -41,6 +41,10 @@ type PendingCandidateKind = (typeof pendingCandidateKinds)[number];
 const candidateStatuses = ["open", "accepted", "rejected"] as const;
 type CandidateStatus = (typeof candidateStatuses)[number];
 
+const atomicWriteGates = sqliteTable("atomic_write_gates", {
+	operationId: text("operation_id").primaryKey(),
+});
+
 // A subject is a whole title (membership candidates) or a narrower pair
 // (assertion conflicts), never inferred from `kind` alone by the schema.
 type CandidateSubject =
@@ -54,7 +58,11 @@ type CandidateSubject =
 
 // Shared by the pair subject types below: two ids, ascending, joined into a
 // single fingerprint segment regardless of the order the caller supplied them.
-const orderedPairKey = (prefix: string, first: number, second: number): string => {
+const orderedPairKey = (
+	prefix: string,
+	first: number,
+	second: number,
+): string => {
 	const [low, high] = [first, second].toSorted((left, right) => left - right);
 	return `${prefix}:${low},${high}`;
 };
@@ -104,7 +112,7 @@ interface AssertionSnapshot {
 	source: AssertionSource;
 }
 
-type InstalmentConflictSide = AssertionSnapshot & { unitId: number };
+type InstalmentConflictSide = AssertionSnapshot & { unitId: string };
 type TitleConflictSide = AssertionSnapshot & {
 	titleAId: number;
 	titleBId: number;
@@ -123,7 +131,7 @@ type CandidateEvidence =
 			coverageRevision: number;
 			kind: "absence-assertion-conflict";
 			targetService: Service;
-			unitId: number;
+			unitId: string;
 	  }
 	| {
 			competingRelations: CompetingRelation[];
@@ -148,7 +156,7 @@ type CandidateEvidence =
 			instalmentId: number;
 			kind: "low-confidence-flag";
 			source: AssertionSource;
-			unitId: number;
+			unitId: string;
 	  }
 	| {
 			competingGroupIds: number[];
@@ -163,7 +171,9 @@ type CandidateEvidence =
 
 const contentUnits = sqliteTable("content_units", {
 	createdAt: timestamp("created_at"),
-	id: integer({ mode: "number" }).primaryKey({ autoIncrement: true }),
+	id: text()
+		.primaryKey()
+		.$defaultFn(() => crypto.randomUUID()),
 });
 
 const titleGroups = sqliteTable("title_groups", {
@@ -203,7 +213,9 @@ const serviceInstalments = sqliteTable(
 		createdAt: timestamp("created_at"),
 		id: integer({ mode: "number" }).primaryKey({ autoIncrement: true }),
 		locator: text().notNull().$type<InstalmentLocator>(),
-		locatorKind: text("locator_kind", { enum: instalmentLocatorKinds }).notNull(),
+		locatorKind: text("locator_kind", {
+			enum: instalmentLocatorKinds,
+		}).notNull(),
 		titleId: integer("title_id")
 			.notNull()
 			.references(() => serviceTitles.id, { onDelete: "cascade" }),
@@ -223,7 +235,7 @@ const instalmentAssertions = sqliteTable(
 		instalmentId: integer("instalment_id")
 			.notNull()
 			.references(() => serviceInstalments.id, { onDelete: "cascade" }),
-		unitId: integer("unit_id")
+		unitId: text("unit_id")
 			.notNull()
 			.references(() => contentUnits.id, { onDelete: "cascade" }),
 	},
@@ -282,7 +294,7 @@ const absenceAssertions = sqliteTable(
 		...assertionAuditColumns(),
 		coverageRevision: integer("coverage_revision").notNull(),
 		targetService: text("target_service").notNull().$type<Service>(),
-		unitId: integer("unit_id")
+		unitId: text("unit_id")
 			.notNull()
 			.references(() => contentUnits.id, { onDelete: "cascade" }),
 	},
@@ -365,6 +377,7 @@ const titleGroupAliases = sqliteTable(
 
 export {
 	absenceAssertions,
+	atomicWriteGates,
 	candidateStatuses,
 	candidateSubjectKey,
 	contentUnits,

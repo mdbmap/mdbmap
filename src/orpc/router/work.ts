@@ -27,15 +27,15 @@ const unitId = (unit: RateableUnit) => `${unit.kind}:${unit.key}`;
 const partKeyFor = (continuityId: string, index: number) =>
 	`part:${continuityId}:${index}`;
 
-const loadViewerState = (
+const loadViewerState = async (
 	db: Db,
 	userId: string,
 	locators: string[],
 	continuityId: string,
-): ViewerState => {
+): Promise<ViewerState> => {
 	const watchedSet = new Set<string>();
 	if (locators.length > 0) {
-		const progress = db
+		const progress = await db
 			.select({ locator: episodeProgress.instalmentLocator })
 			.from(episodeProgress)
 			.where(
@@ -50,7 +50,7 @@ const loadViewerState = (
 		}
 	}
 
-	const statusRow = db
+	const statusRow = await db
 		.select()
 		.from(watchStatus)
 		.where(
@@ -62,7 +62,7 @@ const loadViewerState = (
 		.get();
 
 	const personalByUnit = new Map<string, number>();
-	const ratings = db
+	const ratings = await db
 		.select()
 		.from(personalRating)
 		.where(eq(personalRating.userId, userId))
@@ -131,7 +131,7 @@ const buildParts = async (
 
 const get = pub.input(WorkGetInput).handler(async ({ context, input }): Promise<WorkView> => {
 	const { continuityId } = input;
-	const resolved = context.engine.resolveContinuity(continuityId);
+	const resolved = await context.engine.resolveContinuity(continuityId);
 	const meta = await context.providers.metadata[
 		metadataProviderFor(resolved.mediaKind)
 	].fetchWork(resolved);
@@ -139,7 +139,7 @@ const get = pub.input(WorkGetInput).handler(async ({ context, input }): Promise<
 	const { user } = context;
 	let viewerState: ViewerState | undefined;
 	if (user !== undefined) {
-		viewerState = loadViewerState(
+		viewerState = await loadViewerState(
 			context.db,
 			user.id,
 			instalmentsOf(resolved),
