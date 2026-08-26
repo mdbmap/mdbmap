@@ -744,10 +744,6 @@ describe("runResearchPass publish path", () => {
 
 	it("wires the #61 reviewer when only judge/escalate deps are supplied", async () => {
 		const judged: string[] = [];
-		let releaseJudge!: () => void;
-		const judgedDone = new Promise<void>((resolve) => {
-			releaseJudge = resolve;
-		});
 		const outcome = await runResearchPass(continuity, "after-residue", {
 			agent: singleSourceAgent,
 			clients: {
@@ -768,7 +764,6 @@ describe("runResearchPass publish path", () => {
 				judge: async (proposal) => {
 					await Promise.resolve();
 					judged.push(proposal.claim);
-					releaseJudge();
 					return {
 						rationale: "not enough evidence",
 						verdict: "unable-to-tell",
@@ -779,7 +774,9 @@ describe("runResearchPass publish path", () => {
 		});
 
 		expect(outcome.kind).toBe("completed");
-		await judgedDone;
+		for (let spins = 0; spins < 50 && judged.length === 0; spins += 1) {
+			await Promise.resolve();
+		}
 		expect(judged).toEqual(["weak single-source claim"]);
 	});
 
@@ -1060,14 +1057,14 @@ describe("runResearchPass tools", () => {
 		const outcome = await runResearchPass(continuity, "before-builds", {
 			agent: competingRelationAgent,
 			clients: {
+				mal: clientFor({
+					"3": catalogue({ instalments: [{ locator: "1:1" }], title: "Rival" }),
+				}),
 				tmdb: clientFor({
 					"1": catalogue({ instalments: [{ locator: "1:1" }], title: "From" }),
 				}),
 				tvdb: clientFor({
 					"2": catalogue({ instalments: [{ locator: "1:1" }], title: "First" }),
-				}),
-				mal: clientFor({
-					"3": catalogue({ instalments: [{ locator: "1:1" }], title: "Rival" }),
 				}),
 			},
 			db,
@@ -1081,9 +1078,10 @@ describe("runResearchPass tools", () => {
 			expect(outcome.published).toHaveLength(1);
 		}
 		expect(await db.select().from(relationAssertions).all()).toHaveLength(1);
-		const conflicts = (
-			await db.select().from(pendingGroupCandidates).all()
-		).filter((row) => row.kind === "continuity-conflict");
+		const pending = await db.select().from(pendingGroupCandidates).all();
+		const conflicts = pending.filter(
+			(row) => row.kind === "continuity-conflict",
+		);
 		expect(conflicts).toHaveLength(1);
 		expect(conflicts[0]?.evidence).toMatchObject({
 			kind: "continuity-conflict",
