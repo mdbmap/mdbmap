@@ -24,6 +24,7 @@ const wipeOrder = [
 	"episode_progress",
 	"personal_rating",
 	"watch_status",
+	"llm_provider",
 	"session",
 	"account",
 	"user",

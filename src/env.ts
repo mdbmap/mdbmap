@@ -38,6 +38,9 @@ export const env = createEnv({
 	server: {
 		ANIDB_CLIENT: z.string().optional(),
 		ANIDB_CLIENT_VER: z.string().optional(),
+		// Deploy-time wrangler secret (ADR-0005): wraps each provider's per-record
+		// data key. Never set a value here or in an .env file committed to the repo.
+		PROVIDER_CONFIG_MASTER_KEY: z.string().optional(),
 		SERVER_URL: z.url().optional(),
 		SIMKL_API_KEY: z.string().optional(),
 		TMDB_API_KEY: z.string().optional(),
