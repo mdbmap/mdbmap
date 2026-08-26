@@ -14,25 +14,30 @@ const clientFor = async (user: SessionUser | undefined) =>
 		} satisfies ORPCContext,
 	});
 
-describe("api key admin gate", () => {
-	it("rejects every operation for unauthenticated and non-admin callers", async () => {
-		const deniedUsers: readonly (SessionUser | undefined)[] = [undefined, { id: "user-1" }];
-		const expectRejected = async (operation: () => Promise<unknown>) => {
-			let rejected = false;
-			try {
-				await operation();
-			} catch {
-				rejected = true;
-			}
-			expect(rejected).toBe(true);
-		};
+const expectRejected = async (operation: () => Promise<unknown>) => {
+	let rejected = false;
+	try {
+		await operation();
+	} catch {
+		rejected = true;
+	}
+	expect(rejected).toBe(true);
+};
 
-		for (const user of deniedUsers) {
-			const client = await clientFor(user);
-			await expectRejected(() => client.apiKeys.list());
-			await expectRejected(() => client.apiKeys.mint({ label: "ci" }));
-			await expectRejected(() => client.apiKeys.revoke({ id: "key-1" }));
-		}
+const expectEveryOperationRejected = async (user: SessionUser | undefined) => {
+	const client = await clientFor(user);
+	await expectRejected(() => client.apiKeys.list());
+	await expectRejected(() => client.apiKeys.mint({ label: "ci" }));
+	await expectRejected(() => client.apiKeys.revoke({ id: "key-1" }));
+};
+
+describe("api key admin gate", () => {
+	it("rejects every operation for an unauthenticated caller", async () => {
+		await expectEveryOperationRejected(undefined);
+	});
+
+	it("rejects every operation for a signed-in non-admin", async () => {
+		await expectEveryOperationRejected({ id: "user-1" });
 	});
 });
 
