@@ -24,7 +24,6 @@ jobs:
     uses: theacrat/opencode-action/.github/workflows/opencode-review.yml@prompt-tweaks
     with:
       model: ${{ vars.OPENCODE_REVIEW_MODEL || vars.OPENCODE_MODEL }}
-      streaming: ${{ fromJSON(vars.OPENCODE_REVIEW_ENABLE_STREAMING || vars.OPENCODE_ENABLE_STREAMING || 'true') }}
       use-github-token: ${{ fromJSON(vars.OPENCODE_REVIEW_USE_GITHUB_TOKEN || vars.OPENCODE_USE_GITHUB_TOKEN || 'false') }}
     secrets:
       OPENCODE_API_KEY: ${{ secrets.OPENCODE_REVIEW_API_KEY || secrets.OPENCODE_API_KEY }}
