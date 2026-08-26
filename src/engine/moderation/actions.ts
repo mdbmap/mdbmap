@@ -530,29 +530,39 @@ const manualPairing = async (
 	if (input.instalmentIds.length === 0) {
 		return { kind: "empty" };
 	}
-	const minted =
-		input.unitId === undefined
-			? await db.insert(contentUnits).values({}).returning().all()
-			: undefined;
-	const unitId = input.unitId ?? takeFirst(minted ?? [])?.id;
-	if (unitId === undefined) {
-		throw new Error("content unit insert returned no row");
+	// One D1 batch so a failed assertion insert cannot strand a minted unit or a
+	// partial manual pairing (curation recompute treats as ground truth).
+	const minting = input.unitId === undefined;
+	const unitId = input.unitId ?? crypto.randomUUID();
+	const statements: D1PreparedStatement[] = [];
+	if (minting) {
+		statements.push(
+			db.$client.prepare("INSERT INTO content_units (id) VALUES (?)").bind(unitId),
+		);
 	}
-	const insertedRows = await Promise.all(
-		input.instalmentIds.map(async (instalmentId) =>
-			takeFirst(
-				await db
-					.insert(instalmentAssertions)
-					.values({ confidence: "high", instalmentId, source: MANUAL, unitId })
-					.onConflictDoNothing()
-					.returning()
-					.all(),
-			),
-		),
+	for (const instalmentId of input.instalmentIds) {
+		statements.push(
+			db.$client
+				.prepare(
+					`INSERT INTO instalment_assertions (confidence, instalment_id, source, unit_id)
+						VALUES ('high', ?, 'manual', ?)
+						ON CONFLICT DO NOTHING
+						RETURNING id`,
+				)
+				.bind(instalmentId, unitId),
+		);
+	}
+	const [first, ...rest] = statements;
+	if (first === undefined) {
+		return { kind: "empty" };
+	}
+	const results = await db.$client.batch([first, ...rest]);
+	const assertionResults = minting ? results.slice(1) : results;
+	const assertionIds = assertionResults.flatMap((result) =>
+		(result.results as { id?: number }[])
+			.map((row) => row.id)
+			.filter((id): id is number => typeof id === "number"),
 	);
-	const assertionIds = insertedRows
-		.filter((row): row is NonNullable<typeof row> => row !== undefined)
-		.map((row) => row.id);
 	return { assertionIds, kind: "paired", unitId };
 };
 
