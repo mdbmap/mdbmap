@@ -4,17 +4,10 @@ import { vercelAiSdkProviderKinds } from "@/db/schema";
 
 // One entry per Vercel AI SDK adapter (ADR-0005); each carries only the model
 // key and identifier, since the adapter itself knows how to reach its API.
-<<<<<<< HEAD
 const ApiKeySchema = z.string().trim().min(1);
 
 const VercelAiSdkProviderConfigSchema = z.object({
 	apiKey: ApiKeySchema,
-=======
-const apiKeySchema = z.string().trim().min(1);
-
-const VercelAiSdkProviderConfigSchema = z.object({
-	apiKey: apiKeySchema,
->>>>>>> 21024e9 (fix(providers): address OpenCode review on admin panel)
 	kind: z.enum(vercelAiSdkProviderKinds),
 	model: z.string().min(1),
 });
@@ -25,11 +18,7 @@ type VercelAiSdkProviderConfig = z.infer<
 // Covers gateways (OpenRouter) and self-hosted endpoints that speak the
 // OpenAI wire format but aren't one of the SDK's own adapters.
 const OpenAiCompatibleProviderConfigSchema = z.object({
-<<<<<<< HEAD
 	apiKey: ApiKeySchema,
-=======
-	apiKey: apiKeySchema,
->>>>>>> 21024e9 (fix(providers): address OpenCode review on admin panel)
 	baseUrl: z.url(),
 	kind: z.literal("openai-compatible"),
 	model: z.string().min(1),
@@ -47,20 +36,12 @@ type ProviderConfig = z.infer<typeof ProviderConfigSchema>;
 // Admin edit form: omit `apiKey` to keep the stored key when `kind` is unchanged.
 const UpdateProviderConfigSchema = z.union([
 	z.object({
-<<<<<<< HEAD
 		apiKey: ApiKeySchema.optional(),
-=======
-		apiKey: apiKeySchema.optional(),
->>>>>>> 21024e9 (fix(providers): address OpenCode review on admin panel)
 		kind: z.enum(vercelAiSdkProviderKinds),
 		model: z.string().min(1),
 	}),
 	z.object({
-<<<<<<< HEAD
 		apiKey: ApiKeySchema.optional(),
-=======
-		apiKey: apiKeySchema.optional(),
->>>>>>> 21024e9 (fix(providers): address OpenCode review on admin panel)
 		baseUrl: z.url(),
 		kind: z.literal("openai-compatible"),
 		model: z.string().min(1),
