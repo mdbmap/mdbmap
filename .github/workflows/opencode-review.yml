@@ -26,4 +26,6 @@ jobs:
       model: ${{ vars.OPENCODE_REVIEW_MODEL || vars.OPENCODE_MODEL }}
       use-github-token: ${{ fromJSON(vars.OPENCODE_REVIEW_USE_GITHUB_TOKEN || vars.OPENCODE_USE_GITHUB_TOKEN || 'false') }}
     secrets:
+      GOOGLE_GENERATIVE_AI_API_KEY: ${{ secrets.GOOGLE_REVIEW_API_KEY || secrets.GOOGLE_API_KEY }}
       OPENCODE_API_KEY: ${{ secrets.OPENCODE_REVIEW_API_KEY || secrets.OPENCODE_API_KEY }}
+      OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_BOT_API_KEY || secrets.OPENROUTER_API_KEY }}
