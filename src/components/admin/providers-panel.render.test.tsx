@@ -8,72 +8,82 @@ import { ProvidersPanel } from "./providers-panel";
 const listKey = ["providers", "list"] as const;
 const timingKey = ["providers", "timing"] as const;
 
-const createSuccessHandlers: (() => unknown)[] = [];
-
-const noopMutation = {
-	mutationOptions: (options?: { onSuccess?: () => unknown }) => ({
-		mutationFn: async () => {
-			/* no-op */
-		},
-		...options,
-	}),
-};
-
-const sampleProvider = {
-	config: { kind: "openai" as const, model: "gpt-5" },
-	id: "p-1",
-	kind: "openai" as const,
-	label: "OpenAI",
-};
-
-vi.mock("@/orpc/client", () => ({
-	orpc: {
-		providers: {
-			create: {
-				mutationOptions: (options?: { onSuccess?: () => unknown }) => {
-					if (options?.onSuccess !== undefined) {
-						createSuccessHandlers.push(options.onSuccess);
-					}
-					return {
-						mutationFn: async () => {
-							/* no-op */
-						},
-						...options,
-					};
-				},
-			},
-			getTiming: {
-				queryKey: () => timingKey,
-				queryOptions: () => ({
-					queryFn: async () => {
-						await Promise.resolve();
-						return "after-residue" as const;
-					},
-					queryKey: timingKey,
-				}),
-			},
-			list: {
-				queryKey: () => listKey,
-				queryOptions: () => ({
-					queryFn: async () => {
-						await Promise.resolve();
-						return [sampleProvider];
-					},
-					queryKey: listKey,
-				}),
-			},
-			remove: noopMutation,
-			setTiming: noopMutation,
-			update: noopMutation,
-		},
-	},
+const { createSuccessHandlers } = vi.hoisted(() => ({
+	createSuccessHandlers: [] as Array<() => unknown>,
 }));
+
+vi.mock("@/orpc/client", () => {
+	const mutation = {
+		mutationOptions: (options?: { onSuccess?: () => unknown }) => ({
+			mutationFn: async () => {
+				/* no-op */
+			},
+			...options,
+		}),
+	};
+	return {
+		orpc: {
+			providers: {
+				create: {
+					mutationOptions: (options?: { onSuccess?: () => unknown }) => {
+						if (options?.onSuccess !== undefined) {
+							createSuccessHandlers.push(options.onSuccess);
+						}
+						return {
+							mutationFn: async () => {
+								/* no-op */
+							},
+							...options,
+						};
+					},
+				},
+				getTiming: {
+					queryKey: () => timingKey,
+					queryOptions: () => ({
+						queryFn: async () => {
+							await Promise.resolve();
+							return "after-residue" as const;
+						},
+						queryKey: timingKey,
+					}),
+				},
+				list: {
+					queryKey: () => listKey,
+					queryOptions: () => ({
+						queryFn: async () => {
+							await Promise.resolve();
+							return [
+								{
+									config: { kind: "openai" as const, model: "gpt-5" },
+									id: "p-1",
+									kind: "openai" as const,
+									label: "OpenAI",
+								},
+							];
+						},
+						queryKey: listKey,
+					}),
+				},
+				remove: mutation,
+				setTiming: mutation,
+				update: mutation,
+			},
+		},
+	};
+});
 
 const wrap = (node: ReactNode) => {
 	const client = new QueryClient({
 		defaultOptions: { queries: { retry: false } },
 	});
-	client.setQueryData(listKey, [sampleProvider]);
+	client.setQueryData(listKey, [
+		{
+			config: { kind: "openai" as const, model: "gpt-5" },
+			id: "p-1",
+			kind: "openai" as const,
+			label: "OpenAI",
+		},
+	]);
 	client.setQueryData(timingKey, "after-residue");
 	return <QueryClientProvider client={client}>{node}</QueryClientProvider>;
 };
@@ -89,7 +99,7 @@ describe("ProvidersPanel", () => {
 		expect(html).not.toContain("sk-");
 		expect(html).toContain("never shown again");
 		expect(html).toContain('type="password"');
-		expect(html).toMatch(/value=""/u);
+		expect(html).toContain('value=""');
 	});
 
 	it("wires create onSuccess so the form remounts after save", () => {
