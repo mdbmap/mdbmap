@@ -1,4 +1,5 @@
 export {
+	ProviderNotFoundError,
 	getProviderConfig,
 	listProviders,
 	removeProvider,

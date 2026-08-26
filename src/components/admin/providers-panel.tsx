@@ -1,8 +1,9 @@
+import { ORPCError } from "@orpc/client";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type { ChangeEvent, ReactNode, SubmitEvent } from "react";
 import { useCallback, useState } from "react";
 
-import { llmProviderKinds, researchTimings } from "@/db/schema";
+import { llmProviderKinds } from "@/db/schema";
 import type { LlmProviderKind, ResearchTiming } from "@/db/schema";
 import { orpc } from "@/orpc/client";
 import { ResearchTimingSchema } from "@/orpc/schema";
@@ -13,8 +14,16 @@ import { buttonClass, inputClass } from "./styles.ts";
 const TITLE = "Providers";
 const EMPTY = "No providers yet.";
 const DENIED = "Administrator access required.";
+const LOAD_FAILED = "Could not load providers.";
 const KEY_HINT = "API key is write-only — never shown again after save.";
 const KEY_KEEP = "Leave blank to keep the current key.";
+
+const isAuthDenial = (error: unknown): boolean =>
+	error instanceof ORPCError &&
+	(error.code === "FORBIDDEN" || error.code === "UNAUTHORIZED");
+
+const messageOf = (error: unknown): string | undefined =>
+	error instanceof Error ? error.message : undefined;
 
 const LABEL = {
 	add: "Add provider",
@@ -133,7 +142,7 @@ function TimingPolicy({
 				onChange={onSelect}
 				value={value}
 			>
-				{researchTimings.map((option) => (
+				{ResearchTimingSchema.options.map((option) => (
 					<option key={option} value={option}>
 						{TIMING_COPY[option]}
 					</option>
@@ -380,10 +389,13 @@ export function ProvidersPanel() {
 		orpc.providers.setTiming.mutationOptions({ onSuccess: invalidate }),
 	);
 
-	const { isPending: creating, mutate: createMutate } = createMutation;
-	const { isPending: updating, mutate: updateMutate } = updateMutation;
-	const { mutate: removeMutate } = removeMutation;
-	const { isPending: timingPending, mutate: timingMutate } = timingMutation;
+	const { error: createError, isPending: creating, mutate: createMutate } =
+		createMutation;
+	const { error: updateError, isPending: updating, mutate: updateMutate } =
+		updateMutation;
+	const { error: removeError, mutate: removeMutate } = removeMutation;
+	const { error: timingError, isPending: timingPending, mutate: timingMutate } =
+		timingMutation;
 
 	const onCreate = useCallback(
 		(form: ProviderFormState) => {
@@ -423,40 +435,65 @@ export function ProvidersPanel() {
 		[timingMutate],
 	);
 
-	const denied = listQuery.isError || timingQuery.isError;
+	const queryError = listQuery.error ?? timingQuery.error;
+	const denied = queryError !== null && isAuthDenial(queryError);
+	const loadFailed = queryError !== null && !denied;
+	const mutationMessage =
+		messageOf(createError) ??
+		messageOf(updateError) ??
+		messageOf(removeError) ??
+		messageOf(timingError);
+
+	let gate: ReactNode;
+	if (denied) {
+		gate = (
+			<p className="text-sm text-neutral-600 dark:text-neutral-400">{DENIED}</p>
+		);
+	} else if (loadFailed) {
+		gate = (
+			<p className="text-sm text-neutral-600 dark:text-neutral-400">
+				{LOAD_FAILED}
+			</p>
+		);
+	} else {
+		gate = (
+			<>
+				<TimingPolicy
+					onChange={onTiming}
+					pending={timingPending}
+					value={timingQuery.data ?? "off"}
+				/>
+				{editing === undefined ? (
+					<ProviderForm
+						editing={undefined}
+						key="create"
+						onCancel={onCancelEdit}
+						onSubmit={onCreate}
+						pending={creating}
+					/>
+				) : (
+					<ProviderForm
+						editing={editing}
+						key={editing.id}
+						onCancel={onCancelEdit}
+						onSubmit={onUpdate}
+						pending={updating}
+					/>
+				)}
+			</>
+		);
+	}
 
 	return (
 		<main className="mx-auto flex max-w-3xl flex-col gap-4 p-6">
 			<h1 className="font-mono text-lg font-medium text-neutral-900 dark:text-neutral-50">
 				{TITLE}
 			</h1>
-			{denied ? (
-				<p className="text-sm text-neutral-600 dark:text-neutral-400">{DENIED}</p>
-			) : (
-				<>
-					<TimingPolicy
-						onChange={onTiming}
-						pending={timingPending}
-						value={timingQuery.data ?? "off"}
-					/>
-					{editing === undefined ? (
-						<ProviderForm
-							editing={undefined}
-							key="create"
-							onCancel={onCancelEdit}
-							onSubmit={onCreate}
-							pending={creating}
-						/>
-					) : (
-						<ProviderForm
-							editing={editing}
-							key={editing.id}
-							onCancel={onCancelEdit}
-							onSubmit={onUpdate}
-							pending={updating}
-						/>
-					)}
-				</>
+			{gate}
+			{mutationMessage === undefined ? undefined : (
+				<p className="text-sm text-neutral-600 dark:text-neutral-400">
+					{mutationMessage}
+				</p>
 			)}
 			{listQuery.data?.length === 0 ? (
 				<p className="text-sm text-neutral-600 dark:text-neutral-400">{EMPTY}</p>

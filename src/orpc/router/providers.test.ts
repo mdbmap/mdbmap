@@ -119,4 +119,20 @@ describe("provider admin surface", () => {
 			client.providers.setTiming({ timing: "after-residue" }),
 		).resolves.toBe("after-residue");
 	});
+
+	it("maps missing providers to NOT_FOUND", async () => {
+		const client = await clientFor(adminUser);
+		const missing = crypto.randomUUID();
+
+		await expect(
+			client.providers.update({
+				config: { kind: "openai", model: "gpt-5" },
+				id: missing,
+				label: "gone",
+			}),
+		).rejects.toMatchObject({ code: "NOT_FOUND" });
+		await expect(client.providers.remove({ id: missing })).rejects.toMatchObject({
+			code: "NOT_FOUND",
+		});
+	});
 });

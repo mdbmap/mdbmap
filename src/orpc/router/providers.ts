@@ -2,6 +2,7 @@ import { ORPCError } from "@orpc/server";
 
 import { env } from "@/env";
 import {
+	ProviderNotFoundError,
 	getProviderConfig,
 	listProviders,
 	removeProvider,
@@ -27,6 +28,13 @@ const masterKeyOf = (override: string | undefined): string => {
 		});
 	}
 	return key;
+};
+
+const mapProviderError = (error: unknown): never => {
+	if (error instanceof ProviderNotFoundError) {
+		throw new ORPCError("NOT_FOUND", { message: error.message });
+	}
+	throw error;
 };
 
 const list = admin.handler(async ({ context }): Promise<readonly ProviderRow[]> => {
@@ -69,10 +77,7 @@ const update = admin
 				label: record.label,
 			};
 		} catch (error) {
-			if (error instanceof Error && error.message.includes("no provider")) {
-				throw new ORPCError("NOT_FOUND", { message: error.message });
-			}
-			throw error;
+			return mapProviderError(error);
 		}
 	});
 
@@ -82,10 +87,7 @@ const remove = admin
 		try {
 			await removeProvider(context.db, input.id);
 		} catch (error) {
-			if (error instanceof Error && error.message.includes("no provider")) {
-				throw new ORPCError("NOT_FOUND", { message: error.message });
-			}
-			throw error;
+			mapProviderError(error);
 		}
 	});
 

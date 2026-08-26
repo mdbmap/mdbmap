@@ -205,8 +205,9 @@ const personalRating = sqliteTable(
 
 // AES-GCM envelope encryption (ADR-0005): `ciphertext` holds the encrypted
 // provider config JSON, `wrappedKey` its per-record data key encrypted under
-// the deploy-time master key. `kind` and `label` stay plaintext so an admin
-// listing never has to decrypt every row just to show one.
+// the deploy-time master key. `kind` and `label` stay plaintext for identity
+// and filtering without decrypt; the admin list still decrypts each row for
+// public config fields (model / baseUrl) shown in the panel.
 const llmProvider = sqliteTable("llm_provider", {
 	ciphertext: text().notNull(),
 	createdAt: timestamp("created_at"),

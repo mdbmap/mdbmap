@@ -6,7 +6,14 @@ import { beforeEach, describe, expect, it } from "vitest";
 import { llmProvider } from "@/db/schema";
 import { freshDb } from "@/db/test-helpers.ts";
 
-import { getProviderConfig, listProviders, removeProvider, storeProvider, updateProvider } from "./store.ts";
+import {
+	ProviderNotFoundError,
+	getProviderConfig,
+	listProviders,
+	removeProvider,
+	storeProvider,
+	updateProvider,
+} from "./store.ts";
 import { randomMasterKey } from "./test-support.ts";
 import type {
 	OpenAiCompatibleProviderConfig,
@@ -159,7 +166,10 @@ describe("provider config store", () => {
 	it("rejects an unknown provider id", async () => {
 		await expect(
 			getProviderConfig(db, masterKey, crypto.randomUUID()),
-		).rejects.toThrow();
+		).rejects.toBeInstanceOf(ProviderNotFoundError);
+		await expect(removeProvider(db, crypto.randomUUID())).rejects.toBeInstanceOf(
+			ProviderNotFoundError,
+		);
 	});
 
 	it("lists providers without returning api keys", async () => {

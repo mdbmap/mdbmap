@@ -34,6 +34,13 @@ interface UpdateProviderInput {
 	label: string;
 }
 
+class ProviderNotFoundError extends Error {
+	public constructor(id: string) {
+		super(`provider-config: no provider stored for id "${id}"`);
+		this.name = "ProviderNotFoundError";
+	}
+}
+
 const storeProvider = async (
 	db: Db,
 	masterKeyBase64: string,
@@ -72,7 +79,7 @@ const getProviderConfig = async (
 		.where(eq(llmProvider.id, id))
 		.get();
 	if (row === undefined) {
-		throw new Error(`provider-config: no provider stored for id "${id}"`);
+		throw new ProviderNotFoundError(id);
 	}
 
 	const plaintext = await decryptEnvelope(
@@ -151,11 +158,12 @@ const removeProvider = async (db: Db, id: string): Promise<void> => {
 		.where(eq(llmProvider.id, id))
 		.run();
 	if (result.meta.changes === 0) {
-		throw new Error(`provider-config: no provider stored for id "${id}"`);
+		throw new ProviderNotFoundError(id);
 	}
 };
 
 export {
+	ProviderNotFoundError,
 	getProviderConfig,
 	listProviders,
 	removeProvider,
