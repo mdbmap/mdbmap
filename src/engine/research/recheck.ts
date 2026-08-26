@@ -1,4 +1,4 @@
-import { eq, inArray } from "drizzle-orm";
+import { and, eq, inArray } from "drizzle-orm";
 
 import type { Db } from "@/db";
 import {
@@ -11,7 +11,7 @@ import { titleSimilarity } from "@/engine/matcher";
 import type { BudgetLedger } from "@/engine/matcher";
 
 import type { ResearchAssertion } from "./assertions.ts";
-import { listResearchAssertions } from "./assertions.ts";
+import { listResearchAssertions, RESEARCH } from "./assertions.ts";
 import { toCatalogueTitle } from "./catalogue.ts";
 import type { ResearchCatalogueRecord } from "./catalogue.ts";
 import { fetchCatalogueRecord } from "./fetch-catalogue-record.ts";
@@ -183,47 +183,71 @@ const recheckAssertion = async (
 const demoteAndFlag = async (
 	db: Db,
 	assertion: ResearchAssertion,
-): Promise<void> => {
+): Promise<boolean> => {
 	switch (assertion.kind) {
 		case "title": {
-			await db
+			const result = await db
 				.update(titleAssertions)
 				.set({ confidence: "low" })
-				.where(eq(titleAssertions.id, assertion.id))
+				.where(
+					and(
+						eq(titleAssertions.id, assertion.id),
+						eq(titleAssertions.source, RESEARCH),
+					),
+				)
 				.run();
+			if (result.meta.changes === 0) {
+				return false;
+			}
 			await queueTitlePairFlag(db, {
 				assertionConfidence: assertion.confidence,
 				titleAId: assertion.titleAId,
 				titleBId: assertion.titleBId,
 			});
-			return;
+			return true;
 		}
 		case "relation": {
-			await db
+			const result = await db
 				.update(relationAssertions)
 				.set({ confidence: "low" })
-				.where(eq(relationAssertions.id, assertion.id))
+				.where(
+					and(
+						eq(relationAssertions.id, assertion.id),
+						eq(relationAssertions.source, RESEARCH),
+					),
+				)
 				.run();
+			if (result.meta.changes === 0) {
+				return false;
+			}
 			await queueRelationFlag(db, {
 				assertionConfidence: assertion.confidence,
 				fromTitleId: assertion.fromTitleId,
 				toTitleId: assertion.toTitleId,
 			});
-			return;
+			return true;
 		}
 		case "instalment": {
-			await db
+			const result = await db
 				.update(instalmentAssertions)
 				.set({ confidence: "low" })
-				.where(eq(instalmentAssertions.id, assertion.id))
+				.where(
+					and(
+						eq(instalmentAssertions.id, assertion.id),
+						eq(instalmentAssertions.source, RESEARCH),
+					),
+				)
 				.run();
+			if (result.meta.changes === 0) {
+				return false;
+			}
 			await queueInstalmentFlag(db, {
 				assertionConfidence: assertion.confidence,
 				instalmentId: assertion.instalmentId,
 				titleId: assertion.titleId,
 				unitId: assertion.unitId,
 			});
-			return;
+			return true;
 		}
 		default: {
 			throw new Error("recheck: unexpected assertion kind");
@@ -260,8 +284,10 @@ const sampleResearchRecheck = async (
 		);
 		checked += 1;
 		if (verdict === "disagrees") {
-			await demoteAndFlag(db, assertion);
-			flagged += 1;
+			const demoted = await demoteAndFlag(db, assertion);
+			if (demoted) {
+				flagged += 1;
+			}
 		}
 		await processFrom(index + 1);
 	};

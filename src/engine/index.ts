@@ -38,6 +38,8 @@ export type {
 	TitleAnswer,
 } from "./serializer.ts";
 export { createEngine } from "./engine.ts";
+export { revalidateGroup } from "./revalidation/index.ts";
+export type { RevalidateGroupInput, RevalidateGroupOutcome } from "./revalidation/index.ts";
 export { noColdLookup, resolveMapping, runMapping } from "./gateway/index.ts";
 export type {
 	ColdLookup,
