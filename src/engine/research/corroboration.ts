@@ -8,8 +8,9 @@ interface ApiEvidence {
 	readonly kind: "api";
 	readonly official: true;
 	readonly operator: string;
-	readonly validated: boolean;
 	readonly stance: SourceStance;
+	readonly url: string;
+	readonly validated: boolean;
 }
 
 interface ScrapeEvidence {
@@ -17,6 +18,7 @@ interface ScrapeEvidence {
 	readonly official: true;
 	readonly operator: string;
 	readonly stance: SourceStance;
+	readonly url: string;
 }
 
 interface CommunityWikiEvidence {
@@ -72,6 +74,7 @@ const corroborate = (
 	}
 
 	const corroborating = eligible
+		.filter((item) => item.kind !== "api" || item.validated)
 		.map((item) => ({
 			item,
 			operator: item.operator.trim().toLowerCase(),

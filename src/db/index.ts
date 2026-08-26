@@ -65,5 +65,6 @@ const resolveDb = async () => {
 	return createDb(env.DB);
 };
 
+export { ascendingPair, one } from "./one.ts";
 export { createDb, resolveDb, schema };
 export type { Db };

@@ -9,9 +9,9 @@ same validators as our server clients and persist as the spokes themselves,
 so acceptance re-fetches nothing. A proposal publishes high-confidence only
 with corroboration from at least two independent operators, one of which is a
 validated API response; a page-scrape leg, a single source, or contradicting
-sources cap the proposal at low confidence with a review flag. A sample of
-published `llm-research` assertions is re-checked against live service data
-when their group next revalidates.
+sources cap the proposal at low confidence with a review flag. Sampling
+recheck of published `llm-research` assertions against live service data on
+group revalidation is follow-on work beyond the pass module.
 
 ## Considered options
 

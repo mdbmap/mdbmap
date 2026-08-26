@@ -11,17 +11,18 @@ const api = (
 	official: true,
 	operator,
 	stance: "corroborates",
+	url: `https://api.example/${operator}`,
 	validated: true,
 	...overrides,
 });
 
 describe("corroborate", () => {
-	it("returns high for two operators including a validated API response", () => {
+	it("returns low when a second operator is only an unavailable API check", () => {
 		expect(
 			corroborate([api("tvdb"), api("tmdb", { validated: false })]),
 		).toStrictEqual({
-			confidence: "high",
-			reviewFlag: undefined,
+			confidence: "low",
+			reviewFlag: "low-confidence-flag",
 		});
 	});
 
@@ -73,6 +74,7 @@ describe("corroborate", () => {
 					official: true,
 					operator: "tmdb",
 					stance: "corroborates",
+					url: "https://www.themoviedb.org/tv/1",
 				},
 			]),
 		).toStrictEqual({

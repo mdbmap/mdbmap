@@ -233,6 +233,7 @@ describe("moderation queue", () => {
 			instalmentId: spokeId,
 			kind: "low-confidence-flag",
 			source: "t3-episode",
+			target: "instalment",
 			unitId,
 		};
 		const candidateId = first(
@@ -240,7 +241,7 @@ describe("moderation queue", () => {
 				.insert(pendingGroupCandidates)
 				.values({
 					evidence,
-					evidenceHash: `low-confidence-flag:${spokeId}`,
+					evidenceHash: `low-confidence-flag:${spokeId}:${unitId}`,
 					kind: "low-confidence-flag",
 					subject,
 					subjectKey: `title:${titleId}`,
@@ -274,6 +275,7 @@ describe("moderation queue", () => {
 			instalmentId: spokeId,
 			kind: "low-confidence-flag",
 			source: "t3-episode",
+			target: "instalment",
 			unitId,
 		};
 		const candidateId = first(
@@ -281,7 +283,7 @@ describe("moderation queue", () => {
 				.insert(pendingGroupCandidates)
 				.values({
 					evidence,
-					evidenceHash: `low-confidence-flag:${spokeId}`,
+					evidenceHash: `low-confidence-flag:${spokeId}:${unitId}`,
 					kind: "low-confidence-flag",
 					subject,
 					subjectKey: `title:${titleId}`,
