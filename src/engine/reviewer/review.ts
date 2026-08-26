@@ -1,6 +1,6 @@
 import type { Promisable } from "type-fest";
 
-import type { ReviewProposal } from "./types.ts";
+import type { ReviewProposal, ReviewVerdict } from "./types.ts";
 import { parseVerdict } from "./verdict-schema.ts";
 import type { RawVerdict } from "./verdict-schema.ts";
 
@@ -10,17 +10,18 @@ import type { RawVerdict } from "./verdict-schema.ts";
 type ReviewJudge = (proposal: ReviewProposal) => Promisable<unknown>;
 
 type EscalationReason =
-	| "disputing"
+	| Exclude<ReviewVerdict, "supporting">
 	| "malformed-output"
-	| "missing-assertion"
-	| "unable-to-tell";
+	| "missing-assertion";
+
+interface EscalatedReview {
+	readonly kind: "escalated";
+	readonly rationale: string | undefined;
+	readonly reason: EscalationReason;
+}
 
 type ReviewOutcome =
-	| {
-			readonly kind: "escalated";
-			readonly rationale: string | undefined;
-			readonly reason: EscalationReason;
-	  }
+	| EscalatedReview
 	| { readonly kind: "promoted"; readonly rationale: string };
 
 const outcomeFor = (verdict: RawVerdict): ReviewOutcome =>
@@ -51,4 +52,9 @@ const reviewProposal = async (
 };
 
 export { reviewProposal };
-export type { EscalationReason, ReviewJudge, ReviewOutcome };
+export type {
+	EscalatedReview,
+	EscalationReason,
+	ReviewJudge,
+	ReviewOutcome,
+};

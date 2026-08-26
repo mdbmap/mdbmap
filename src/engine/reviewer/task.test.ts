@@ -1,48 +1,20 @@
 import { eq } from "drizzle-orm";
 import { beforeEach, describe, expect, it } from "vitest";
 
-import { serviceTitles, titleAssertions, titleGroups } from "@/db/engine-schema";
+import { titleAssertions } from "@/db/engine-schema";
 import { freshDb } from "@/db/test-helpers";
 
 import { reviewResearchProposal } from "./task.ts";
 import type { ReviewTaskDeps } from "./task.ts";
 import type { EscalationReason } from "./review.ts";
+import { ascendingPair, one, seedTitle } from "./test-fixtures.ts";
+import type { TestDb as Db } from "./test-fixtures.ts";
 import type { ReviewProposal } from "./types.ts";
 
-type Db = Awaited<ReturnType<typeof freshDb>>;
-
-const one = <Row>(rows: readonly Row[]): Row => {
-	const [row] = rows;
-	if (row === undefined) {
-		throw new Error("expected an inserted row");
-	}
-	return row;
-};
-
 const seedProposal = async (db: Db): Promise<ReviewProposal> => {
-	const group = one(
-		await db
-			.insert(titleGroups)
-			.values({ ladderComplete: false, source: "llm-research" })
-			.returning()
-			.all(),
-	);
-	const left = one(
-		await db
-			.insert(serviceTitles)
-			.values({ groupId: group.id, service: "tmdb", serviceId: "1396" })
-			.returning()
-			.all(),
-	);
-	const right = one(
-		await db
-			.insert(serviceTitles)
-			.values({ groupId: group.id, service: "tvdb", serviceId: "81189" })
-			.returning()
-			.all(),
-	);
-	const [lowId, highId] =
-		left.id < right.id ? [left.id, right.id] : [right.id, left.id];
+	const left = await seedTitle(db, "tmdb", "1396");
+	const right = await seedTitle(db, "tvdb", "81189");
+	const [lowId, highId] = ascendingPair(left.id, right.id);
 	const assertion = one(
 		await db
 			.insert(titleAssertions)

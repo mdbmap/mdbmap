@@ -6,41 +6,14 @@ import {
 	instalmentAssertions,
 	relationAssertions,
 	serviceInstalments,
-	serviceTitles,
 	titleAssertions,
-	titleGroups,
 } from "@/db/engine-schema";
 import type { AssertionSource } from "@/db/engine-schema";
 import { freshDb } from "@/db/test-helpers";
 
 import { promoteAssertion } from "./promote.ts";
-
-type Db = Awaited<ReturnType<typeof freshDb>>;
-
-const one = <Row>(rows: readonly Row[]): Row => {
-	const [row] = rows;
-	if (row === undefined) {
-		throw new Error("expected an inserted row");
-	}
-	return row;
-};
-
-const seedTitle = async (db: Db, service: string, serviceId: string) => {
-	const group = one(
-		await db
-			.insert(titleGroups)
-			.values({ ladderComplete: false, source: "llm-research" })
-			.returning()
-			.all(),
-	);
-	return one(
-		await db
-			.insert(serviceTitles)
-			.values({ groupId: group.id, service, serviceId })
-			.returning()
-			.all(),
-	);
-};
+import { ascendingPair, one, seedTitle } from "./test-fixtures.ts";
+import type { TestDb as Db } from "./test-fixtures.ts";
 
 const seedTitleAssertion = async (
 	db: Db,
@@ -48,8 +21,7 @@ const seedTitleAssertion = async (
 ): Promise<number> => {
 	const left = await seedTitle(db, "tmdb", "1396");
 	const right = await seedTitle(db, "tvdb", "81189");
-	const [lowId, highId] =
-		left.id < right.id ? [left.id, right.id] : [right.id, left.id];
+	const [lowId, highId] = ascendingPair(left.id, right.id);
 	return one(
 		await db
 			.insert(titleAssertions)

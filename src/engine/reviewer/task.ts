@@ -4,7 +4,11 @@ import type { Db } from "@/db";
 
 import { promoteAssertion } from "./promote.ts";
 import { reviewProposal } from "./review.ts";
-import type { EscalationReason, ReviewJudge } from "./review.ts";
+import type {
+	EscalatedReview,
+	EscalationReason,
+	ReviewJudge,
+} from "./review.ts";
 import type { ReviewProposal } from "./types.ts";
 
 // The reviewer's task shape (ADR-0004, issue #61): one proposal in, one model
@@ -22,11 +26,7 @@ interface ReviewTaskDeps {
 }
 
 type ReviewTaskResult =
-	| {
-			readonly kind: "escalated";
-			readonly rationale: string | undefined;
-			readonly reason: EscalationReason;
-	  }
+	| EscalatedReview
 	| { readonly kind: "promoted" }
 	// The assertion no longer carried `llm-research` by the time the verdict
 	// landed (already promoted, or reassigned by another writer entirely).
@@ -47,11 +47,11 @@ const reviewResearchProposal = async (
 		proposal.assertionId,
 	);
 	if (promoted === "missing") {
-		const result = {
+		const result: EscalatedReview = {
 			kind: "escalated",
 			rationale: outcome.rationale,
 			reason: "missing-assertion",
-		} as const;
+		};
 		await deps.escalate(proposal, result.reason, result.rationale);
 		return result;
 	}
