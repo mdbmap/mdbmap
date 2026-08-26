@@ -56,6 +56,10 @@ _Avoid_: Absolute order, all instalments
 A service-provided alternate arrangement of instalments used to test an alignment. It is evidence only, never an instalment identity or public locator.
 _Avoid_: Public numbering, canonical order
 
+**Presentation order**:
+A named arrangement of a continuity's segments for the work page, such as release or watch. It may reorder episodic cours and atomic film segments without changing title-group membership or instalment locators. It is not a matching order.
+_Avoid_: Watch order list, franchise playlist, matching order
+
 **Monotonic alignment**:
 An alignment that preserves the relative order of both main sequences. It may contain gaps and split or merged instalments, but its mappings never cross.
 _Avoid_: Exact numbering, equal-length sequence
