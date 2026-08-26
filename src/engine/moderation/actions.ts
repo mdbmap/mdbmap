@@ -4,7 +4,6 @@ import { runAtomicBatch } from "@/db/atomic";
 import type { PreparedBatch } from "@/db/atomic";
 import {
 	candidateSubjectKey,
-	contentUnits,
 	instalmentAssertions,
 	pendingGroupCandidates,
 	serviceTitles,
@@ -558,11 +557,19 @@ const manualPairing = async (
 	}
 	const results = await db.$client.batch([first, ...rest]);
 	const assertionResults = minting ? results.slice(1) : results;
-	const assertionIds = assertionResults.flatMap((result) =>
-		(result.results as { id?: number }[])
-			.map((row) => row.id)
-			.filter((id): id is number => typeof id === "number"),
-	);
+	const assertionIds: number[] = [];
+	for (const result of assertionResults) {
+		for (const row of result.results) {
+			if (
+				typeof row === "object" &&
+				row !== null &&
+				"id" in row &&
+				typeof row.id === "number"
+			) {
+				assertionIds.push(row.id);
+			}
+		}
+	}
 	return { assertionIds, kind: "paired", unitId };
 };
 
