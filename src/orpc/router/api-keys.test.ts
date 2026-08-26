@@ -26,9 +26,9 @@ const expectRejected = async (operation: () => Promise<unknown>) => {
 
 const expectEveryOperationRejected = async (user: SessionUser | undefined) => {
 	const client = await clientFor(user);
-	await expectRejected(() => client.apiKeys.list());
-	await expectRejected(() => client.apiKeys.mint({ label: "ci" }));
-	await expectRejected(() => client.apiKeys.revoke({ id: "key-1" }));
+	await expectRejected(async () => client.apiKeys.list());
+	await expectRejected(async () => client.apiKeys.mint({ label: "ci" }));
+	await expectRejected(async () => client.apiKeys.revoke({ id: "key-1" }));
 };
 
 describe("api key admin gate", () => {
