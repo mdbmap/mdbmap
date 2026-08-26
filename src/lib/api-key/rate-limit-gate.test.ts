@@ -8,6 +8,7 @@ import {
 	enforceApiKeyRateLimit,
 	resolveApiRateLimits,
 	RETRY_AFTER_SECONDS,
+	withPublicApiGate,
 } from "./rate-limit-gate.ts";
 import type { ApiRateLimitBindings } from "./rate-limit-gate.ts";
 
@@ -118,5 +119,72 @@ describe("resolveApiRateLimits", () => {
 		expect(rateLimits.free).toBe(freeBinding);
 		expect(rateLimits.pro).toBe(env[API_RATE_LIMIT_BINDING_BY_PLAN.pro]);
 		expect(API_RATE_LIMIT_BINDING_BY_PLAN.free).toBe("API_RATE_LIMIT");
+	});
+});
+
+describe("withPublicApiGate", () => {
+	it("returns denial responses without calling next", async () => {
+		const free = mockLimiter(true);
+		const pro = mockLimiter(true);
+		const rateLimits: ApiRateLimitBindings = { free, pro };
+		const db = await freshDb();
+		const next = vi.fn().mockResolvedValue(new Response("ok"));
+
+		const unkeyed = await withPublicApiGate(
+			new Request("https://example.test/movie/tmdb:1"),
+			next,
+			{ db, rateLimits },
+		);
+		expect(unkeyed.status).toBe(401);
+		expect(next).not.toHaveBeenCalled();
+
+		const overLimit = mockLimiter(false);
+		const issued = await issueApiKey(db, { label: "ci" });
+		const denied = await withPublicApiGate(bearerRequest(issued.secret), next, {
+			db,
+			rateLimits: { free: overLimit, pro },
+		});
+		expect(denied.status).toBe(429);
+		expect(denied.headers.get("retry-after")).toBe(
+			String(RETRY_AFTER_SECONDS),
+		);
+		expect(next).not.toHaveBeenCalled();
+	});
+
+	it("forwards to next when the key is under the limit", async () => {
+		const free = mockLimiter(true);
+		const pro = mockLimiter(true);
+		const rateLimits: ApiRateLimitBindings = { free, pro };
+		const db = await freshDb();
+		const issued = await issueApiKey(db, { label: "ci" });
+		const next = vi
+			.fn()
+			.mockResolvedValue(new Response("mapped", { status: 200 }));
+
+		const response = await withPublicApiGate(
+			bearerRequest(issued.secret),
+			next,
+			{ db, rateLimits },
+		);
+
+		expect(response.status).toBe(200);
+		expect(await response.text()).toBe("mapped");
+		expect(next).toHaveBeenCalledOnce();
+		expect(free.limit).toHaveBeenCalledWith({ key: issued.id });
+	});
+
+	it("resolves rateLimits from cloudflare:workers when omitted", async () => {
+		const db = await freshDb();
+		const issued = await issueApiKey(db, { label: "ci" });
+		const next = vi.fn().mockResolvedValue(new Response("ok"));
+
+		const response = await withPublicApiGate(
+			bearerRequest(issued.secret),
+			next,
+			{ db },
+		);
+
+		expect(response.status).toBe(200);
+		expect(next).toHaveBeenCalledOnce();
 	});
 });

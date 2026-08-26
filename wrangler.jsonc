@@ -24,10 +24,11 @@
 			"database_id": "REPLACE_WITH_D1_DATABASE_ID",
 		},
 	],
+	// Set `namespace_id` to the real namespace before deploy (create via wrangler/dashboard).
 	"ratelimits": [
 		{
 			"name": "API_RATE_LIMIT",
-			"namespace_id": "1001",
+			"namespace_id": "REPLACE_WITH_API_RATE_LIMIT_NAMESPACE_ID",
 			"simple": {
 				"limit": 60,
 				"period": 60,
