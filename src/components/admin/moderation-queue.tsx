@@ -4,6 +4,8 @@ import { useCallback, useMemo } from "react";
 import type { CandidateRow } from "@/engine/moderation";
 import { orpc } from "@/orpc/client";
 
+import { buttonClass } from "./styles.ts";
+
 // The internal moderation console (issue #46). Deliberately plain — not the public
 // design system — it lists the open queue, shows each row's evidence blob, and
 // exposes the admin actions the engine's moderation module backs. Every action is
@@ -84,9 +86,6 @@ const useModerationActions = (): Actions => {
 		[acceptMutate, clearMutate, keepMutate, rejectMutate, settleMutate],
 	);
 };
-
-const buttonClass =
-	"border border-neutral-300 bg-white px-3 py-1 text-sm font-medium text-neutral-900 hover:bg-neutral-50 dark:border-neutral-700 dark:bg-neutral-900 dark:text-neutral-50 dark:hover:bg-neutral-800";
 
 function ActionRow({
 	actions,
