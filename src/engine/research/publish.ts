@@ -1,9 +1,13 @@
-import { and, eq } from "drizzle-orm";
+import { and, eq, or } from "drizzle-orm";
 import type { Promisable } from "type-fest";
 
 import { one } from "@/db";
 import type { Db } from "@/db";
-import type { CandidateEvidence, CandidateSubject } from "@/db/engine-schema";
+import type {
+	AssertionSource,
+	CandidateEvidence,
+	CandidateSubject,
+} from "@/db/engine-schema";
 import {
 	candidateSubjectKey,
 	contentUnits,
@@ -126,11 +130,7 @@ const flagEvidenceHash = (evidence: LowConfidenceEvidence): string => {
 			return `low-confidence-flag:title:${titleAId}:${titleBId}`;
 		}
 		case "relation": {
-			const [fromTitleId, toTitleId] = ascendingPair(
-				evidence.fromTitleId,
-				evidence.toTitleId,
-			);
-			return `low-confidence-flag:relation:${fromTitleId}:${toTitleId}`;
+			return `low-confidence-flag:relation:${evidence.fromTitleId}->${evidence.toTitleId}`;
 		}
 	}
 };
@@ -214,10 +214,6 @@ const queueRelationFlag = async (
 		readonly toTitleId: number;
 	},
 ): Promise<void> => {
-	const [titleAId, titleBId] = ascendingPair(
-		input.fromTitleId,
-		input.toTitleId,
-	);
 	await queueFlag(db, {
 		evidence: {
 			confidence: input.assertionConfidence,
@@ -229,8 +225,8 @@ const queueRelationFlag = async (
 		},
 		subject: {
 			subjectType: "title-pair",
-			titleAId,
-			titleBId,
+			titleAId: input.fromTitleId,
+			titleBId: input.toTitleId,
 		},
 	});
 };
@@ -298,6 +294,95 @@ const existingRelationAssertion = async (
 	return existing[0]?.id;
 };
 
+const endpointConflicts = async (
+	db: Db,
+	fromTitleId: number,
+	toTitleId: number,
+): Promise<
+	readonly {
+		readonly fromTitleId: number;
+		readonly id: number;
+		readonly source: AssertionSource;
+		readonly toTitleId: number;
+	}[]
+> =>
+	db
+		.select({
+			fromTitleId: relationAssertions.fromTitleId,
+			id: relationAssertions.id,
+			source: relationAssertions.source,
+			toTitleId: relationAssertions.toTitleId,
+		})
+		.from(relationAssertions)
+		.where(
+			or(
+				eq(relationAssertions.fromTitleId, fromTitleId),
+				eq(relationAssertions.toTitleId, toTitleId),
+			),
+		)
+		.all();
+
+const isUniqueViolation = (error: unknown): boolean => {
+	let current: unknown = error;
+	while (current instanceof Error) {
+		if (/unique/iu.test(current.message)) {
+			return true;
+		}
+		current = current.cause;
+	}
+	return false;
+};
+
+const queueCompetingRelations = async (
+	db: Db,
+	input: {
+		readonly fromTitleId: number;
+		readonly published: readonly {
+			readonly fromTitleId: number;
+			readonly source: AssertionSource;
+			readonly toTitleId: number;
+		}[];
+		readonly toTitleId: number;
+	},
+): Promise<void> => {
+	const [titleAId, titleBId] = ascendingPair(
+		input.fromTitleId,
+		input.toTitleId,
+	);
+	const subject: CandidateSubject = {
+		subjectType: "title-pair",
+		titleAId,
+		titleBId,
+	};
+	const entryId = `research:${input.fromTitleId}->${input.toTitleId}`;
+	await db
+		.insert(pendingGroupCandidates)
+		.values({
+			evidence: {
+				competingRelations: [
+					...input.published.map((row) => ({
+						fromTitleId: row.fromTitleId,
+						source: row.source,
+						toTitleId: row.toTitleId,
+					})),
+					{
+						fromTitleId: input.fromTitleId,
+						source: RESEARCH,
+						toTitleId: input.toTitleId,
+					},
+				],
+				entryId,
+				kind: "continuity-conflict",
+			},
+			evidenceHash: `continuity-conflict:${entryId}`,
+			kind: "continuity-conflict",
+			subject,
+			subjectKey: candidateSubjectKey(subject),
+		})
+		.onConflictDoNothing()
+		.run();
+};
+
 const insertRelationAssertion = async (
 	db: Db,
 	input: {
@@ -323,17 +408,51 @@ const insertRelationAssertion = async (
 const publishRelationProposal = async (
 	db: Db,
 	proposal: RelationProposal,
-): Promise<PublishedResearch> => {
+): Promise<PublishedResearch | undefined> => {
 	const decision = corroborate(proposal.evidence);
 	const fromTitleId = await requireTitleId(db, proposal.from);
 	const toTitleId = await requireTitleId(db, proposal.to);
-	const assertionId =
-		(await existingRelationAssertion(db, fromTitleId, toTitleId)) ??
-		(await insertRelationAssertion(db, {
+	const exactId = await existingRelationAssertion(db, fromTitleId, toTitleId);
+	if (exactId !== undefined) {
+		if (decision.reviewFlag !== undefined) {
+			await queueRelationFlag(db, {
+				assertionConfidence: decision.confidence,
+				fromTitleId,
+				toTitleId,
+			});
+		}
+		return publishedResult(proposal, exactId, decision);
+	}
+
+	const conflicts = await endpointConflicts(db, fromTitleId, toTitleId);
+	if (conflicts.length > 0) {
+		await queueCompetingRelations(db, {
+			fromTitleId,
+			published: conflicts,
+			toTitleId,
+		});
+		return undefined;
+	}
+
+	let assertionId: number;
+	try {
+		assertionId = await insertRelationAssertion(db, {
 			confidence: decision.confidence,
 			fromTitleId,
 			toTitleId,
-		}));
+		});
+	} catch (error) {
+		if (!isUniqueViolation(error)) {
+			throw error;
+		}
+		const raced = await endpointConflicts(db, fromTitleId, toTitleId);
+		await queueCompetingRelations(db, {
+			fromTitleId,
+			published: raced,
+			toTitleId,
+		});
+		return undefined;
+	}
 
 	if (decision.reviewFlag !== undefined) {
 		await queueRelationFlag(db, {
@@ -436,7 +555,7 @@ const publishInstalmentProposal = async (
 const publishProposal = async (
 	db: Db,
 	proposal: ResearchProposal,
-): Promise<PublishedResearch> => {
+): Promise<PublishedResearch | undefined> => {
 	switch (proposal.kind) {
 		case "title": {
 			return publishTitleProposal(db, proposal);
@@ -461,6 +580,9 @@ const publishRemaining = async (
 		return done;
 	}
 	const result = await publishProposal(db, head);
+	if (result === undefined) {
+		return publishRemaining(db, tail, enqueueReview, done);
+	}
 	await enqueueReview(result.review);
 	return publishRemaining(db, tail, enqueueReview, [...done, result]);
 };

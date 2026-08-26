@@ -80,12 +80,14 @@ const resolveEnqueue = (deps: ResearchPassDeps): ReviewEnqueue => {
 		return deps.enqueueReview;
 	}
 	const { review } = deps;
-	return async (proposal) =>
-		reviewResearchProposal(proposal, {
+	// ADR-0004: reviewer is event-driven; never adjudicate inside the pass.
+	return (proposal) => {
+		void reviewResearchProposal(proposal, {
 			db: deps.db,
 			escalate: review.escalate,
 			judge: review.judge,
 		});
+	};
 };
 
 const servicesFromProposals = (

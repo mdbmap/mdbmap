@@ -391,6 +391,75 @@ const idempotentRelationAgent: ResearchAgent = async ({ tools }) => {
 	return { proposals: [proposal, proposal], residue: [] };
 };
 
+const oppositeDirectionRelationFlagsAgent: ResearchAgent = async ({
+	tools,
+}) => {
+	const from = await requireAvailable(tools, "tmdb", "1");
+	const to = await requireAvailable(tools, "tvdb", "2");
+	const weak = {
+		kind: "api" as const,
+		official: true as const,
+		operator: "tmdb",
+		stance: "corroborates" as const,
+		url: from.url,
+		validated: true as const,
+	};
+	return {
+		proposals: [
+			{
+				claim: "weak A to B",
+				evidence: [weak],
+				from: from.ref,
+				kind: "relation",
+				to: to.ref,
+			},
+			{
+				claim: "weak B to A",
+				evidence: [weak],
+				from: to.ref,
+				kind: "relation",
+				to: from.ref,
+			},
+		],
+		residue: [],
+	};
+};
+
+const competingRelationAgent: ResearchAgent = async ({ tools }) => {
+	const from = await requireAvailable(tools, "tmdb", "1");
+	const firstTo = await requireAvailable(tools, "tvdb", "2");
+	const rivalTo = await requireAvailable(tools, "mal", "3");
+	const evidence = [
+		{
+			kind: "api" as const,
+			official: true as const,
+			operator: "tmdb",
+			stance: "corroborates" as const,
+			url: from.url,
+			validated: true as const,
+		},
+	];
+	return {
+		proposals: [
+			{
+				claim: "first sequel",
+				evidence,
+				from: from.ref,
+				kind: "relation",
+				to: firstTo.ref,
+			},
+			{
+				claim: "competing sequel",
+				evidence,
+				from: from.ref,
+				kind: "relation",
+				to: rivalTo.ref,
+			},
+		],
+		residue: [],
+	};
+};
+
 const idempotentInstalmentAgent = (unitId: string): ResearchAgent =>
 	async ({ tools }) => {
 		const fetched = await requireAvailable(tools, "tmdb", "42");
@@ -675,6 +744,10 @@ describe("runResearchPass publish path", () => {
 
 	it("wires the #61 reviewer when only judge/escalate deps are supplied", async () => {
 		const judged: string[] = [];
+		let releaseJudge!: () => void;
+		const judgedDone = new Promise<void>((resolve) => {
+			releaseJudge = resolve;
+		});
 		const outcome = await runResearchPass(continuity, "after-residue", {
 			agent: singleSourceAgent,
 			clients: {
@@ -695,6 +768,7 @@ describe("runResearchPass publish path", () => {
 				judge: async (proposal) => {
 					await Promise.resolve();
 					judged.push(proposal.claim);
+					releaseJudge();
 					return {
 						rationale: "not enough evidence",
 						verdict: "unable-to-tell",
@@ -705,6 +779,7 @@ describe("runResearchPass publish path", () => {
 		});
 
 		expect(outcome.kind).toBe("completed");
+		await judgedDone;
 		expect(judged).toEqual(["weak single-source claim"]);
 	});
 
@@ -945,6 +1020,74 @@ describe("runResearchPass tools", () => {
 			);
 		}
 		expect(await db.select().from(relationAssertions).all()).toHaveLength(1);
+	});
+
+	it("keeps opposite-direction low-confidence relation flags distinct", async () => {
+		const outcome = await runResearchPass(continuity, "before-builds", {
+			agent: oppositeDirectionRelationFlagsAgent,
+			clients: {
+				tmdb: clientFor({
+					"1": catalogue({ instalments: [{ locator: "1:1" }], title: "A" }),
+				}),
+				tvdb: clientFor({
+					"2": catalogue({ instalments: [{ locator: "1:1" }], title: "B" }),
+				}),
+			},
+			db,
+			enqueueReview: noopReview,
+			masterKey,
+			providerId,
+			timing: createMemoryTimingStore("before-builds"),
+		});
+		expect(outcome.kind).toBe("completed");
+		if (outcome.kind === "completed") {
+			expect(outcome.published).toHaveLength(2);
+		}
+		expect(await db.select().from(relationAssertions).all()).toHaveLength(2);
+		const flags = await db
+			.select()
+			.from(pendingGroupCandidates)
+			.all();
+		expect(flags).toHaveLength(2);
+		expect(flags.every((flag) => flag.kind === "low-confidence-flag")).toBe(
+			true,
+		);
+		const hashes = new Set(flags.map((flag) => flag.evidenceHash));
+		expect(hashes.size).toBe(2);
+	});
+
+	it("queues competing relations instead of aborting the pass", async () => {
+		const outcome = await runResearchPass(continuity, "before-builds", {
+			agent: competingRelationAgent,
+			clients: {
+				tmdb: clientFor({
+					"1": catalogue({ instalments: [{ locator: "1:1" }], title: "From" }),
+				}),
+				tvdb: clientFor({
+					"2": catalogue({ instalments: [{ locator: "1:1" }], title: "First" }),
+				}),
+				mal: clientFor({
+					"3": catalogue({ instalments: [{ locator: "1:1" }], title: "Rival" }),
+				}),
+			},
+			db,
+			enqueueReview: noopReview,
+			masterKey,
+			providerId,
+			timing: createMemoryTimingStore("before-builds"),
+		});
+		expect(outcome.kind).toBe("completed");
+		if (outcome.kind === "completed") {
+			expect(outcome.published).toHaveLength(1);
+		}
+		expect(await db.select().from(relationAssertions).all()).toHaveLength(1);
+		const conflicts = (
+			await db.select().from(pendingGroupCandidates).all()
+		).filter((row) => row.kind === "continuity-conflict");
+		expect(conflicts).toHaveLength(1);
+		expect(conflicts[0]?.evidence).toMatchObject({
+			kind: "continuity-conflict",
+		});
 	});
 
 	it("re-publishing the same instalment unit does not UNIQUE-crash", async () => {
