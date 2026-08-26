@@ -33,6 +33,14 @@ describe("issueApiKey", () => {
 	});
 });
 
+describe("revokeApiKey", () => {
+	it("silently succeeds for an unknown id", async () => {
+		const db = await freshDb();
+
+		await expect(revokeApiKey(db, "unknown")).resolves.toBeUndefined();
+	});
+});
+
 describe("verifyApiKey", () => {
 	it("resolves the record id and plan for a correct key", async () => {
 		const db = await freshDb();

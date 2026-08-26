@@ -15,14 +15,34 @@ const clientFor = async (user: SessionUser | undefined) =>
 	});
 
 describe("api key admin gate", () => {
-	it("rejects an unauthenticated caller", async () => {
+	it("rejects an unauthenticated caller from listing keys", async () => {
 		const client = await clientFor(undefined);
 		await expect(client.apiKeys.list()).rejects.toThrow();
 	});
 
-	it("rejects a signed-in non-admin", async () => {
+	it("rejects an unauthenticated caller from minting a key", async () => {
+		const client = await clientFor(undefined);
+		await expect(client.apiKeys.mint({ label: "ci" })).rejects.toThrow();
+	});
+
+	it("rejects an unauthenticated caller from revoking a key", async () => {
+		const client = await clientFor(undefined);
+		await expect(client.apiKeys.revoke({ id: "key-1" })).rejects.toThrow();
+	});
+
+	it("rejects a signed-in non-admin from listing keys", async () => {
+		const client = await clientFor({ id: "user-1" });
+		await expect(client.apiKeys.list()).rejects.toThrow();
+	});
+
+	it("rejects a signed-in non-admin from minting a key", async () => {
 		const client = await clientFor({ id: "user-1" });
 		await expect(client.apiKeys.mint({ label: "ci" })).rejects.toThrow();
+	});
+
+	it("rejects a signed-in non-admin from revoking a key", async () => {
+		const client = await clientFor({ id: "user-1" });
+		await expect(client.apiKeys.revoke({ id: "key-1" })).rejects.toThrow();
 	});
 });
 
