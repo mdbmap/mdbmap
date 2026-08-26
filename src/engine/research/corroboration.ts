@@ -71,17 +71,17 @@ const corroborate = (
 		return lowConfidenceDecision;
 	}
 
+	const corroborating = eligible
+		.map((item) => ({
+			item,
+			operator: item.operator.trim().toLowerCase(),
+		}))
+		.filter(({ operator }) => operator.length > 0);
 	const operators = new Set(
-		eligible
-			.filter((item) => item.stance === "corroborates")
-			.map((item) => item.operator.trim().toLowerCase())
-			.filter((operator) => operator.length > 0),
+		corroborating.map(({ operator }) => operator),
 	);
-	const hasValidatedApi = eligible.some(
-		(item) =>
-			item.kind === "api" &&
-			item.validated &&
-			item.stance === "corroborates",
+	const hasValidatedApi = corroborating.some(
+		({ item }) => item.kind === "api" && item.validated,
 	);
 
 	return operators.size >= 2 && hasValidatedApi

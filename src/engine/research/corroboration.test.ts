@@ -49,6 +49,19 @@ describe("corroborate", () => {
 		});
 	});
 
+	it("requires the validated API to name a counting operator", () => {
+		expect(
+			corroborate([
+				api("tvdb", { validated: false }),
+				api("tmdb", { validated: false }),
+				api("", { validated: true }),
+			]),
+		).toStrictEqual({
+			confidence: "low",
+			reviewFlag: "low-confidence-flag",
+		});
+	});
+
 	it("returns low and flags a scrape leg", () => {
 		expect(
 			corroborate([
