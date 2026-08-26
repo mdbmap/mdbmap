@@ -9,7 +9,7 @@ const listKey = ["providers", "list"] as const;
 const timingKey = ["providers", "timing"] as const;
 
 const { createSuccessHandlers } = vi.hoisted(() => ({
-	createSuccessHandlers: [] as Array<() => unknown>,
+	createSuccessHandlers: [] as (() => unknown)[],
 }));
 
 vi.mock("@/orpc/client", () => {

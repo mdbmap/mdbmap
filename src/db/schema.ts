@@ -226,6 +226,7 @@ const llmProvider = sqliteTable("llm_provider", {
 // deterministic build. Singleton row (`id = "default"`); absent means `off`.
 const researchTimings = ["before-builds", "after-residue", "off"] as const;
 type ResearchTiming = (typeof researchTimings)[number];
+const DEFAULT_RESEARCH_TIMING: ResearchTiming = "off";
 
 const researchPolicy = sqliteTable("research_policy", {
 	id: text().primaryKey(),
@@ -244,6 +245,7 @@ export {
 	rateableUnitKinds,
 	researchPolicy,
 	researchTimings,
+	DEFAULT_RESEARCH_TIMING,
 	session,
 	todos,
 	user,

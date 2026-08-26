@@ -1,12 +1,12 @@
 import { z } from "zod";
 
-import type { ApiKeyPlan, LlmProviderKind, RateableUnitKind, WatchStatus } from "@/db/schema";
+import type { ApiKeyPlan, RateableUnitKind, WatchStatus } from "@/db/schema";
 import { apiKeyPlans, researchTimings, watchStatuses } from "@/db/schema";
+import type { ProviderListItem } from "@/lib/provider-config/store.ts";
 import {
 	ProviderConfigSchema,
 	UpdateProviderConfigSchema,
 } from "@/lib/provider-config/types.ts";
-import type { ProviderPublicConfig } from "@/lib/provider-config/types.ts";
 import type { MediaKind } from "@/engine";
 
 const TodoSchema = z.object({
@@ -120,12 +120,7 @@ interface MintedApiKey extends ApiKeyRow {
 	secret: string;
 }
 
-interface ProviderRow {
-	config: ProviderPublicConfig;
-	id: string;
-	kind: LlmProviderKind;
-	label: string;
-}
+type ProviderRow = ProviderListItem;
 
 interface ServiceRating {
 	scale: number;

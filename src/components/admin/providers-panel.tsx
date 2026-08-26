@@ -3,7 +3,11 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type { ChangeEvent, ReactNode, SubmitEvent } from "react";
 import { useCallback, useState } from "react";
 
-import { llmProviderKinds, researchTimings } from "@/db/schema";
+import {
+	DEFAULT_RESEARCH_TIMING,
+	llmProviderKinds,
+	researchTimings,
+} from "@/db/schema";
 import type { LlmProviderKind, ResearchTiming } from "@/db/schema";
 import { orpc } from "@/orpc/client";
 import type { ProviderRow } from "@/orpc/schema";
@@ -480,7 +484,7 @@ export function ProvidersPanel() {
 				<TimingPolicy
 					onChange={onTiming}
 					pending={timingPending}
-					value={timingQuery.data ?? "off"}
+					value={timingQuery.data ?? DEFAULT_RESEARCH_TIMING}
 				/>
 				{editing === undefined ? (
 					<ProviderForm

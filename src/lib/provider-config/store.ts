@@ -41,6 +41,18 @@ class ProviderNotFoundError extends Error {
 	}
 }
 
+const toListItem = (
+	config: ProviderConfig,
+	id: string,
+	kind: LlmProviderKind,
+	label: string,
+): ProviderListItem => ({
+	config: toPublicConfig(config),
+	id,
+	kind,
+	label,
+});
+
 const storeProvider = async (
 	db: Db,
 	masterKeyBase64: string,
@@ -65,12 +77,7 @@ const storeProvider = async (
 			wrappedKey: envelope.wrappedKey,
 		})
 		.run();
-	return {
-		config: toPublicConfig(config),
-		id,
-		kind: config.kind,
-		label: input.label,
-	};
+	return toListItem(config, id, config.kind, input.label);
 };
 
 const getProviderConfig = async (
@@ -117,12 +124,7 @@ const listProviders = async (
 	return Promise.all(
 		rows.map(async (row) => {
 			const config = await getProviderConfig(db, masterKeyBase64, row.id);
-			return {
-				config: toPublicConfig(config),
-				id: row.id,
-				kind: row.kind,
-				label: row.label,
-			};
+			return toListItem(config, row.id, row.kind, row.label);
 		}),
 	);
 };
@@ -154,12 +156,7 @@ const updateProvider = async (
 		})
 		.where(eq(llmProvider.id, input.id))
 		.run();
-	return {
-		config: toPublicConfig(config),
-		id: input.id,
-		kind: config.kind,
-		label: input.label,
-	};
+	return toListItem(config, input.id, config.kind, input.label);
 };
 
 const removeProvider = async (db: Db, id: string): Promise<void> => {
