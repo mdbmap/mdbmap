@@ -17,7 +17,9 @@ const api = (
 
 describe("corroborate", () => {
 	it("returns high for two operators including a validated API response", () => {
-		expect(corroborate([api("tvdb"), api("tmdb")])).toStrictEqual({
+		expect(
+			corroborate([api("tvdb"), api("tmdb", { validated: false })]),
+		).toStrictEqual({
 			confidence: "high",
 			reviewFlag: undefined,
 		});
