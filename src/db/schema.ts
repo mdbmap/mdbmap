@@ -26,6 +26,10 @@ type WatchStatus = (typeof watchStatuses)[number];
 const rateableUnitKinds = ["work", "part", "episode", "movie"] as const;
 type RateableUnitKind = (typeof rateableUnitKinds)[number];
 
+// The gate (#56) picks its binding from this column; new plans just add a value.
+const apiKeyPlans = ["free", "pro"] as const;
+type ApiKeyPlan = (typeof apiKeyPlans)[number];
+
 const todos = sqliteTable("todos", {
 	createdAt: integer("created_at", { mode: "timestamp" }).default(
 		sql`(unixepoch())`,
@@ -109,6 +113,18 @@ const verification = sqliteTable("verification", {
 	value: text().notNull(),
 });
 
+// ADR-0006: hand-rolled, not better-auth's api-key plugin (which writes a
+// request count to D1 on every verification). Only `keyHash` is ever stored;
+// the full secret exists once, at issuance.
+const apiKey = sqliteTable("api_key", {
+	createdAt: timestamp("created_at"),
+	id: text().primaryKey(),
+	keyHash: text("key_hash").notNull().unique(),
+	label: text().notNull(),
+	plan: text({ enum: apiKeyPlans }).notNull().default("free"),
+	revokedAt: integer("revoked_at", { mode: "timestamp" }),
+});
+
 const watchStatus = sqliteTable(
 	"watch_status",
 	{
@@ -173,6 +189,8 @@ const personalRating = sqliteTable(
 
 export {
 	account,
+	apiKey,
+	apiKeyPlans,
 	episodeProgress,
 	personalRating,
 	rateableUnitKinds,
@@ -184,6 +202,7 @@ export {
 	watchStatuses,
 };
 export type {
+	ApiKeyPlan,
 	ContinuityKey,
 	InstalmentLocator,
 	RateableUnitKey,
