@@ -954,7 +954,7 @@ describe("runResearchPass tools", () => {
 		}
 	});
 
-	it("lets distinct-unit low-confidence flags coexist for one instalment", async () => {
+	it("queues an instalment-assertion-conflict for a second unit on one spoke", async () => {
 		const unitA = one(
 			await db.insert(contentUnits).values({}).returning().all(),
 		);
@@ -986,9 +986,82 @@ describe("runResearchPass tools", () => {
 
 		expect(outcome.kind).toBe("completed");
 		if (outcome.kind === "completed") {
-			expect(outcome.published).toHaveLength(2);
+			expect(outcome.published).toHaveLength(1);
 		}
-		expect(await db.select().from(pendingGroupCandidates).all()).toHaveLength(2);
+		expect(await db.select().from(instalmentAssertions).all()).toHaveLength(1);
+		const pending = await db.select().from(pendingGroupCandidates).all();
+		expect(pending.some((row) => row.kind === "low-confidence-flag")).toBe(
+			true,
+		);
+		expect(
+			pending.some((row) => row.kind === "instalment-assertion-conflict"),
+		).toBe(true);
+	});
+
+	it("reuses curated instalment coverage instead of minting a rival unit", async () => {
+		const clients = {
+			tmdb: clientFor({
+				"42": catalogue({
+					instalments: [{ locator: "1:1" }],
+					title: "Curated",
+				}),
+			}),
+		};
+		const first = await runResearchPass(continuity, "before-builds", {
+			agent: weakInstalmentAgent,
+			clients,
+			db,
+			enqueueReview: noopReview,
+			masterKey,
+			providerId,
+			scrape: {
+				fetchPage: async () => {
+					await Promise.resolve();
+					return { ok: true };
+				},
+			},
+			timing: createMemoryTimingStore("before-builds"),
+		});
+		expect(first.kind).toBe("completed");
+		const [seeded] = await db.select().from(instalmentAssertions).all();
+		expect(seeded).toBeDefined();
+		if (seeded === undefined) {
+			return;
+		}
+		await db
+			.update(instalmentAssertions)
+			.set({ confidence: "high", source: "manual" })
+			.where(eq(instalmentAssertions.id, seeded.id))
+			.run();
+		const pendingBefore = await db.select().from(pendingGroupCandidates).all();
+
+		const second = await runResearchPass(continuity, "before-builds", {
+			agent: weakInstalmentAgent,
+			clients,
+			db,
+			enqueueReview: noopReview,
+			masterKey,
+			providerId,
+			scrape: {
+				fetchPage: async () => {
+					await Promise.resolve();
+					return { ok: true };
+				},
+			},
+			timing: createMemoryTimingStore("before-builds"),
+		});
+		expect(second.kind).toBe("completed");
+		expect(await db.select().from(instalmentAssertions).all()).toMatchObject([
+			{
+				confidence: "high",
+				id: seeded.id,
+				source: "manual",
+				unitId: seeded.unitId,
+			},
+		]);
+		expect(await db.select().from(pendingGroupCandidates).all()).toHaveLength(
+			pendingBefore.length,
+		);
 	});
 
 	it("treats an undefined catalogue as unavailable without aborting the pass", async () => {

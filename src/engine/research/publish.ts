@@ -42,6 +42,11 @@ interface ExistingAssertion {
 	readonly source: AssertionSource;
 }
 
+interface InsertOrLoadResult {
+	readonly assertionId: number;
+	readonly existing: ExistingAssertion | undefined;
+}
+
 const isUniqueViolation = (error: unknown): boolean => {
 	let current: unknown = error;
 	while (current instanceof Error) {
@@ -51,6 +56,48 @@ const isUniqueViolation = (error: unknown): boolean => {
 		current = current.cause;
 	}
 	return false;
+};
+
+const insertOrLoadAssertion = async (input: {
+	readonly insert: () => Promise<number>;
+	readonly load: () => Promise<ExistingAssertion | undefined>;
+}): Promise<InsertOrLoadResult> => {
+	const loaded = await input.load();
+	if (loaded !== undefined) {
+		return { assertionId: loaded.id, existing: loaded };
+	}
+	try {
+		return { assertionId: await input.insert(), existing: undefined };
+	} catch (error) {
+		if (!isUniqueViolation(error)) {
+			throw error;
+		}
+		const raced = await input.load();
+		if (raced === undefined) {
+			throw error;
+		}
+		return { assertionId: raced.id, existing: raced };
+	}
+};
+
+const syncResearchOwned = async (input: {
+	readonly decision: CorroborationDecision;
+	readonly existing: ExistingAssertion | undefined;
+	readonly queueFlag: () => Promise<void>;
+	readonly updateConfidence: (assertionId: number) => Promise<void>;
+}): Promise<void> => {
+	const owns =
+		input.existing === undefined || !outranksResearch(input.existing.source);
+	if (
+		input.existing !== undefined &&
+		owns &&
+		input.existing.confidence !== input.decision.confidence
+	) {
+		await input.updateConfidence(input.existing.id);
+	}
+	if (input.decision.reviewFlag !== undefined && owns) {
+		await input.queueFlag();
+	}
 };
 
 type LowConfidenceEvidence = Extract<
@@ -300,49 +347,32 @@ const publishTitleProposal = async (
 	const leftId = await requireTitleId(db, proposal.left);
 	const rightId = await requireTitleId(db, proposal.right);
 	const [titleAId, titleBId] = ascendingPair(leftId, rightId);
-	let existing = await loadTitleAssertion(db, titleAId, titleBId);
-	let assertionId = existing?.id;
-	if (assertionId === undefined) {
-		try {
-			assertionId = await insertTitleAssertion(db, {
+	const { assertionId, existing } = await insertOrLoadAssertion({
+		insert: async () =>
+			insertTitleAssertion(db, {
 				confidence: decision.confidence,
 				titleAId,
 				titleBId,
-			});
-		} catch (error) {
-			if (!isUniqueViolation(error)) {
-				throw error;
-			}
-			existing = await loadTitleAssertion(db, titleAId, titleBId);
-			assertionId = existing?.id;
-			if (assertionId === undefined) {
-				throw error;
-			}
-		}
-	}
-
-	if (
-		existing !== undefined &&
-		!outranksResearch(existing.source) &&
-		existing.confidence !== decision.confidence
-	) {
-		await db
-			.update(titleAssertions)
-			.set({ confidence: decision.confidence })
-			.where(eq(titleAssertions.id, assertionId))
-			.run();
-	}
-
-	const ownsResearchRow =
-		existing === undefined || !outranksResearch(existing.source);
-	if (decision.reviewFlag !== undefined && ownsResearchRow) {
-		await queueTitlePairFlag(db, {
-			assertionConfidence: decision.confidence,
-			titleAId,
-			titleBId,
-		});
-	}
-
+			}),
+		load: async () => loadTitleAssertion(db, titleAId, titleBId),
+	});
+	await syncResearchOwned({
+		decision,
+		existing,
+		queueFlag: async () =>
+			queueTitlePairFlag(db, {
+				assertionConfidence: decision.confidence,
+				titleAId,
+				titleBId,
+			}),
+		updateConfidence: async (id) => {
+			await db
+				.update(titleAssertions)
+				.set({ confidence: decision.confidence })
+				.where(eq(titleAssertions.id, id))
+				.run();
+		},
+	});
 	return publishedResult(proposal, assertionId, decision);
 };
 
@@ -468,6 +498,34 @@ const insertRelationAssertion = async (
 		ROW_MISSING,
 	).id;
 
+const applyOwnedRelation = async (
+	db: Db,
+	input: {
+		readonly decision: CorroborationDecision;
+		readonly existing: ExistingAssertion;
+		readonly fromTitleId: number;
+		readonly toTitleId: number;
+	},
+): Promise<void> => {
+	await syncResearchOwned({
+		decision: input.decision,
+		existing: input.existing,
+		queueFlag: async () =>
+			queueRelationFlag(db, {
+				assertionConfidence: input.decision.confidence,
+				fromTitleId: input.fromTitleId,
+				toTitleId: input.toTitleId,
+			}),
+		updateConfidence: async (id) => {
+			await db
+				.update(relationAssertions)
+				.set({ confidence: input.decision.confidence })
+				.where(eq(relationAssertions.id, id))
+				.run();
+		},
+	});
+};
+
 const publishRelationProposal = async (
 	db: Db,
 	proposal: RelationProposal,
@@ -477,26 +535,12 @@ const publishRelationProposal = async (
 	const toTitleId = await requireTitleId(db, proposal.to);
 	const exact = await existingRelationAssertion(db, fromTitleId, toTitleId);
 	if (exact !== undefined) {
-		if (
-			!outranksResearch(exact.source) &&
-			exact.confidence !== decision.confidence
-		) {
-			await db
-				.update(relationAssertions)
-				.set({ confidence: decision.confidence })
-				.where(eq(relationAssertions.id, exact.id))
-				.run();
-		}
-		if (
-			decision.reviewFlag !== undefined &&
-			!outranksResearch(exact.source)
-		) {
-			await queueRelationFlag(db, {
-				assertionConfidence: decision.confidence,
-				fromTitleId,
-				toTitleId,
-			});
-		}
+		await applyOwnedRelation(db, {
+			decision,
+			existing: exact,
+			fromTitleId,
+			toTitleId,
+		});
 		return publishedResult(proposal, exact.id, decision);
 	}
 
@@ -521,6 +565,20 @@ const publishRelationProposal = async (
 		if (!isUniqueViolation(error)) {
 			throw error;
 		}
+		const racedExact = await existingRelationAssertion(
+			db,
+			fromTitleId,
+			toTitleId,
+		);
+		if (racedExact !== undefined) {
+			await applyOwnedRelation(db, {
+				decision,
+				existing: racedExact,
+				fromTitleId,
+				toTitleId,
+			});
+			return publishedResult(proposal, racedExact.id, decision);
+		}
 		const raced = await endpointConflicts(db, fromTitleId, toTitleId);
 		await queueCompetingRelations(db, {
 			fromTitleId,
@@ -541,6 +599,76 @@ const publishRelationProposal = async (
 	return publishedResult(proposal, assertionId, decision);
 };
 
+const spokeTitleId = async (
+	db: Db,
+	instalmentId: number,
+): Promise<number> =>
+	one(
+		await db
+			.select({ titleId: serviceInstalments.titleId })
+			.from(serviceInstalments)
+			.where(eq(serviceInstalments.id, instalmentId))
+			.all(),
+		ROW_MISSING,
+	).titleId;
+
+const queueInstalmentCoverageConflict = async (
+	db: Db,
+	input: {
+		readonly decision: CorroborationDecision;
+		readonly instalmentId: number;
+		readonly published: {
+			readonly confidence: "high" | "low";
+			readonly source: AssertionSource;
+			readonly unitId: string;
+		};
+		readonly unitId: string;
+	},
+): Promise<void> => {
+	const titleId = await spokeTitleId(db, input.instalmentId);
+	const subject: CandidateSubject = { subjectType: "title", titleId };
+	const evidence: CandidateEvidence = {
+		instalmentId: input.instalmentId,
+		kind: "instalment-assertion-conflict",
+		proposed: {
+			confidence: input.decision.confidence,
+			source: RESEARCH,
+			unitId: input.unitId,
+		},
+		published: {
+			confidence: input.published.confidence,
+			source: input.published.source,
+			unitId: input.published.unitId,
+		},
+	};
+	const evidenceHash = `instalment-assertion-conflict:${input.instalmentId}:${input.unitId}`;
+	if (input.published.source === "manual") {
+		await db
+			.insert(pendingGroupCandidates)
+			.values({
+				evidence,
+				evidenceHash,
+				kind: "instalment-assertion-conflict",
+				status: "rejected",
+				subject,
+				subjectKey: candidateSubjectKey(subject),
+			})
+			.run();
+		return;
+	}
+	await db
+		.insert(pendingGroupCandidates)
+		.values({
+			evidence,
+			evidenceHash,
+			kind: "instalment-assertion-conflict",
+			subject,
+			subjectKey: candidateSubjectKey(subject),
+		})
+		.onConflictDoNothing()
+		.run();
+};
+
 const resolveInstalmentUnitId = async (
 	db: Db,
 	proposal: InstalmentProposal,
@@ -548,7 +676,7 @@ const resolveInstalmentUnitId = async (
 	if (proposal.unitId !== undefined) {
 		return proposal.unitId;
 	}
-	const prior = await db
+	const priorResearch = await db
 		.select({ unitId: instalmentAssertions.unitId })
 		.from(instalmentAssertions)
 		.where(
@@ -558,13 +686,47 @@ const resolveInstalmentUnitId = async (
 			),
 		)
 		.all();
-	if (prior[0] !== undefined) {
-		return prior[0].unitId;
+	if (priorResearch[0] !== undefined) {
+		return priorResearch[0].unitId;
+	}
+	// Reuse any existing spoke coverage so higher-precedence rows are seen
+	// by the outranksResearch gate instead of minting a competing unit.
+	const priorAny = await db
+		.select({ unitId: instalmentAssertions.unitId })
+		.from(instalmentAssertions)
+		.where(eq(instalmentAssertions.instalmentId, proposal.instalmentId))
+		.all();
+	if (priorAny[0] !== undefined) {
+		return priorAny[0].unitId;
 	}
 	return one(
 		await db.insert(contentUnits).values({}).returning().all(),
 		ROW_MISSING,
 	).id;
+};
+
+const competingSpokeCoverage = async (
+	db: Db,
+	instalmentId: number,
+	unitId: string,
+): Promise<
+	| {
+			readonly confidence: "high" | "low";
+			readonly source: AssertionSource;
+			readonly unitId: string;
+	  }
+	| undefined
+> => {
+	const rows = await db
+		.select({
+			confidence: instalmentAssertions.confidence,
+			source: instalmentAssertions.source,
+			unitId: instalmentAssertions.unitId,
+		})
+		.from(instalmentAssertions)
+		.where(eq(instalmentAssertions.instalmentId, instalmentId))
+		.all();
+	return rows.find((row) => row.unitId !== unitId);
 };
 
 const existingInstalmentAssertion = async (
@@ -614,69 +776,53 @@ const insertInstalmentAssertion = async (
 const publishInstalmentProposal = async (
 	db: Db,
 	proposal: InstalmentProposal,
-): Promise<PublishedResearch> => {
+): Promise<PublishedResearch | undefined> => {
 	const decision = corroborate(proposal.evidence);
 	const unitId = await resolveInstalmentUnitId(db, proposal);
-	let existing = await existingInstalmentAssertion(
+	const competing = await competingSpokeCoverage(
 		db,
 		proposal.instalmentId,
 		unitId,
 	);
-	let assertionId = existing?.id;
-	if (assertionId === undefined) {
-		try {
-			assertionId = await insertInstalmentAssertion(db, {
+	if (competing !== undefined) {
+		await queueInstalmentCoverageConflict(db, {
+			decision,
+			instalmentId: proposal.instalmentId,
+			published: competing,
+			unitId,
+		});
+		return undefined;
+	}
+	const { assertionId, existing } = await insertOrLoadAssertion({
+		insert: async () =>
+			insertInstalmentAssertion(db, {
 				confidence: decision.confidence,
 				instalmentId: proposal.instalmentId,
 				unitId,
-			});
-		} catch (error) {
-			if (!isUniqueViolation(error)) {
-				throw error;
-			}
-			existing = await existingInstalmentAssertion(
-				db,
-				proposal.instalmentId,
+			}),
+		load: async () =>
+			existingInstalmentAssertion(db, proposal.instalmentId, unitId),
+	});
+	await syncResearchOwned({
+		decision,
+		existing,
+		queueFlag: async () => {
+			const titleId = await spokeTitleId(db, proposal.instalmentId);
+			await queueInstalmentFlag(db, {
+				assertionConfidence: decision.confidence,
+				instalmentId: proposal.instalmentId,
+				titleId,
 				unitId,
-			);
-			assertionId = existing?.id;
-			if (assertionId === undefined) {
-				throw error;
-			}
-		}
-	}
-
-	if (
-		existing !== undefined &&
-		!outranksResearch(existing.source) &&
-		existing.confidence !== decision.confidence
-	) {
-		await db
-			.update(instalmentAssertions)
-			.set({ confidence: decision.confidence })
-			.where(eq(instalmentAssertions.id, assertionId))
-			.run();
-	}
-
-	const ownsResearchRow =
-		existing === undefined || !outranksResearch(existing.source);
-	if (decision.reviewFlag !== undefined && ownsResearchRow) {
-		const spoke = one(
+			});
+		},
+		updateConfidence: async (id) => {
 			await db
-				.select({ titleId: serviceInstalments.titleId })
-				.from(serviceInstalments)
-				.where(eq(serviceInstalments.id, proposal.instalmentId))
-				.all(),
-			ROW_MISSING,
-		);
-		await queueInstalmentFlag(db, {
-			assertionConfidence: decision.confidence,
-			instalmentId: proposal.instalmentId,
-			titleId: spoke.titleId,
-			unitId,
-		});
-	}
-
+				.update(instalmentAssertions)
+				.set({ confidence: decision.confidence })
+				.where(eq(instalmentAssertions.id, id))
+				.run();
+		},
+	});
 	return publishedResult(proposal, assertionId, decision);
 };
 
