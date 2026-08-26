@@ -1,27 +1,29 @@
 // Research corroboration gate (ADR-0004, #60).
 
-type EvidenceVerdict = "corroborates" | "contradicts";
+import type { AssertionConfidence } from "@/db/columns.ts";
+
+type SourceStance = "corroborates" | "contradicts";
 
 interface ApiEvidence {
 	readonly kind: "api";
-	readonly official: boolean;
+	readonly official: true;
 	readonly operator: string;
 	readonly validated: boolean;
-	readonly verdict: EvidenceVerdict;
+	readonly stance: SourceStance;
 }
 
 interface ScrapeEvidence {
 	readonly kind: "scrape";
-	readonly official: boolean;
+	readonly official: true;
 	readonly operator: string;
-	readonly verdict: EvidenceVerdict;
+	readonly stance: SourceStance;
 }
 
 interface CommunityWikiEvidence {
 	readonly kind: "community-wiki";
-	readonly official: boolean;
+	readonly official: false;
 	readonly operator: string;
-	readonly verdict: EvidenceVerdict;
+	readonly stance: SourceStance;
 }
 
 type CorroborationEvidence =
@@ -31,11 +33,11 @@ type CorroborationEvidence =
 
 type CorroborationDecision =
 	| {
-			readonly confidence: "high";
+			readonly confidence: Extract<AssertionConfidence, "high">;
 			readonly reviewFlag: undefined;
 	  }
 	| {
-			readonly confidence: "low";
+			readonly confidence: Extract<AssertionConfidence, "low">;
 			readonly reviewFlag: "low-confidence-flag";
 	  };
 
@@ -54,7 +56,7 @@ const eligibleEvidence = (
 ): readonly (ApiEvidence | ScrapeEvidence)[] =>
 	evidence.filter(
 		(item): item is ApiEvidence | ScrapeEvidence =>
-			item.official && item.kind !== "community-wiki",
+			item.kind !== "community-wiki",
 	);
 
 const corroborate = (
@@ -63,7 +65,7 @@ const corroborate = (
 	const eligible = eligibleEvidence(evidence);
 	if (
 		eligible.some(
-			(item) => item.kind === "scrape" || item.verdict === "contradicts",
+			(item) => item.kind === "scrape" || item.stance === "contradicts",
 		)
 	) {
 		return lowConfidenceDecision;
@@ -71,14 +73,15 @@ const corroborate = (
 
 	const operators = new Set(
 		eligible
-			.filter((item) => item.verdict === "corroborates")
-			.map((item) => item.operator),
+			.filter((item) => item.stance === "corroborates")
+			.map((item) => item.operator.trim().toLowerCase())
+			.filter((operator) => operator.length > 0),
 	);
 	const hasValidatedApi = eligible.some(
 		(item) =>
 			item.kind === "api" &&
 			item.validated &&
-			item.verdict === "corroborates",
+			item.stance === "corroborates",
 	);
 
 	return operators.size >= 2 && hasValidatedApi
@@ -92,6 +95,6 @@ export type {
 	CommunityWikiEvidence,
 	CorroborationDecision,
 	CorroborationEvidence,
-	EvidenceVerdict,
 	ScrapeEvidence,
+	SourceStance,
 };

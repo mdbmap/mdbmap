@@ -10,8 +10,8 @@ const api = (
 	kind: "api",
 	official: true,
 	operator,
+	stance: "corroborates",
 	validated: true,
-	verdict: "corroborates",
 	...overrides,
 });
 
@@ -42,6 +42,13 @@ describe("corroborate", () => {
 		});
 	});
 
+	it("normalizes operator names before checking independence", () => {
+		expect(corroborate([api("AniList"), api(" anilist ")])).toStrictEqual({
+			confidence: "low",
+			reviewFlag: "low-confidence-flag",
+		});
+	});
+
 	it("returns low and flags a scrape leg", () => {
 		expect(
 			corroborate([
@@ -50,7 +57,7 @@ describe("corroborate", () => {
 					kind: "scrape",
 					official: true,
 					operator: "tmdb",
-					verdict: "corroborates",
+					stance: "corroborates",
 				},
 			]),
 		).toStrictEqual({
@@ -64,7 +71,7 @@ describe("corroborate", () => {
 			corroborate([
 				api("tvdb"),
 				api("tmdb"),
-				api("anidb", { verdict: "contradicts" }),
+				api("anidb", { stance: "contradicts" }),
 			]),
 		).toStrictEqual({
 			confidence: "low",
@@ -80,7 +87,7 @@ describe("corroborate", () => {
 					kind: "community-wiki",
 					official: false,
 					operator: "fandom",
-					verdict: "corroborates",
+					stance: "corroborates",
 				},
 			]),
 		).toStrictEqual({
@@ -89,7 +96,7 @@ describe("corroborate", () => {
 		});
 	});
 
-	it("ignores community wikis and unofficial evidence", () => {
+	it("ignores community wiki evidence", () => {
 		expect(
 			corroborate([
 				api("tvdb"),
@@ -98,9 +105,8 @@ describe("corroborate", () => {
 					kind: "community-wiki",
 					official: false,
 					operator: "fandom",
-					verdict: "contradicts",
+					stance: "contradicts",
 				},
-				api("anidb", { official: false, verdict: "contradicts" }),
 			]),
 		).toStrictEqual({
 			confidence: "high",
