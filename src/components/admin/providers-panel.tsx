@@ -3,10 +3,9 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type { ChangeEvent, ReactNode, SubmitEvent } from "react";
 import { useCallback, useState } from "react";
 
-import { llmProviderKinds } from "@/db/schema";
+import { llmProviderKinds, researchTimings } from "@/db/schema";
 import type { LlmProviderKind, ResearchTiming } from "@/db/schema";
 import { orpc } from "@/orpc/client";
-import { ResearchTimingSchema } from "@/orpc/schema";
 import type { ProviderRow } from "@/orpc/schema";
 
 import { buttonClass, inputClass } from "./styles.ts";
@@ -120,7 +119,7 @@ function TimingPolicy({
 }) {
 	const onSelect = useCallback(
 		(event: ChangeEvent<HTMLSelectElement>) => {
-			const next = ResearchTimingSchema.options.find(
+			const next = researchTimings.find(
 				(option) => option === event.target.value,
 			);
 			if (next !== undefined) {
@@ -138,7 +137,7 @@ function TimingPolicy({
 				onChange={onSelect}
 				value={value}
 			>
-				{ResearchTimingSchema.options.map((option) => (
+				{researchTimings.map((option) => (
 					<option key={option} value={option}>
 						{TIMING_COPY[option]}
 					</option>

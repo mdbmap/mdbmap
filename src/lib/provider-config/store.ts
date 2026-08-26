@@ -45,7 +45,7 @@ const storeProvider = async (
 	db: Db,
 	masterKeyBase64: string,
 	input: StoreProviderInput,
-): Promise<ProviderRecord> => {
+): Promise<ProviderListItem> => {
 	const config = ProviderConfigSchema.parse(input.config);
 	const id = crypto.randomUUID();
 	const envelope = await encryptEnvelope(
@@ -65,7 +65,12 @@ const storeProvider = async (
 			wrappedKey: envelope.wrappedKey,
 		})
 		.run();
-	return { id, kind: config.kind, label: input.label };
+	return {
+		config: toPublicConfig(config),
+		id,
+		kind: config.kind,
+		label: input.label,
+	};
 };
 
 const getProviderConfig = async (
@@ -126,7 +131,7 @@ const updateProvider = async (
 	db: Db,
 	masterKeyBase64: string,
 	input: UpdateProviderInput,
-): Promise<ProviderRecord> => {
+): Promise<ProviderListItem> => {
 	const existing = await getProviderConfig(db, masterKeyBase64, input.id);
 	const update = UpdateProviderConfigSchema.parse(input.config);
 	const config = ProviderConfigSchema.parse(
@@ -149,7 +154,12 @@ const updateProvider = async (
 		})
 		.where(eq(llmProvider.id, input.id))
 		.run();
-	return { id: input.id, kind: config.kind, label: input.label };
+	return {
+		config: toPublicConfig(config),
+		id: input.id,
+		kind: config.kind,
+		label: input.label,
+	};
 };
 
 const removeProvider = async (db: Db, id: string): Promise<void> => {

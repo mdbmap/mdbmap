@@ -2,11 +2,16 @@ import { z } from "zod";
 
 import type { ApiKeyPlan, LlmProviderKind, RateableUnitKind, WatchStatus } from "@/db/schema";
 import { apiKeyPlans, researchTimings, watchStatuses } from "@/db/schema";
+import type { ProviderPublicConfig } from "@/lib/provider-config/types.ts";
 import {
 	ProviderConfigSchema,
 	UpdateProviderConfigSchema,
+<<<<<<< HEAD
 } from "@/lib/provider-config/types";
 import type { ProviderPublicConfig } from "@/lib/provider-config/types";
+=======
+} from "@/lib/provider-config/types.ts";
+>>>>>>> 21024e9 (fix(providers): address OpenCode review on admin panel)
 import type { MediaKind } from "@/engine";
 
 const TodoSchema = z.object({
