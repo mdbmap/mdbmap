@@ -36,6 +36,7 @@ describe("enforceApiKeyRateLimit", () => {
 		);
 
 		expect(denial?.status).toBe(401);
+		expect(await denial?.json()).toEqual({ error: "Unauthorized" });
 		expect(free.limit).not.toHaveBeenCalled();
 		expect(pro.limit).not.toHaveBeenCalled();
 	});
@@ -52,6 +53,7 @@ describe("enforceApiKeyRateLimit", () => {
 		);
 
 		expect(denial?.status).toBe(401);
+		expect(await denial?.json()).toEqual({ error: "Unauthorized" });
 		expect(free.limit).not.toHaveBeenCalled();
 		expect(pro.limit).not.toHaveBeenCalled();
 	});
@@ -88,6 +90,10 @@ describe("enforceApiKeyRateLimit", () => {
 		expect(denial?.headers.get("retry-after")).toBe(
 			String(RETRY_AFTER_SECONDS),
 		);
+		expect(await denial?.json()).toEqual({
+			error: "Too Many Requests",
+			retryAfter: RETRY_AFTER_SECONDS,
+		});
 		expect(free.limit).toHaveBeenCalledWith({ key: issued.id });
 	});
 
@@ -136,6 +142,7 @@ describe("withPublicApiGate", () => {
 			{ db, rateLimits },
 		);
 		expect(unkeyed.status).toBe(401);
+		expect(await unkeyed.json()).toEqual({ error: "Unauthorized" });
 		expect(next).not.toHaveBeenCalled();
 
 		const overLimit = mockLimiter(false);
@@ -148,6 +155,10 @@ describe("withPublicApiGate", () => {
 		expect(denied.headers.get("retry-after")).toBe(
 			String(RETRY_AFTER_SECONDS),
 		);
+		expect(await denied.json()).toEqual({
+			error: "Too Many Requests",
+			retryAfter: RETRY_AFTER_SECONDS,
+		});
 		expect(next).not.toHaveBeenCalled();
 	});
 

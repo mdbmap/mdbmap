@@ -22,13 +22,16 @@ interface ApiKeyRateLimitGateDeps {
 }
 
 const unauthorizedResponse = (): Response =>
-	new Response("Unauthorized", { status: 401 });
+	Response.json({ error: "Unauthorized" }, { status: 401 });
 
 const tooManyRequestsResponse = (): Response =>
-	new Response("Too Many Requests", {
-		headers: { "retry-after": String(RETRY_AFTER_SECONDS) },
-		status: 429,
-	});
+	Response.json(
+		{ error: "Too Many Requests", retryAfter: RETRY_AFTER_SECONDS },
+		{
+			headers: { "retry-after": String(RETRY_AFTER_SECONDS) },
+			status: 429,
+		},
+	);
 
 const extractBearerSecret = (request: Request): string | undefined => {
 	const header = request.headers.get("authorization");
