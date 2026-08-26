@@ -42,7 +42,7 @@ type LowConfidenceEvidence = Extract<
 const flagEvidenceHash = (evidence: LowConfidenceEvidence): string => {
 	switch (evidence.target) {
 		case "instalment": {
-			return `low-confidence-flag:instalment:${evidence.instalmentId}:${evidence.unitId}`;
+			return `low-confidence-flag:${evidence.instalmentId}:${evidence.unitId}`;
 		}
 		case "title": {
 			return `low-confidence-flag:title:${evidence.titleAId}:${evidence.titleBId}`;
