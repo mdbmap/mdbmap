@@ -44,13 +44,7 @@ export type {
 	ReviewEnqueue,
 	TitleProposal,
 } from "./publish.ts";
-export {
-	fetchCostFor,
-	FETCH_COST,
-	recheckAssertion,
-	sampleResearchRecheck,
-	TITLE_AGREEMENT,
-} from "./recheck.ts";
+export { sampleResearchRecheck } from "./recheck.ts";
 export type { RecheckVerdict, ResearchRecheckOutcome } from "./recheck.ts";
 export { resolveResearchSchedule } from "./schedule.ts";
 export type { ResearchSchedule } from "./schedule.ts";

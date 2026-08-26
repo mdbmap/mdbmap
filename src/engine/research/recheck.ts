@@ -7,7 +7,7 @@ import {
 	serviceTitles,
 	titleAssertions,
 } from "@/db/engine-schema";
-import { titleSimilarity } from "@/engine/matcher";
+import { titleSimilarity, TITLE_AGREEMENT } from "@/engine/matcher";
 import type { BudgetLedger } from "@/engine/matcher";
 
 import type { ResearchAssertion } from "./assertions.ts";
@@ -23,7 +23,6 @@ import {
 import type { ResearchCatalogueClients } from "./tools.ts";
 
 const FETCH_COST = 1;
-const TITLE_AGREEMENT = 0.5;
 
 type RecheckVerdict = "agrees" | "disagrees" | "unavailable";
 
@@ -39,7 +38,11 @@ const fetchPair = async (
 	right: { readonly service: string; readonly serviceId: string },
 	budget: BudgetLedger,
 ): Promise<
-	| { readonly kind: "pair"; readonly left: ResearchCatalogueRecord; readonly right: ResearchCatalogueRecord }
+	| {
+			readonly kind: "pair";
+			readonly left: ResearchCatalogueRecord;
+			readonly right: ResearchCatalogueRecord;
+	  }
 	| { readonly kind: "unavailable" }
 > => {
 	if (!budget.spend(FETCH_COST)) {
@@ -70,7 +73,12 @@ const recheckTitle = async (
 	clients: ResearchCatalogueClients,
 	budget: BudgetLedger,
 ): Promise<RecheckVerdict> => {
-	const fetched = await fetchPair(clients, assertion.left, assertion.right, budget);
+	const fetched = await fetchPair(
+		clients,
+		assertion.left,
+		assertion.right,
+		budget,
+	);
 	if (fetched.kind === "unavailable") {
 		return "unavailable";
 	}
@@ -100,10 +108,7 @@ const recheckRelation = async (
 		})
 		.from(serviceTitles)
 		.where(
-			inArray(serviceTitles.id, [
-				assertion.fromTitleId,
-				assertion.toTitleId,
-			]),
+			inArray(serviceTitles.id, [assertion.fromTitleId, assertion.toTitleId]),
 		)
 		.all();
 	if (rows.length !== 2) {
@@ -120,7 +125,12 @@ const recheckRelation = async (
 		return "disagrees";
 	}
 
-	const fetched = await fetchPair(clients, assertion.from, assertion.to, budget);
+	const fetched = await fetchPair(
+		clients,
+		assertion.from,
+		assertion.to,
+		budget,
+	);
 	if (fetched.kind === "unavailable") {
 		return "unavailable";
 	}
@@ -301,11 +311,5 @@ const sampleResearchRecheck = async (
 	};
 };
 
-export {
-	fetchCostFor,
-	FETCH_COST,
-	recheckAssertion,
-	sampleResearchRecheck,
-	TITLE_AGREEMENT,
-};
+export { sampleResearchRecheck };
 export type { RecheckVerdict, ResearchRecheckOutcome };

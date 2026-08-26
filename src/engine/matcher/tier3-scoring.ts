@@ -28,7 +28,10 @@ const editDistance = (left: string, right: string): number => {
 	if (right.length === 0) {
 		return left.length;
 	}
-	let previous = Array.from({ length: right.length + 1 }, (_ignored, col) => col);
+	let previous = Array.from(
+		{ length: right.length + 1 },
+		(_ignored, col) => col,
+	);
 	for (let row = 1; row <= left.length; row += 1) {
 		const current = [row];
 		for (let col = 1; col <= right.length; col += 1) {
@@ -66,6 +69,8 @@ const tokenOverlap = (
 
 // Normalised similarity in [0, 1]: half from character edits, half from token
 // overlap. Either side empty after normalisation yields 0.
+const TITLE_AGREEMENT = 0.5;
+
 const titleSimilarity = (left: string, right: string): number => {
 	const leftNorm = normaliseTitle(left);
 	const rightNorm = normaliseTitle(right);
@@ -89,4 +94,11 @@ const dayDistance = (left: string, right: string): number | undefined => {
 	return Math.round(Math.abs(leftMillis - rightMillis) / MILLIS_PER_DAY);
 };
 
-export { dayDistance, editDistance, normaliseTitle, titleSimilarity, tokenOverlap };
+export {
+	dayDistance,
+	editDistance,
+	normaliseTitle,
+	TITLE_AGREEMENT,
+	titleSimilarity,
+	tokenOverlap,
+};

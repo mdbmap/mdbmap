@@ -9,7 +9,11 @@ export type {
 	SideDisposition,
 	StrayLocator,
 } from "./framework.ts";
-export { instalmentKinds, mainSequence, streamBoundaries } from "./instalment.ts";
+export {
+	instalmentKinds,
+	mainSequence,
+	streamBoundaries,
+} from "./instalment.ts";
 export type {
 	Instalment,
 	InstalmentKind,
@@ -37,7 +41,12 @@ export type {
 	StreamIndex,
 } from "./monotonic.ts";
 export { createT1StructureTier } from "./t1-structure.ts";
-export type { T1Input, T1Instalment, T1Segment, T1Side } from "./t1-structure.ts";
+export type {
+	T1Input,
+	T1Instalment,
+	T1Segment,
+	T1Side,
+} from "./t1-structure.ts";
 export { createT2PatternTier } from "./t2-pattern.ts";
 export type {
 	EpisodeGroupOrdering,
@@ -60,6 +69,7 @@ export {
 	dayDistance,
 	editDistance,
 	normaliseTitle,
+	TITLE_AGREEMENT,
 	titleSimilarity,
 	tokenOverlap,
 } from "./tier3-scoring.ts";
