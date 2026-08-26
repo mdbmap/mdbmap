@@ -1,8 +1,6 @@
-import { eq, inArray } from "drizzle-orm";
 import type { Promisable } from "type-fest";
 
 import type { Db } from "@/db";
-import { serviceInstalments, serviceTitles } from "@/db/engine-schema";
 import type { SimklClient } from "@/engine/discovery";
 import type { ProviderConfig } from "@/lib/provider-config";
 import { getProviderConfig } from "@/lib/provider-config";
@@ -56,7 +54,7 @@ type ResearchPassOutcome =
 			readonly kind: "completed";
 			readonly published: Awaited<
 				ReturnType<typeof publishResearchProposals>
-			>;
+			>["published"];
 			readonly residue: readonly string[];
 	  }
 	| {
@@ -65,57 +63,12 @@ type ResearchPassOutcome =
 			readonly residue: readonly string[];
 	  };
 
-const servicesFromProposals = async (
-	db: Db,
-	proposals: readonly ResearchProposal[],
-): Promise<ReadonlySet<string>> => {
-	const services = new Set<string>();
-	const instalmentIds: number[] = [];
-	for (const proposal of proposals) {
-		switch (proposal.kind) {
-			case "title": {
-				services.add(proposal.left.service);
-				services.add(proposal.right.service);
-				break;
-			}
-			case "relation": {
-				services.add(proposal.from.service);
-				services.add(proposal.to.service);
-				break;
-			}
-			case "instalment": {
-				instalmentIds.push(proposal.instalmentId);
-				break;
-			}
-		}
-	}
-	if (instalmentIds.length > 0) {
-		const owners = await db
-			.select({ service: serviceTitles.service })
-			.from(serviceInstalments)
-			.innerJoin(
-				serviceTitles,
-				eq(serviceInstalments.titleId, serviceTitles.id),
-			)
-			.where(inArray(serviceInstalments.id, instalmentIds))
-			.all();
-		for (const owner of owners) {
-			services.add(owner.service);
-		}
-	}
-	return services;
-};
-
-const mergeResidue = async (
-	db: Db,
+const mergeResidue = (
 	targetServices: readonly string[],
 	agentResidue: readonly string[],
-	proposals: readonly ResearchProposal[],
-): Promise<readonly string[]> => {
-	const accounted = new Set([
-		...agentResidue,
-		...(await servicesFromProposals(db, proposals)),
-	]);
+	resolvedServices: ReadonlySet<string>,
+): readonly string[] => {
+	const accounted = new Set([...agentResidue, ...resolvedServices]);
 	const skipped = targetServices.filter((service) => !accounted.has(service));
 	const seen = new Set<string>();
 	const merged: string[] = [];
@@ -188,7 +141,7 @@ const runResearchPass = async (
 			return { proposals: [], residue: continuity.targetServices };
 		}
 	})();
-	const published = await publishResearchProposals(
+	const { published, resolvedServices } = await publishResearchProposals(
 		deps.db,
 		agentResult.proposals,
 		deps.enqueueReview,
@@ -197,11 +150,10 @@ const runResearchPass = async (
 	return {
 		kind: "completed",
 		published,
-		residue: await mergeResidue(
-			deps.db,
+		residue: mergeResidue(
 			continuity.targetServices,
 			agentResult.residue,
-			agentResult.proposals,
+			resolvedServices,
 		),
 	};
 };

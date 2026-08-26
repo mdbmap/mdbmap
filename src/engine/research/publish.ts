@@ -15,6 +15,7 @@ import {
 	pendingGroupCandidates,
 	relationAssertions,
 	serviceInstalments,
+	serviceTitles,
 	titleAssertions,
 } from "@/db/engine-schema";
 import type { ReviewProposal } from "@/engine/reviewer";
@@ -870,11 +871,38 @@ const publishProposal = async (
 	}
 };
 
+const servicesFromProposal = async (
+	db: Db,
+	proposal: ResearchProposal,
+): Promise<readonly string[]> => {
+	switch (proposal.kind) {
+		case "title": {
+			return [proposal.left.service, proposal.right.service];
+		}
+		case "relation": {
+			return [proposal.from.service, proposal.to.service];
+		}
+		case "instalment": {
+			const owner = await db
+				.select({ service: serviceTitles.service })
+				.from(serviceInstalments)
+				.innerJoin(
+					serviceTitles,
+					eq(serviceInstalments.titleId, serviceTitles.id),
+				)
+				.where(eq(serviceInstalments.id, proposal.instalmentId))
+				.all();
+			return owner[0] === undefined ? [] : [owner[0].service];
+		}
+	}
+};
+
 const publishRemaining = async (
 	db: Db,
 	remaining: readonly ResearchProposal[],
 	enqueueReview: ReviewEnqueue,
 	done: readonly PublishedResearch[],
+	resolvedServices: Set<string>,
 ): Promise<readonly PublishedResearch[]> => {
 	const [head, ...tail] = remaining;
 	if (head === undefined) {
@@ -884,21 +912,42 @@ const publishRemaining = async (
 	try {
 		result = await publishProposal(db, head);
 	} catch {
-		return publishRemaining(db, tail, enqueueReview, done);
+		return publishRemaining(db, tail, enqueueReview, done, resolvedServices);
 	}
 	if (result === undefined) {
-		return publishRemaining(db, tail, enqueueReview, done);
+		return publishRemaining(db, tail, enqueueReview, done, resolvedServices);
+	}
+	for (const service of await servicesFromProposal(db, head)) {
+		resolvedServices.add(service);
 	}
 	await enqueueReview(result.review);
-	return publishRemaining(db, tail, enqueueReview, [...done, result]);
+	return publishRemaining(
+		db,
+		tail,
+		enqueueReview,
+		[...done, result],
+		resolvedServices,
+	);
 };
 
 const publishResearchProposals = async (
 	db: Db,
 	proposals: readonly ResearchProposal[],
 	enqueueReview: ReviewEnqueue,
-): Promise<readonly PublishedResearch[]> =>
-	publishRemaining(db, proposals, enqueueReview, []);
+): Promise<{
+	readonly published: readonly PublishedResearch[];
+	readonly resolvedServices: ReadonlySet<string>;
+}> => {
+	const resolvedServices = new Set<string>();
+	const published = await publishRemaining(
+		db,
+		proposals,
+		enqueueReview,
+		[],
+		resolvedServices,
+	);
+	return { published, resolvedServices };
+};
 
 export { publishResearchProposals };
 export type {

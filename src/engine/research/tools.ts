@@ -110,8 +110,13 @@ const buildResearchTools = (input: BuildToolsetInput): ResearchToolset => {
 		fetchCatalogue: async (service, serviceId) => {
 			const client = clients[service];
 			const ref = { service, serviceId };
-			const url = catalogueRequestUrl(service);
 			if (client === undefined) {
+				let url: string;
+				try {
+					url = catalogueRequestUrl(service);
+				} catch {
+					url = `https://${service}.unknown`;
+				}
 				return {
 					kind: "api",
 					operator: service,
