@@ -111,26 +111,32 @@ const buildResearchTools = (input: BuildToolsetInput): ResearchToolset => {
 			const client = clients[service];
 			const ref = { service, serviceId };
 			if (client === undefined) {
-				let url: string;
-				try {
-					url = catalogueRequestUrl(service);
-				} catch {
-					url = `https://${service}.unknown`;
-				}
 				return {
 					kind: "api",
 					operator: service,
 					ref,
 					unavailable: true,
-					url,
+					url: "",
 					validated: false,
 				};
 			}
 			const resolvedUrl = resolveCatalogueUrl(client, service, serviceId);
-			const raw =
-				client.fetchCatalogue === undefined
-					? await client.fetchTitle(serviceId)
-					: await client.fetchCatalogue(serviceId);
+			let raw: unknown;
+			try {
+				raw =
+					client.fetchCatalogue === undefined
+						? await client.fetchTitle(serviceId)
+						: await client.fetchCatalogue(serviceId);
+			} catch {
+				return {
+					kind: "api",
+					operator: service,
+					ref,
+					unavailable: true,
+					url: resolvedUrl,
+					validated: false,
+				};
+			}
 			if (raw === undefined) {
 				return {
 					kind: "api",

@@ -144,15 +144,10 @@ interface PublishedResearch {
 
 type ReviewEnqueue = (proposal: ReviewProposal) => Promisable<unknown>;
 
-const requireTitleId = async (db: Db, ref: ServiceRef): Promise<number> => {
-	const id = await findTitle(db, ref);
-	if (id === undefined) {
-		throw new Error(
-			`research publish: missing spoke for ${ref.service}:${ref.serviceId}`,
-		);
-	}
-	return id;
-};
+const titleIdFor = async (
+	db: Db,
+	ref: ServiceRef,
+): Promise<number | undefined> => findTitle(db, ref);
 
 const capturedFrom = (
 	evidence: readonly CorroborationEvidence[],
@@ -345,8 +340,11 @@ const publishTitleProposal = async (
 	proposal: TitleProposal,
 ): Promise<PublishedResearch | undefined> => {
 	const decision = corroborate(proposal.evidence);
-	const leftId = await requireTitleId(db, proposal.left);
-	const rightId = await requireTitleId(db, proposal.right);
+	const leftId = await titleIdFor(db, proposal.left);
+	const rightId = await titleIdFor(db, proposal.right);
+	if (leftId === undefined || rightId === undefined) {
+		return undefined;
+	}
 	const [titleAId, titleBId] = ascendingPair(leftId, rightId);
 	const { assertionId, existing } = await insertOrLoadAssertion({
 		insert: async () =>
@@ -561,8 +559,11 @@ const publishRelationProposal = async (
 	proposal: RelationProposal,
 ): Promise<PublishedResearch | undefined> => {
 	const decision = corroborate(proposal.evidence);
-	const fromTitleId = await requireTitleId(db, proposal.from);
-	const toTitleId = await requireTitleId(db, proposal.to);
+	const fromTitleId = await titleIdFor(db, proposal.from);
+	const toTitleId = await titleIdFor(db, proposal.to);
+	if (fromTitleId === undefined || toTitleId === undefined) {
+		return undefined;
+	}
 	const exact = await existingRelationAssertion(db, fromTitleId, toTitleId);
 	if (exact !== undefined) {
 		if (outranksResearch(exact.source)) {
@@ -908,12 +909,7 @@ const publishRemaining = async (
 	if (head === undefined) {
 		return done;
 	}
-	let result: PublishedResearch | undefined;
-	try {
-		result = await publishProposal(db, head);
-	} catch {
-		return publishRemaining(db, tail, enqueueReview, done, resolvedServices);
-	}
+	let result = await publishProposal(db, head);
 	if (result === undefined) {
 		return publishRemaining(db, tail, enqueueReview, done, resolvedServices);
 	}

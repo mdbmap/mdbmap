@@ -70,6 +70,7 @@ describe("research catalogue tools", () => {
 		await expect(tools.fetchCatalogue("unknown", "1")).resolves.toMatchObject({
 			kind: "api",
 			unavailable: true,
+			url: "",
 			validated: false,
 		});
 	});
