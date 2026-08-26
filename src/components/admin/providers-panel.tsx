@@ -17,6 +17,7 @@ const DENIED = "Administrator access required.";
 const LOAD_FAILED = "Could not load providers.";
 const KEY_HINT = "API key is write-only — never shown again after save.";
 const KEY_KEEP = "Leave blank to keep the current key.";
+const KEY_KIND_CHANGE = "Enter a new API key when changing provider kind.";
 
 const isAuthDenial = (error: unknown): boolean =>
 	error instanceof ORPCError &&
@@ -69,32 +70,27 @@ const formFromRow = (row: ProviderRow): ProviderFormState => ({
 	model: row.config.model,
 });
 
-const buildCreateConfig = (form: ProviderFormState) => {
+const kindFields = (form: ProviderFormState) => {
 	if (form.kind === "openai-compatible") {
 		return {
-			apiKey: form.apiKey,
 			baseUrl: form.baseUrl,
 			kind: form.kind,
 			model: form.model,
 		};
 	}
-	return { apiKey: form.apiKey, kind: form.kind, model: form.model };
+	return { kind: form.kind, model: form.model };
 };
+
+const buildCreateConfig = (form: ProviderFormState) => ({
+	apiKey: form.apiKey,
+	...kindFields(form),
+});
 
 const buildUpdateConfig = (form: ProviderFormState) => {
 	const apiKey = form.apiKey.trim().length === 0 ? undefined : form.apiKey;
-	if (form.kind === "openai-compatible") {
-		return {
-			...(apiKey === undefined ? {} : { apiKey }),
-			baseUrl: form.baseUrl,
-			kind: form.kind,
-			model: form.model,
-		};
-	}
 	return {
 		...(apiKey === undefined ? {} : { apiKey }),
-		kind: form.kind,
-		model: form.model,
+		...kindFields(form),
 	};
 };
 
@@ -175,6 +171,7 @@ function KindField({
 function ProviderFormFields({
 	editing,
 	form,
+	kindChanged,
 	onApiKey,
 	onBaseUrl,
 	onKind,
@@ -183,12 +180,18 @@ function ProviderFormFields({
 }: {
 	editing: ProviderRow | undefined;
 	form: ProviderFormState;
+	kindChanged: boolean;
 	onApiKey: (event: ChangeEvent<HTMLInputElement>) => void;
 	onBaseUrl: (event: ChangeEvent<HTMLInputElement>) => void;
 	onKind: (event: ChangeEvent<HTMLSelectElement>) => void;
 	onLabel: (event: ChangeEvent<HTMLInputElement>) => void;
 	onModel: (event: ChangeEvent<HTMLInputElement>) => void;
 }) {
+	let keyPlaceholder: string | undefined;
+	if (editing !== undefined) {
+		keyPlaceholder = kindChanged ? KEY_KIND_CHANGE : KEY_KEEP;
+	}
+
 	return (
 		<>
 			<Field label={LABEL.labelField}>
@@ -208,7 +211,7 @@ function ProviderFormFields({
 					autoComplete="off"
 					className={inputClass}
 					onChange={onApiKey}
-					placeholder={editing === undefined ? undefined : KEY_KEEP}
+					placeholder={keyPlaceholder}
 					type="password"
 					value={form.apiKey}
 				/>
@@ -231,6 +234,8 @@ function ProviderForm({
 	const [form, setForm] = useState<ProviderFormState>(() =>
 		editing === undefined ? emptyForm() : formFromRow(editing),
 	);
+	const kindChanged = editing !== undefined && form.kind !== editing.kind;
+	const needsFreshKey = kindChanged && form.apiKey.trim().length === 0;
 
 	const onLabel = useCallback((event: ChangeEvent<HTMLInputElement>) => {
 		setForm((current) => ({ ...current, label: event.target.value }));
@@ -260,12 +265,15 @@ function ProviderForm({
 			if (editing === undefined && form.apiKey.trim().length === 0) {
 				return;
 			}
+			if (needsFreshKey) {
+				return;
+			}
 			if (form.kind === "openai-compatible" && form.baseUrl.trim().length === 0) {
 				return;
 			}
 			onSubmit(form);
 		},
-		[editing, form, onSubmit],
+		[editing, form, needsFreshKey, onSubmit],
 	);
 
 	return (
@@ -274,6 +282,7 @@ function ProviderForm({
 				<ProviderFormFields
 					editing={editing}
 					form={form}
+					kindChanged={kindChanged}
 					onApiKey={onApiKey}
 					onBaseUrl={onBaseUrl}
 					onKind={onKind}
@@ -282,6 +291,11 @@ function ProviderForm({
 				/>
 			</div>
 			<p className="text-xs text-neutral-500 dark:text-neutral-400">{KEY_HINT}</p>
+			{needsFreshKey ? (
+				<p className="text-xs text-neutral-600 dark:text-neutral-400">
+					{KEY_KIND_CHANGE}
+				</p>
+			) : undefined}
 			<div className="flex gap-2">
 				<button className={buttonClass} disabled={pending} type="submit">
 					{editing === undefined ? LABEL.add : LABEL.save}

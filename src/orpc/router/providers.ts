@@ -2,6 +2,7 @@ import { ORPCError } from "@orpc/server";
 
 import { env } from "@/env";
 import {
+	ProviderKindKeyRequiredError,
 	ProviderNotFoundError,
 	getProviderConfig,
 	listProviders,
@@ -33,6 +34,9 @@ const masterKeyOf = (override: string | undefined): string => {
 const mapProviderError = (error: unknown): never => {
 	if (error instanceof ProviderNotFoundError) {
 		throw new ORPCError("NOT_FOUND", { message: error.message });
+	}
+	if (error instanceof ProviderKindKeyRequiredError) {
+		throw new ORPCError("BAD_REQUEST", { message: error.message });
 	}
 	throw error;
 };

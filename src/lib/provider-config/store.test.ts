@@ -232,6 +232,31 @@ describe("provider config store", () => {
 		});
 	});
 
+	it("rejects a kind change that omits the api key", async () => {
+		const record = await storeProvider(db, masterKey, {
+			config: {
+				apiKey: "sk-openai-only",
+				kind: "openai",
+				model: "gpt-5",
+			},
+			label: "OpenAI",
+		});
+
+		await expect(
+			updateProvider(db, masterKey, {
+				config: { kind: "anthropic", model: "claude-sonnet" },
+				id: record.id,
+				label: "Anthropic",
+			}),
+		).rejects.toThrow("API key is required when changing provider kind");
+
+		await expect(getProviderConfig(db, masterKey, record.id)).resolves.toEqual({
+			apiKey: "sk-openai-only",
+			kind: "openai",
+			model: "gpt-5",
+		});
+	});
+
 	it("removes a provider", async () => {
 		const record = await storeProvider(db, masterKey, {
 			config: {

@@ -31,7 +31,7 @@ const ProviderConfigSchema = z.union([
 ]);
 type ProviderConfig = z.infer<typeof ProviderConfigSchema>;
 
-// Admin edit form: omit `apiKey` (or leave it empty) to keep the stored key.
+// Admin edit form: omit `apiKey` to keep the stored key when `kind` is unchanged.
 const UpdateProviderConfigSchema = z.union([
 	z.object({
 		apiKey: z.string().min(1).optional(),
@@ -62,11 +62,24 @@ const toPublicConfig = (config: ProviderConfig): ProviderPublicConfig => {
 	return { kind: config.kind, model: config.model };
 };
 
+class ProviderKindKeyRequiredError extends Error {
+	public constructor() {
+		super("API key is required when changing provider kind");
+		this.name = "ProviderKindKeyRequiredError";
+	}
+}
+
 const mergeProviderConfig = (
 	existing: ProviderConfig,
 	update: UpdateProviderConfig,
 ): ProviderConfig => {
-	const apiKey = update.apiKey ?? existing.apiKey;
+	const apiKey =
+		update.kind === existing.kind
+			? (update.apiKey ?? existing.apiKey)
+			: update.apiKey;
+	if (apiKey === undefined) {
+		throw new ProviderKindKeyRequiredError();
+	}
 	if (update.kind === "openai-compatible") {
 		return {
 			apiKey,
@@ -80,6 +93,7 @@ const mergeProviderConfig = (
 
 export {
 	ProviderConfigSchema,
+	ProviderKindKeyRequiredError,
 	UpdateProviderConfigSchema,
 	mergeProviderConfig,
 	toPublicConfig,

@@ -14,6 +14,7 @@ export type {
 } from "./store.ts";
 export {
 	ProviderConfigSchema,
+	ProviderKindKeyRequiredError,
 	UpdateProviderConfigSchema,
 	toPublicConfig,
 } from "./types.ts";

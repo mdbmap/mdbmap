@@ -135,4 +135,37 @@ describe("provider admin surface", () => {
 			code: "NOT_FOUND",
 		});
 	});
+
+	it("rejects a kind change without a fresh api key", async () => {
+		const client = await clientFor(adminUser);
+		const created = await client.providers.create({
+			config: {
+				apiKey: "sk-openai-only",
+				kind: "openai",
+				model: "gpt-5",
+			},
+			label: "OpenAI",
+		});
+
+		await expect(
+			client.providers.update({
+				config: { kind: "anthropic", model: "claude-sonnet" },
+				id: created.id,
+				label: "Anthropic",
+			}),
+		).rejects.toMatchObject({
+			code: "BAD_REQUEST",
+			message: "API key is required when changing provider kind",
+		});
+
+		const listed = await client.providers.list();
+		expect(listed).toEqual([
+			{
+				config: { kind: "openai", model: "gpt-5" },
+				id: created.id,
+				kind: "openai",
+				label: "OpenAI",
+			},
+		]);
+	});
 });
