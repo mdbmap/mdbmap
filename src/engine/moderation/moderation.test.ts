@@ -37,8 +37,10 @@ const first = <Row>(rows: readonly Row[]): Row => {
 const makeGroup = async (
 	db: GatewayDb,
 	source = "t1-structure" as const,
-): Promise<number> =>
-	first(await db.insert(titleGroups).values({ source }).returning().all()).id;
+): Promise<number> => {
+	const rows = await db.insert(titleGroups).values({ source }).returning().all();
+	return first(rows).id;
+};
 
 const makeTitle = async (
 	db: GatewayDb,
@@ -68,8 +70,10 @@ const makeSpoke = async (
 			.all(),
 	).id;
 
-const makeUnit = async (db: GatewayDb): Promise<string> =>
-	first(await db.insert(contentUnits).values({}).returning().all()).id;
+const makeUnit = async (db: GatewayDb): Promise<string> => {
+	const rows = await db.insert(contentUnits).values({}).returning().all();
+	return first(rows).id;
+};
 
 const groupSourceOf = async (db: GatewayDb, groupId: number): Promise<string> => {
 	const group = first(
@@ -84,7 +88,7 @@ describe("moderation queue", () => {
 	it("blocks a group's publication on a queued instalment conflict and shows both proposals", async () => {
 		const db = await freshDb();
 		const groupId = await makeGroup(db);
-		const titleId = await await makeTitle(db, groupId, "tmdb", "1396");
+		const titleId = await makeTitle(db, groupId, "tmdb", "1396");
 		const spokeId = await makeSpoke(db, titleId, "1:1");
 		const proposedUnit = await makeUnit(db);
 		const publishedUnit = await makeUnit(db);
@@ -114,13 +118,14 @@ describe("moderation queue", () => {
 		const db = await freshDb();
 		const groupId = await makeGroup(db);
 		await makeTitle(db, groupId, "tmdb", "1396");
-		expect((await publicationStatus(db, groupId)).blocked).toBe(false);
+		const status = await publicationStatus(db, groupId);
+		expect(status.blocked).toBe(false);
 	});
 
 	it("accepts a fuzzy membership candidate through the curated path and stamps manual", async () => {
 		const db = await freshDb();
 		const groupId = await makeGroup(db, "t1-structure");
-		const subjectTitleId = await await makeTitle(db, groupId, "tmdb", "1396");
+		const subjectTitleId = await makeTitle(db, groupId, "tmdb", "1396");
 
 		const subject: CandidateSubject = { subjectType: "title", titleId: subjectTitleId };
 		const evidence: CandidateEvidence = {
@@ -194,7 +199,8 @@ describe("moderation queue", () => {
 				.all(),
 		).id;
 
-		expect((await acceptMembership(db, candidateId)).kind).toBe("accepted");
+		const accepted = await acceptMembership(db, candidateId);
+		expect(accepted.kind).toBe("accepted");
 
 		const members = await db.select().from(serviceTitles).all();
 		expect(members.every((member) => member.groupId === survivor)).toBe(true);
@@ -210,7 +216,7 @@ describe("moderation queue", () => {
 	it("clears a review flag, keeping the link but dropping it from the queue", async () => {
 		const db = await freshDb();
 		const groupId = await makeGroup(db);
-		const titleId = await await makeTitle(db, groupId, "tmdb", "1396");
+		const titleId = await makeTitle(db, groupId, "tmdb", "1396");
 		const spokeId = await makeSpoke(db, titleId, "1:1");
 		const unitId = await makeUnit(db);
 		const assertionId = first(
@@ -243,7 +249,8 @@ describe("moderation queue", () => {
 				.all(),
 		).id;
 
-		expect((await clearReviewFlag(db, candidateId)).kind).toBe("cleared");
+		const cleared = await clearReviewFlag(db, candidateId);
+		expect(cleared.kind).toBe("cleared");
 
 		const link = await db
 			.select()
@@ -257,7 +264,7 @@ describe("moderation queue", () => {
 	it("keeps a review flag open in the queue", async () => {
 		const db = await freshDb();
 		const groupId = await makeGroup(db);
-		const titleId = await await makeTitle(db, groupId, "tmdb", "1396");
+		const titleId = await makeTitle(db, groupId, "tmdb", "1396");
 		const spokeId = await makeSpoke(db, titleId, "1:1");
 		const unitId = await makeUnit(db);
 
@@ -283,14 +290,15 @@ describe("moderation queue", () => {
 				.all(),
 		).id;
 
-		expect((await keepReviewFlag(db, candidateId)).kind).toBe("kept");
+		const kept = await keepReviewFlag(db, candidateId);
+		expect(kept.kind).toBe("kept");
 		expect(await openRows(db)).toHaveLength(1);
 	});
 
 	it("auto-rejects a competing proposal when a prior manual assertion stands", async () => {
 		const db = await freshDb();
 		const groupId = await makeGroup(db);
-		const titleId = await await makeTitle(db, groupId, "tmdb", "1396");
+		const titleId = await makeTitle(db, groupId, "tmdb", "1396");
 		const spokeId = await makeSpoke(db, titleId, "1:1");
 		const manualUnit = await makeUnit(db);
 		const competingUnit = await makeUnit(db);
@@ -308,13 +316,14 @@ describe("moderation queue", () => {
 		const outcome = await queueAssertionConflict(db, { evidence, subject });
 		expect(outcome.kind).toBe("auto-rejected");
 		expect(await openRows(db)).toHaveLength(0);
-		expect((await publicationStatus(db, groupId)).blocked).toBe(false);
+		const status = await publicationStatus(db, groupId);
+		expect(status.blocked).toBe(false);
 	});
 
 	it("settles an instalment conflict by publishing the proposed side as manual", async () => {
 		const db = await freshDb();
 		const groupId = await makeGroup(db);
-		const titleId = await await makeTitle(db, groupId, "tmdb", "1396");
+		const titleId = await makeTitle(db, groupId, "tmdb", "1396");
 		const spokeId = await makeSpoke(db, titleId, "1:1");
 		const proposedUnit = await makeUnit(db);
 
@@ -325,9 +334,11 @@ describe("moderation queue", () => {
 			proposed: { confidence: "high", source: "t3-episode", unitId: proposedUnit },
 			published: { confidence: "high", source: "t1-structure", unitId: await makeUnit(db) },
 		};
-		const candidateId = (await queueAssertionConflict(db, { evidence, subject })).candidateId ?? 0;
+		const queued = await queueAssertionConflict(db, { evidence, subject });
+		const candidateId = queued.candidateId ?? 0;
 
-		expect((await settleConflict(db, { accept: true, candidateId })).kind).toBe("settled");
+		const settled = await settleConflict(db, { accept: true, candidateId });
+		expect(settled.kind).toBe("settled");
 		const links = await db
 			.select()
 			.from(instalmentAssertions)
@@ -340,7 +351,7 @@ describe("moderation queue", () => {
 	it("does not close a conflict as accepted when the proposed assertion already exists", async () => {
 		const db = await freshDb();
 		const groupId = await makeGroup(db);
-		const titleId = await await makeTitle(db, groupId, "tmdb", "1396");
+		const titleId = await makeTitle(db, groupId, "tmdb", "1396");
 		const spokeId = await makeSpoke(db, titleId, "1:1");
 		const proposedUnit = await makeUnit(db);
 		// A non-manual assertion already occupies the proposed edge, so the accept
@@ -356,16 +367,18 @@ describe("moderation queue", () => {
 			proposed: { confidence: "high", source: "t3-episode", unitId: proposedUnit },
 			published: { confidence: "high", source: "t1-structure", unitId: await makeUnit(db) },
 		};
-		const candidateId = (await queueAssertionConflict(db, { evidence, subject })).candidateId ?? 0;
+		const queued = await queueAssertionConflict(db, { evidence, subject });
+		const candidateId = queued.candidateId ?? 0;
 
-		expect((await settleConflict(db, { accept: true, candidateId })).kind).toBe("collision");
+		const collision = await settleConflict(db, { accept: true, candidateId });
+		expect(collision.kind).toBe("collision");
 		expect(await openRows(db)).toHaveLength(1);
 	});
 
 	it("pairs instalments by hand onto one content unit as manual", async () => {
 		const db = await freshDb();
 		const groupId = await makeGroup(db);
-		const titleA = await await makeTitle(db, groupId, "tmdb", "1396");
+		const titleA = await makeTitle(db, groupId, "tmdb", "1396");
 		const titleB = await makeTitle(db, groupId, "imdb", "tt0903747", 1);
 		const spokeA = await makeSpoke(db, titleA, "1:1");
 		const spokeB = await makeSpoke(db, titleB, "1:1");
@@ -381,7 +394,8 @@ describe("moderation queue", () => {
 	it("marks a group as matched with a manual vouch", async () => {
 		const db = await freshDb();
 		const groupId = await makeGroup(db);
-		expect((await markAsMatched(db, groupId)).kind).toBe("matched");
+		const matched = await markAsMatched(db, groupId);
+		expect(matched.kind).toBe("matched");
 		expect(await groupSourceOf(db, groupId)).toBe("manual");
 	});
 });

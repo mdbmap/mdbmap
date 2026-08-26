@@ -132,9 +132,12 @@ const acceptStructural = async (
 	if (retiredIds.length === 0) {
 		return stampAndClose();
 	}
-	const snapshots = (
-		await Promise.all(groupIds.map(async (groupId) => readGroupSnapshot(db, groupId)))
-	).filter((snapshot): snapshot is GroupSnapshot => snapshot !== undefined);
+	const snapshotRows = await Promise.all(
+		groupIds.map(async (groupId) => readGroupSnapshot(db, groupId)),
+	);
+	const snapshots = snapshotRows.filter(
+		(snapshot): snapshot is GroupSnapshot => snapshot !== undefined,
+	);
 	const outcome: ConvergeOutcome = await commitMerge(db, {
 		kind: "merge",
 		precondition: { snapshots },
@@ -462,26 +465,29 @@ const manualPairing = async (
 	if (input.instalmentIds.length === 0) {
 		return { kind: "empty" };
 	}
-	const unitId =
-		input.unitId ??
-		takeFirst(await db.insert(contentUnits).values({}).returning().all())?.id;
+	const minted =
+		input.unitId === undefined
+			? await db.insert(contentUnits).values({}).returning().all()
+			: undefined;
+	const unitId = input.unitId ?? takeFirst(minted ?? [])?.id;
 	if (unitId === undefined) {
 		throw new Error("content unit insert returned no row");
 	}
-	const assertionIds: number[] = [];
-	for (const instalmentId of input.instalmentIds) {
-		const inserted = takeFirst(
-			await db
-				.insert(instalmentAssertions)
-				.values({ confidence: "high", instalmentId, source: MANUAL, unitId })
-				.onConflictDoNothing()
-				.returning()
-				.all(),
-		);
-		if (inserted !== undefined) {
-			assertionIds.push(inserted.id);
-		}
-	}
+	const insertedRows = await Promise.all(
+		input.instalmentIds.map(async (instalmentId) =>
+			takeFirst(
+				await db
+					.insert(instalmentAssertions)
+					.values({ confidence: "high", instalmentId, source: MANUAL, unitId })
+					.onConflictDoNothing()
+					.returning()
+					.all(),
+			),
+		),
+	);
+	const assertionIds = insertedRows
+		.filter((row): row is NonNullable<typeof row> => row !== undefined)
+		.map((row) => row.id);
 	return { assertionIds, kind: "paired", unitId };
 };
 
@@ -527,28 +533,26 @@ const priorManualAssertion = async (
 	evidence: ConflictEvidence,
 ): Promise<boolean> => {
 	if (evidence.kind === "instalment-assertion-conflict") {
-		return (
-			await db
-				.select({ source: instalmentAssertions.source })
-				.from(instalmentAssertions)
-				.where(eq(instalmentAssertions.instalmentId, evidence.instalmentId))
-				.all()
-		).some((row) => row.source === MANUAL);
+		const rows = await db
+			.select({ source: instalmentAssertions.source })
+			.from(instalmentAssertions)
+			.where(eq(instalmentAssertions.instalmentId, evidence.instalmentId))
+			.all();
+		return rows.some((row) => row.source === MANUAL);
 	}
 	if (evidence.kind === "title-assertion-conflict") {
 		const { highId, lowId } = canonicalTitlePair(
 			evidence.proposed.titleAId,
 			evidence.proposed.titleBId,
 		);
-		return (
-			await db
-				.select({ source: titleAssertions.source })
-				.from(titleAssertions)
-				.where(
-					and(eq(titleAssertions.titleAId, lowId), eq(titleAssertions.titleBId, highId)),
-				)
-				.all()
-		).some((row) => row.source === MANUAL);
+		const rows = await db
+			.select({ source: titleAssertions.source })
+			.from(titleAssertions)
+			.where(
+				and(eq(titleAssertions.titleAId, lowId), eq(titleAssertions.titleBId, highId)),
+			)
+			.all();
+		return rows.some((row) => row.source === MANUAL);
 	}
 	return false;
 };

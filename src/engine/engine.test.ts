@@ -42,7 +42,8 @@ describe("createEngine.resolveContinuity", () => {
 
 	it("orders instalment locators under the provider member title", async () => {
 		const { continuityId, read } = await seededEngine();
-		const [first] = (await read.resolveContinuity(continuityId)).segments;
+		const ordered = await read.resolveContinuity(continuityId);
+		const [first] = ordered.segments;
 
 		expect(first?.instalments).toHaveLength(12);
 		expect(first?.instalments[0]).toBe("anidb:16947#1");
@@ -76,7 +77,8 @@ describe("createEngine.resolveContinuity", () => {
 			"s1e1",
 			"s1e2",
 		]);
-		const [first] = (await createEngine(db).resolveContinuity(continuityId)).segments;
+		const specials = await createEngine(db).resolveContinuity(continuityId);
+		const [first] = specials.segments;
 
 		expect(first?.instalments).toEqual(["tmdb:1396#1", "tmdb:1396#2"]);
 	});

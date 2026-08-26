@@ -156,13 +156,19 @@ const candidateGraph = async (
 	db: GatewayDb,
 	titles: readonly TitleRow[],
 ): Promise<CandidateGraph> => {
+	const members = titles.filter((title) => isMemberService(title.service));
+	const covered = await Promise.all(
+		members.map(async (title) => ({
+			title,
+			units: await unitsCovered(db, title.id),
+		})),
+	);
 	const byService = new Map<MemberService, Candidate[]>();
 	const unitsByTitle = new Map<number, ReadonlySet<UnitId>>();
-	for (const title of titles) {
+	for (const { title, units } of covered) {
 		if (!isMemberService(title.service)) {
 			continue;
 		}
-		const units = await unitsCovered(db, title.id);
 		unitsByTitle.set(title.id, units);
 		const list = byService.get(title.service) ?? [];
 		list.push({ title, units });
@@ -212,13 +218,12 @@ const resolve = async (
 	if (group.length === 0) {
 		throw new Error(`engine: no continuity ${continuityId}`);
 	}
-	const titles = (
-		await db
-			.select()
-			.from(serviceTitles)
-			.where(eq(serviceTitles.groupId, groupId))
-			.all()
-	).toSorted(compareTitles);
+	const titleRows = await db
+		.select()
+		.from(serviceTitles)
+		.where(eq(serviceTitles.groupId, groupId))
+		.all();
+	const titles = titleRows.toSorted(compareTitles);
 	const mediaKind = detectMediaKind(titles);
 	const provider = metadataProviderFor(mediaKind);
 	const spine = titles.filter((title) => title.service === provider);

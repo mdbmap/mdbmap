@@ -43,14 +43,14 @@ const listOpenCandidates = async (
 const loadCandidate = async (
 	db: GatewayDb,
 	candidateId: number,
-): Promise<CandidateRow | undefined> =>
-	(
-		await db
-			.select()
-			.from(pendingGroupCandidates)
-			.where(eq(pendingGroupCandidates.id, candidateId))
-			.all()
-	)[0];
+): Promise<CandidateRow | undefined> => {
+	const rows = await db
+		.select()
+		.from(pendingGroupCandidates)
+		.where(eq(pendingGroupCandidates.id, candidateId))
+		.all();
+	return rows[0];
+};
 
 // The spoke ids owned by a group's member titles — the instalments a conflict may
 // name — alongside the content units those spokes cover.
@@ -62,33 +62,30 @@ interface GroupScope {
 
 const groupScope = async (db: GatewayDb, groupId: number): Promise<GroupScope> => {
 	const survivor = await survivorGroupId(db, groupId);
-	const titleIds = (
-		await db
-			.select({ id: serviceTitles.id })
-			.from(serviceTitles)
-			.where(eq(serviceTitles.groupId, survivor))
-			.all()
-	).map((row) => row.id);
-	const spokeIds =
+	const titleRows = await db
+		.select({ id: serviceTitles.id })
+		.from(serviceTitles)
+		.where(eq(serviceTitles.groupId, survivor))
+		.all();
+	const titleIds = titleRows.map((row) => row.id);
+	const spokeRows =
 		titleIds.length === 0
 			? []
-			: (
-					await db
-						.select({ id: serviceInstalments.id })
-						.from(serviceInstalments)
-						.where(inArray(serviceInstalments.titleId, titleIds))
-						.all()
-				).map((row) => row.id);
-	const unitIds =
+			: await db
+					.select({ id: serviceInstalments.id })
+					.from(serviceInstalments)
+					.where(inArray(serviceInstalments.titleId, titleIds))
+					.all();
+	const spokeIds = spokeRows.map((row) => row.id);
+	const unitRows =
 		spokeIds.length === 0
 			? []
-			: (
-					await db
-						.select({ unitId: instalmentAssertions.unitId })
-						.from(instalmentAssertions)
-						.where(inArray(instalmentAssertions.instalmentId, spokeIds))
-						.all()
-				).map((row) => row.unitId);
+			: await db
+					.select({ unitId: instalmentAssertions.unitId })
+					.from(instalmentAssertions)
+					.where(inArray(instalmentAssertions.instalmentId, spokeIds))
+					.all();
+	const unitIds = unitRows.map((row) => row.unitId);
 	return {
 		spokeIds: new Set(spokeIds),
 		titleIds: new Set(titleIds),
@@ -146,7 +143,8 @@ const publicationStatus = async (
 	groupId: number,
 ): Promise<PublicationStatus> => {
 	const scope = await groupScope(db, groupId);
-	const conflicts = (await listOpenCandidates(db))
+	const open = await listOpenCandidates(db);
+	const conflicts = open
 		.filter((row) => conflictKinds.has(row.kind))
 		.filter((row) => evidenceTouchesScope(row.evidence, scope))
 		.toSorted((left, right) => ascending(left.id, right.id));

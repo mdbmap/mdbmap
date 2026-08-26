@@ -38,27 +38,27 @@ const insertTitle = async (
 	service: string,
 	serviceId: string,
 	ordinal: number,
-): Promise<number> =>
-	one(
-		await db
-			.insert(serviceTitles)
-			.values({ groupId, ordinal, service, serviceId })
-			.returning()
-			.all(),
-	).id;
+): Promise<number> => {
+	const rows = await db
+		.insert(serviceTitles)
+		.values({ groupId, ordinal, service, serviceId })
+		.returning()
+		.all();
+	return one(rows).id;
+};
 
 const insertSpoke = async (
 	db: Db,
 	titleId: number,
 	locator: string,
-): Promise<number> =>
-	one(
-		await db
-			.insert(serviceInstalments)
-			.values({ locator, locatorKind: "position", titleId })
-			.returning()
-			.all(),
-	).id;
+): Promise<number> => {
+	const rows = await db
+		.insert(serviceInstalments)
+		.values({ locator, locatorKind: "position", titleId })
+		.returning()
+		.all();
+	return one(rows).id;
+};
 
 const coverUnit = async (
 	db: Db,
@@ -80,37 +80,56 @@ const anchorTitle = async (
 	unitId: string,
 ): Promise<void> => {
 	const titleId = await insertTitle(db, groupId, service, serviceId, ordinal);
-	await coverUnit(db, await insertSpoke(db, titleId, "s1e1"), unitId);
+	const spokeId = await insertSpoke(db, titleId, "s1e1");
+	await coverUnit(db, spokeId, unitId);
+};
+
+const seedCour = async (
+	db: Db,
+	groupId: number,
+	cour: CourSeed,
+	index: number,
+): Promise<string> => {
+	const unitRows = await db.insert(contentUnits).values({}).returning().all();
+	const unitId = one(unitRows).id;
+	const anidbId = await insertTitle(db, groupId, "anidb", cour.anidb, index);
+	const episodeNumbers = Array.from(
+		{ length: cour.episodes },
+		(_ignored, offset) => offset + 1,
+	);
+	const spokeIds = await Promise.all(
+		episodeNumbers.map(async (episode) => insertSpoke(db, anidbId, `s1e${episode}`)),
+	);
+	const [firstSpoke] = spokeIds;
+	if (firstSpoke !== undefined) {
+		await coverUnit(db, firstSpoke, unitId);
+	}
+	await Promise.all([
+		anchorTitle(db, groupId, "mal", cour.mal, index, unitId),
+		anchorTitle(db, groupId, "anilist", cour.anilist, index, unitId),
+	]);
+	return unitId;
 };
 
 const seedSpyXFamily = async (
 	db: Db,
 ): Promise<{ readonly continuityId: string }> => {
-	const groupId = one(
-		await db.insert(titleGroups).values({ source: "t1-structure" }).returning().all(),
-	).id;
-	const unitIds: string[] = [];
-
-	for (const [index, cour] of cours.entries()) {
-		const unitId = one(await db.insert(contentUnits).values({}).returning().all()).id;
-		unitIds.push(unitId);
-
-		const anidbId = await insertTitle(db, groupId, "anidb", cour.anidb, index);
-		for (let episode = 1; episode <= cour.episodes; episode += 1) {
-			const spokeId = await insertSpoke(db, anidbId, `s1e${episode}`);
-			if (episode === 1) {
-				await coverUnit(db, spokeId, unitId);
-			}
-		}
-		await anchorTitle(db, groupId, "mal", cour.mal, index, unitId);
-		await anchorTitle(db, groupId, "anilist", cour.anilist, index, unitId);
-	}
-
+	const groupRows = await db
+		.insert(titleGroups)
+		.values({ source: "t1-structure" })
+		.returning()
+		.all();
+	const groupId = one(groupRows).id;
+	const unitIds = await Promise.all(
+		cours.map(async (cour, index) => seedCour(db, groupId, cour, index)),
+	);
 	const tmdbId = await insertTitle(db, groupId, "tmdb", "tv:120089", 0);
-	for (const [index, unitId] of unitIds.entries()) {
-		await coverUnit(db, await insertSpoke(db, tmdbId, `s1e${index + 1}`), unitId);
-	}
-
+	await Promise.all(
+		unitIds.map(async (unitId, index) => {
+			const spokeId = await insertSpoke(db, tmdbId, `s1e${index + 1}`);
+			await coverUnit(db, spokeId, unitId);
+		}),
+	);
 	return { continuityId: `group:${groupId}` };
 };
 
@@ -122,14 +141,21 @@ const seedTmdbContinuity = async (
 	tmdbId: string,
 	locators: readonly string[] = ["s1e1"],
 ): Promise<{ readonly continuityId: string }> => {
-	const groupId = one(
-		await db.insert(titleGroups).values({ source: "release" }).returning().all(),
-	).id;
-	const unitId = one(await db.insert(contentUnits).values({}).returning().all()).id;
+	const groupRows = await db
+		.insert(titleGroups)
+		.values({ source: "release" })
+		.returning()
+		.all();
+	const groupId = one(groupRows).id;
+	const unitRows = await db.insert(contentUnits).values({}).returning().all();
+	const unitId = one(unitRows).id;
 	const titleId = await insertTitle(db, groupId, "tmdb", `${namespace}:${tmdbId}`, 0);
-	for (const locator of locators) {
-		await coverUnit(db, await insertSpoke(db, titleId, locator), unitId);
-	}
+	await Promise.all(
+		locators.map(async (locator) => {
+			const spokeId = await insertSpoke(db, titleId, locator);
+			await coverUnit(db, spokeId, unitId);
+		}),
+	);
 	return { continuityId: `group:${groupId}` };
 };
 
