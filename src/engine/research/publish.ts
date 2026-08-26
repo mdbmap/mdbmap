@@ -909,7 +909,7 @@ const publishRemaining = async (
 	if (head === undefined) {
 		return done;
 	}
-	let result = await publishProposal(db, head);
+	const result = await publishProposal(db, head);
 	if (result === undefined) {
 		return publishRemaining(db, tail, enqueueReview, done, resolvedServices);
 	}
