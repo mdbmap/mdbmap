@@ -29,7 +29,7 @@ describe("research timing config reader", () => {
 		);
 	});
 
-	it("persists timing through the D1-backed store", async () => {
+	it("adapts the admin-backed research_policy store", async () => {
 		const db = await freshDb();
 		const store = createDbTimingStore(db);
 		expect(await store.read()).toBe("off");

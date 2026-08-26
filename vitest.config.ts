@@ -22,6 +22,12 @@ export default defineConfig({
 				compatibilityFlags: ["nodejs_compat"],
 				d1Databases: ["DB"],
 				kvNamespaces: ["METADATA_KV"],
+				ratelimits: {
+					API_RATE_LIMIT: {
+						namespace_id: "1001",
+						simple: { limit: 60, period: 60 },
+					},
+				},
 			},
 		})),
 	],

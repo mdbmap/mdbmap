@@ -5,7 +5,9 @@
 	"compatibility_flags": ["nodejs_compat"],
 	"main": "./src/server.ts",
 	// Set `id` to the real namespace before deploy: `wrangler kv namespace create METADATA_KV`.
-	"kv_namespaces": [{ "binding": "METADATA_KV", "id": "REPLACE_WITH_METADATA_KV_ID" }],
+	"kv_namespaces": [
+		{ "binding": "METADATA_KV", "id": "REPLACE_WITH_METADATA_KV_ID" },
+	],
 	// Overflow builds run as durable Cloudflare Workflows (ADR-0002 §overflow).
 	"workflows": [
 		{
@@ -16,7 +18,22 @@
 	],
 	// Set `database_id` to the real database before deploy: `wrangler d1 create mdbmap`.
 	"d1_databases": [
-		{ "binding": "DB", "database_name": "mdbmap", "database_id": "REPLACE_WITH_D1_DATABASE_ID" },
+		{
+			"binding": "DB",
+			"database_name": "mdbmap",
+			"database_id": "REPLACE_WITH_D1_DATABASE_ID",
+		},
+	],
+	// Set `namespace_id` to the real namespace before deploy (create via wrangler/dashboard).
+	"ratelimits": [
+		{
+			"name": "API_RATE_LIMIT",
+			"namespace_id": "REPLACE_WITH_API_RATE_LIMIT_NAMESPACE_ID",
+			"simple": {
+				"limit": 60,
+				"period": 60,
+			},
+		},
 	],
 	"observability": {
 		"enabled": true,

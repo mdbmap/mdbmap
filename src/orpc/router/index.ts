@@ -1,6 +1,6 @@
 import { apiKeys } from "./api-keys";
 import { moderation } from "./moderation";
-import { research } from "./research";
+import { providers } from "./providers";
 import { addTodo, listTodos } from "./todos";
 import { tracking } from "./tracking";
 import { work } from "./work";
@@ -10,7 +10,7 @@ export const router = {
 	apiKeys,
 	listTodos,
 	moderation,
-	research,
+	providers,
 	tracking,
 	work,
 };

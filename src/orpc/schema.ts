@@ -2,6 +2,11 @@ import { z } from "zod";
 
 import type { ApiKeyPlan, RateableUnitKind, WatchStatus } from "@/db/schema";
 import { apiKeyPlans, researchTimings, watchStatuses } from "@/db/schema";
+import type { ProviderListItem } from "@/lib/provider-config/store.ts";
+import {
+	ProviderConfigSchema,
+	UpdateProviderConfigSchema,
+} from "@/lib/provider-config/types.ts";
 import type { MediaKind } from "@/engine";
 
 const TodoSchema = z.object({
@@ -78,6 +83,21 @@ const RevokeApiKeyInput = z.object({
 
 const ResearchTimingSchema = z.enum(researchTimings);
 
+const CreateProviderInput = z.object({
+	config: ProviderConfigSchema,
+	label: z.string().trim().min(1).max(200),
+});
+
+const UpdateProviderInput = z.object({
+	config: UpdateProviderConfigSchema,
+	id: z.string().min(1),
+	label: z.string().trim().min(1).max(200),
+});
+
+const RemoveProviderInput = z.object({
+	id: z.string().min(1),
+});
+
 const SetResearchTimingInput = z.object({
 	timing: ResearchTimingSchema,
 });
@@ -99,6 +119,8 @@ interface MintedApiKey extends ApiKeyRow {
 	// Present only in the mint response — never re-derivable afterwards.
 	secret: string;
 }
+
+type ProviderRow = ProviderListItem;
 
 interface ServiceRating {
 	scale: number;
@@ -194,10 +216,12 @@ interface RatingResult {
 export {
 	ApiKeyPlanSchema,
 	CandidateIdInput,
+	CreateProviderInput,
 	ManualPairInput,
 	MarkMatchedInput,
 	MintApiKeyInput,
 	RateableUnitInput,
+	RemoveProviderInput,
 	ResearchTimingSchema,
 	RevokeApiKeyInput,
 	SetEpisodeWatchedInput,
@@ -207,6 +231,7 @@ export {
 	SetStatusInput,
 	SettleConflictInput,
 	TodoSchema,
+	UpdateProviderInput,
 	WatchStatusSchema,
 	WorkGetInput,
 };
@@ -218,6 +243,7 @@ export type {
 	EpisodeWatchedResult,
 	MintedApiKey,
 	PartView,
+	ProviderRow,
 	RateableUnit,
 	RatingResult,
 	ServiceRating,
@@ -226,3 +252,5 @@ export type {
 	ViewerTracking,
 	WorkView,
 };
+export type { ResearchTiming } from "@/db/schema";
+

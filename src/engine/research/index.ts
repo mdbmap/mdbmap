@@ -37,6 +37,8 @@ export type {
 	ReviewEnqueue,
 	TitleProposal,
 } from "./publish.ts";
+export { resolveResearchSchedule } from "./schedule.ts";
+export type { ResearchSchedule } from "./schedule.ts";
 export {
 	createDbTimingStore,
 	createMemoryTimingStore,

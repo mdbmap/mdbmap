@@ -287,7 +287,10 @@ const weakInstalmentAgent: ResearchAgent = async ({ tools }) => {
 	};
 };
 
-const multiUnitWeakInstalment: ResearchAgent = async ({ tools }) => {
+const multiUnitWeakInstalment = (
+	unitAId: string,
+	unitBId: string,
+): ResearchAgent => async ({ tools }) => {
 	const fetched = await requireAvailable(tools, "tmdb", "42");
 	const spokeId = fetched.persisted.spokes[0]?.instalmentId;
 	if (spokeId === undefined) {
@@ -313,12 +316,14 @@ const multiUnitWeakInstalment: ResearchAgent = async ({ tools }) => {
 				evidence,
 				instalmentId: spokeId,
 				kind: "instalment",
+				unitId: unitAId,
 			},
 			{
 				claim: "weak instalment unit b",
 				evidence,
 				instalmentId: spokeId,
 				kind: "instalment",
+				unitId: unitBId,
 			},
 		],
 		residue: [],
@@ -737,6 +742,7 @@ describe("runResearchPass publish path", () => {
 			.set({ confidence: "high", source: "manual" })
 			.where(eq(titleAssertions.id, seeded.id))
 			.run();
+		const flagsBefore = await db.select().from(pendingGroupCandidates).all();
 
 		const second = await runResearchPass(continuity, "after-residue", {
 			agent: singleSourceAgent,
@@ -751,6 +757,9 @@ describe("runResearchPass publish path", () => {
 		expect(await db.select().from(titleAssertions).all()).toMatchObject([
 			{ confidence: "high", id: seeded.id, source: "manual" },
 		]);
+		expect(await db.select().from(pendingGroupCandidates).all()).toHaveLength(
+			flagsBefore.length,
+		);
 	});
 
 	it("queues a low-confidence flag for a weak relation proposal", async () => {
@@ -946,8 +955,14 @@ describe("runResearchPass tools", () => {
 	});
 
 	it("lets distinct-unit low-confidence flags coexist for one instalment", async () => {
+		const unitA = one(
+			await db.insert(contentUnits).values({}).returning().all(),
+		);
+		const unitB = one(
+			await db.insert(contentUnits).values({}).returning().all(),
+		);
 		const outcome = await runResearchPass(continuity, "before-builds", {
-			agent: multiUnitWeakInstalment,
+			agent: multiUnitWeakInstalment(unitA.id, unitB.id),
 			clients: {
 				tmdb: clientFor({
 					"42": catalogue({

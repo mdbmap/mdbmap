@@ -1,9 +1,12 @@
-import { eq } from "drizzle-orm";
 import type { Promisable } from "type-fest";
 
 import type { Db } from "@/db";
-import { researchTiming, researchTimings } from "@/db/schema";
+import { researchTimings } from "@/db/schema";
 import type { ResearchTiming as TimingValue } from "@/db/schema";
+import {
+	getResearchTiming,
+	setResearchTiming,
+} from "@/lib/research-policy";
 
 type ResearchPhase = Exclude<TimingValue, "off">;
 
@@ -33,35 +36,11 @@ const createMemoryTimingStore = (
 	};
 };
 
-const SINGLETON_ID = 1;
-
+// Adapter over the admin-backed research_policy store from #101.
 const createDbTimingStore = (db: Db): ResearchTimingStore => ({
-	read: async () => {
-		const rows = await db
-			.select({ timing: researchTiming.timing })
-			.from(researchTiming)
-			.where(eq(researchTiming.id, SINGLETON_ID))
-			.all();
-		return rows[0]?.timing ?? "off";
-	},
+	read: async () => getResearchTiming(db),
 	write: async (timing) => {
-		const existing = await db
-			.select({ id: researchTiming.id })
-			.from(researchTiming)
-			.where(eq(researchTiming.id, SINGLETON_ID))
-			.all();
-		if (existing[0] === undefined) {
-			await db
-				.insert(researchTiming)
-				.values({ id: SINGLETON_ID, timing })
-				.run();
-			return;
-		}
-		await db
-			.update(researchTiming)
-			.set({ timing })
-			.where(eq(researchTiming.id, SINGLETON_ID))
-			.run();
+		await setResearchTiming(db, timing);
 	},
 });
 

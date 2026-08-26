@@ -25,7 +25,7 @@ The atomic, service-neutral piece of story content that instalments cover. It ha
 _Avoid_: Canonical instalment, master episode
 
 **Continuity**:
-An ordered set of segments connected by accepted mainline prequel and sequel relations. A continuity defines the scope inspected during matching but does not imply that its titles contain overlapping content or belong to one title group.
+An ordered set of segments connected by accepted mainline prequel and sequel relations. A continuity defines the scope inspected during matching and is the unit the tracker holds watch status against. It does not imply that its titles contain overlapping content or belong to one title group.
 _Avoid_: Franchise, title group, series
 
 **Corroboration**:
@@ -56,10 +56,6 @@ _Avoid_: Absolute order, all instalments
 A service-provided alternate arrangement of instalments used to test an alignment. It is evidence only, never an instalment identity or public locator.
 _Avoid_: Public numbering, canonical order
 
-**Presentation order**:
-A named arrangement of a continuity's segments for the work page, such as release or watch. It may reorder episodic cours and atomic film segments without changing title-group membership or instalment locators. It is not a matching order.
-_Avoid_: Watch order list, franchise playlist, matching order
-
 **Monotonic alignment**:
 An alignment that preserves the relative order of both main sequences. It may contain gaps and split or merged instalments, but its mappings never cross.
 _Avoid_: Exact numbering, equal-length sequence
@@ -75,6 +71,10 @@ _Avoid_: Empty mapping, assertion conflict
 **Personal rating**:
 A user's own score for a rateable unit, an integer from 1 to 10. It is durable user data, feeds the community score, and maps directly onto a sync target's scale.
 _Avoid_: Vote, review score
+
+**Presentation order**:
+A named arrangement of a continuity's segments for the work page, such as release or watch. It may reorder episodic cours and atomic film segments without changing title-group membership or instalment locators. It is not a matching order.
+_Avoid_: Watch order list, franchise playlist, matching order
 
 **Rateable unit**:
 Any level a rating attaches to: the work, a TV season or anime cour, an episode, or a single grouped-movie instalment such as an AniDB Madoka film.

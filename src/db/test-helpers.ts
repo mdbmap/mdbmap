@@ -25,7 +25,7 @@ const wipeOrder = [
 	"personal_rating",
 	"watch_status",
 	"llm_provider",
-	"research_timing",
+	"research_policy",
 	"session",
 	"account",
 	"user",

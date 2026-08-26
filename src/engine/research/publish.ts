@@ -287,7 +287,9 @@ const publishTitleProposal = async (
 			.run();
 	}
 
-	if (decision.reviewFlag !== undefined) {
+	const ownsResearchRow =
+		existing[0] === undefined || !outranksResearch(existing[0].source);
+	if (decision.reviewFlag !== undefined && ownsResearchRow) {
 		await queueTitlePairFlag(db, {
 			assertionConfidence: decision.confidence,
 			titleAId,
@@ -450,7 +452,10 @@ const publishRelationProposal = async (
 				.where(eq(relationAssertions.id, exact.id))
 				.run();
 		}
-		if (decision.reviewFlag !== undefined) {
+		if (
+			decision.reviewFlag !== undefined &&
+			!outranksResearch(exact.source)
+		) {
 			await queueRelationFlag(db, {
 				assertionConfidence: decision.confidence,
 				fromTitleId,
@@ -507,6 +512,19 @@ const resolveInstalmentUnitId = async (
 ): Promise<string> => {
 	if (proposal.unitId !== undefined) {
 		return proposal.unitId;
+	}
+	const prior = await db
+		.select({ unitId: instalmentAssertions.unitId })
+		.from(instalmentAssertions)
+		.where(
+			and(
+				eq(instalmentAssertions.instalmentId, proposal.instalmentId),
+				eq(instalmentAssertions.source, RESEARCH),
+			),
+		)
+		.all();
+	if (prior[0] !== undefined) {
+		return prior[0].unitId;
 	}
 	return one(
 		await db.insert(contentUnits).values({}).returning().all(),
@@ -589,7 +607,9 @@ const publishInstalmentProposal = async (
 			.run();
 	}
 
-	if (decision.reviewFlag !== undefined) {
+	const ownsResearchRow =
+		existing === undefined || !outranksResearch(existing.source);
+	if (decision.reviewFlag !== undefined && ownsResearchRow) {
 		const spoke = one(
 			await db
 				.select({ titleId: serviceInstalments.titleId })
