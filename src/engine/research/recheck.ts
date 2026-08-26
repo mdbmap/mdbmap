@@ -249,6 +249,7 @@ const sampleResearchRecheck = async (
 			return;
 		}
 		if (input.budget.snapshot().remaining < fetchCostFor(assertion)) {
+			await processFrom(index + 1);
 			return;
 		}
 		const verdict = await recheckAssertion(

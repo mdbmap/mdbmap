@@ -169,6 +169,49 @@ describe("sampleResearchRecheck", () => {
 		expect(await db.select().from(pendingGroupCandidates).all()).toHaveLength(0);
 	});
 
+	it("skips unaffordable assertions and still samples cheaper later ones", async () => {
+		const group = await seedGroup(db);
+		const titleA = await seedTitle(db, group.id, "tmdb", "1");
+		const titleB = await seedTitle(db, group.id, "imdb", "tt1");
+		const instalmentTitle = await seedTitle(db, group.id, "tmdb", "2");
+		const spoke = await seedSpoke(db, instalmentTitle.id, "1:1");
+		const unitId = await seedUnit(db);
+		const [titleAId, titleBId] = ascendingPair(titleA.id, titleB.id);
+		await db
+			.insert(titleAssertions)
+			.values({
+				confidence: "high",
+				source: "llm-research",
+				titleAId,
+				titleBId,
+			})
+			.run();
+		await db
+			.insert(instalmentAssertions)
+			.values({
+				confidence: "high",
+				instalmentId: spoke.id,
+				source: "llm-research",
+				unitId,
+			})
+			.run();
+
+		const outcome = await sampleResearchRecheck(db, {
+			budget: createBudget(1),
+			clients: {
+				imdb: clientFor({ tt1: catalogue("Second") }),
+				tmdb: clientFor({
+					"1": catalogue("First"),
+					"2": catalogue("Instalment Show", [{ locator: "1:1" }]),
+				}),
+			},
+			groupId: group.id,
+		});
+
+		expect(outcome.checked).toBe(1);
+		expect(outcome.remainingBudget).toBe(0);
+	});
+
 	it("respects the remaining revalidation budget", async () => {
 		const group = await seedGroup(db);
 		const titleA = await seedTitle(db, group.id, "tmdb", "1");
