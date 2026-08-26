@@ -80,6 +80,17 @@ describe("provider config store", () => {
 			}),
 		).rejects.toThrow();
 
+		await expect(
+			storeProvider(db, masterKey, {
+				config: {
+					apiKey: "   ",
+					kind: "openai",
+					model: "gpt-5",
+				},
+				label: "Whitespace key",
+			}),
+		).rejects.toThrow();
+
 		await expect(db.select().from(llmProvider).all()).resolves.toEqual([]);
 	});
 

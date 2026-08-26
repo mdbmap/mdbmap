@@ -5,8 +5,8 @@ import { apiKeyPlans, researchTimings, watchStatuses } from "@/db/schema";
 import {
 	ProviderConfigSchema,
 	UpdateProviderConfigSchema,
-} from "@/lib/provider-config";
-import type { ProviderPublicConfig } from "@/lib/provider-config";
+} from "@/lib/provider-config/types";
+import type { ProviderPublicConfig } from "@/lib/provider-config/types";
 import type { MediaKind } from "@/engine";
 
 const TodoSchema = z.object({
