@@ -51,18 +51,7 @@ describe("verifyApiKey", () => {
 		await expect(verifyApiKey(db, "mdbmap_not-a-real-key")).resolves.toBeUndefined();
 	});
 
-	it("rejects a revoked key", async () => {
-		const db = await freshDb();
-		const issued = await issueApiKey(db, { label: "ci" });
-
-		await revokeApiKey(db, issued.id);
-
-		await expect(verifyApiKey(db, issued.secret)).resolves.toBeUndefined();
-	});
-});
-
-describe("revokeApiKey", () => {
-	it("preserves the original revocation timestamp", async () => {
+	it("rejects a revoked key without changing its revocation timestamp", async () => {
 		const db = await freshDb();
 		const issued = await issueApiKey(db, { label: "ci" });
 		const revokedAt = new Date("2026-01-01T00:00:00.000Z");
@@ -72,5 +61,6 @@ describe("revokeApiKey", () => {
 
 		const rows = await db.select().from(apiKey).where(eq(apiKey.id, issued.id)).all();
 		expect(rows[0]?.revokedAt).toEqual(revokedAt);
+		await expect(verifyApiKey(db, issued.secret)).resolves.toBeUndefined();
 	});
 });
