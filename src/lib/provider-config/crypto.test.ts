@@ -7,17 +7,24 @@ describe("provider-config envelope encryption", () => {
 	it("round-trips the plaintext through encrypt then decrypt", async () => {
 		const masterKey = randomMasterKey();
 		const plaintext = JSON.stringify({ apiKey: "sk-secret", model: "gpt-5" });
+		const additionalData = crypto.randomUUID();
 
-		const envelope = await encryptEnvelope(plaintext, masterKey);
+		const envelope = await encryptEnvelope(plaintext, masterKey, additionalData);
 
-		await expect(decryptEnvelope(envelope, masterKey)).resolves.toBe(plaintext);
+		await expect(
+			decryptEnvelope(envelope, masterKey, additionalData),
+		).resolves.toBe(plaintext);
 	});
 
 	it("never stores the plaintext as the ciphertext", async () => {
 		const masterKey = randomMasterKey();
 		const plaintext = JSON.stringify({ apiKey: "sk-secret", model: "gpt-5" });
 
-		const envelope = await encryptEnvelope(plaintext, masterKey);
+		const envelope = await encryptEnvelope(
+			plaintext,
+			masterKey,
+			crypto.randomUUID(),
+		);
 
 		expect(envelope.ciphertext).not.toBe(plaintext);
 		expect(envelope.ciphertext).not.toContain("sk-secret");
@@ -27,9 +34,10 @@ describe("provider-config envelope encryption", () => {
 	it("produces a distinct data key and IVs per call, even for the same plaintext", async () => {
 		const masterKey = randomMasterKey();
 		const plaintext = "same plaintext both times";
+		const additionalData = crypto.randomUUID();
 
-		const first = await encryptEnvelope(plaintext, masterKey);
-		const second = await encryptEnvelope(plaintext, masterKey);
+		const first = await encryptEnvelope(plaintext, masterKey, additionalData);
+		const second = await encryptEnvelope(plaintext, masterKey, additionalData);
 
 		expect(first.ciphertext).not.toBe(second.ciphertext);
 		expect(first.dataIv).not.toBe(second.dataIv);
@@ -38,10 +46,28 @@ describe("provider-config envelope encryption", () => {
 	});
 
 	it("rejects decryption under the wrong master key", async () => {
-		const envelope = await encryptEnvelope("top secret", randomMasterKey());
+		const additionalData = crypto.randomUUID();
+		const envelope = await encryptEnvelope(
+			"top secret",
+			randomMasterKey(),
+			additionalData,
+		);
 
 		await expect(
-			decryptEnvelope(envelope, randomMasterKey()),
+			decryptEnvelope(envelope, randomMasterKey(), additionalData),
+		).rejects.toThrow();
+	});
+
+	it("rejects decryption under different additional data", async () => {
+		const masterKey = randomMasterKey();
+		const envelope = await encryptEnvelope(
+			"top secret",
+			masterKey,
+			crypto.randomUUID(),
+		);
+
+		await expect(
+			decryptEnvelope(envelope, masterKey, crypto.randomUUID()),
 		).rejects.toThrow();
 	});
 });

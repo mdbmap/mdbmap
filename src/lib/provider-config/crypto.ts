@@ -39,10 +39,20 @@ const importKey = async (
 const randomBytes = (length: number): Uint8Array<ArrayBuffer> =>
 	crypto.getRandomValues(new Uint8Array(length));
 
+const encryptionParams = (
+	iv: Uint8Array<ArrayBuffer>,
+	additionalData: string,
+) => ({
+	additionalData: new TextEncoder().encode(additionalData),
+	iv,
+	name: ALGORITHM,
+});
+
 /** Encrypts `plaintext` under a fresh data key, itself wrapped by `masterKeyBase64`. */
 const encryptEnvelope = async (
 	plaintext: string,
 	masterKeyBase64: string,
+	additionalData: string,
 ): Promise<Envelope> => {
 	const masterKey = await importKey(base64ToBytes(masterKeyBase64), "encrypt");
 	const dataKeyBytes = randomBytes(DATA_KEY_LENGTH_BYTES);
@@ -50,14 +60,14 @@ const encryptEnvelope = async (
 
 	const dataIv = randomBytes(IV_LENGTH_BYTES);
 	const ciphertext = await crypto.subtle.encrypt(
-		{ iv: dataIv, name: ALGORITHM },
+		encryptionParams(dataIv, additionalData),
 		dataKey,
 		new TextEncoder().encode(plaintext),
 	);
 
 	const wrapIv = randomBytes(IV_LENGTH_BYTES);
 	const wrappedKey = await crypto.subtle.encrypt(
-		{ iv: wrapIv, name: ALGORITHM },
+		encryptionParams(wrapIv, additionalData),
 		masterKey,
 		dataKeyBytes,
 	);
@@ -74,13 +84,14 @@ const encryptEnvelope = async (
 const decryptEnvelope = async (
 	envelope: Envelope,
 	masterKeyBase64: string,
+	additionalData: string,
 ): Promise<string> => {
 	const masterKey = await importKey(base64ToBytes(masterKeyBase64), "decrypt");
 
 	let dataKeyBytes: ArrayBuffer;
 	try {
 		dataKeyBytes = await crypto.subtle.decrypt(
-			{ iv: base64ToBytes(envelope.wrapIv), name: ALGORITHM },
+			encryptionParams(base64ToBytes(envelope.wrapIv), additionalData),
 			masterKey,
 			base64ToBytes(envelope.wrappedKey),
 		);
@@ -95,12 +106,12 @@ const decryptEnvelope = async (
 
 	const dataKey = await importKey(new Uint8Array(dataKeyBytes), "decrypt");
 	const plaintext = await crypto.subtle.decrypt(
-		{ iv: base64ToBytes(envelope.dataIv), name: ALGORITHM },
+		encryptionParams(base64ToBytes(envelope.dataIv), additionalData),
 		dataKey,
 		base64ToBytes(envelope.ciphertext),
 	);
 	return new TextDecoder().decode(plaintext);
 };
 
-export { decryptEnvelope, encryptEnvelope };
+export { bytesToBase64, decryptEnvelope, encryptEnvelope };
 export type { Envelope };

@@ -1,5 +1,6 @@
 /// <reference types="@cloudflare/vitest-pool-workers/types" />
 
+import { eq } from "drizzle-orm";
 import { beforeEach, describe, expect, it } from "vitest";
 
 import { llmProvider } from "@/db/schema";
@@ -60,6 +61,21 @@ describe("provider config store", () => {
 		}
 	});
 
+	it("rejects invalid provider config before writing", async () => {
+		await expect(
+			storeProvider(db, masterKey, {
+				config: {
+					apiKey: "",
+					kind: "openai",
+					model: "",
+				},
+				label: "Invalid",
+			}),
+		).rejects.toThrow();
+
+		await expect(db.select().from(llmProvider).all()).resolves.toEqual([]);
+	});
+
 	it("never stores the api key in plaintext at rest", async () => {
 		const config: ProviderConfig = {
 			apiKey: "sk-should-not-leak",
@@ -97,6 +113,47 @@ describe("provider config store", () => {
 		await expect(
 			getProviderConfig(db, randomMasterKey(), record.id),
 		).rejects.toThrow();
+	});
+
+	it("rejects an envelope copied from another provider row", async () => {
+		const first = await storeProvider(db, masterKey, {
+			config: {
+				apiKey: "sk-first",
+				kind: "openai",
+				model: "gpt-5",
+			},
+			label: "First",
+		});
+		const second = await storeProvider(db, masterKey, {
+			config: {
+				apiKey: "sk-second",
+				kind: "anthropic",
+				model: "claude-sonnet",
+			},
+			label: "Second",
+		});
+		const secondRow = await db
+			.select()
+			.from(llmProvider)
+			.where(eq(llmProvider.id, second.id))
+			.get();
+		expect(secondRow).toBeDefined();
+		if (secondRow === undefined) {
+			return;
+		}
+
+		await db
+			.update(llmProvider)
+			.set({
+				ciphertext: secondRow.ciphertext,
+				dataIv: secondRow.dataIv,
+				wrapIv: secondRow.wrapIv,
+				wrappedKey: secondRow.wrappedKey,
+			})
+			.where(eq(llmProvider.id, first.id))
+			.run();
+
+		await expect(getProviderConfig(db, masterKey, first.id)).rejects.toThrow();
 	});
 
 	it("rejects an unknown provider id", async () => {

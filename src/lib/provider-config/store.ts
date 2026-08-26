@@ -15,7 +15,7 @@ interface ProviderRecord {
 }
 
 interface StoreProviderInput {
-	config: ProviderConfig;
+	config: unknown;
 	label: string;
 }
 
@@ -25,24 +25,26 @@ const storeProvider = async (
 	masterKeyBase64: string,
 	input: StoreProviderInput,
 ): Promise<ProviderRecord> => {
-	const envelope = await encryptEnvelope(
-		JSON.stringify(input.config),
-		masterKeyBase64,
-	);
+	const config = ProviderConfigSchema.parse(input.config);
 	const id = crypto.randomUUID();
+	const envelope = await encryptEnvelope(
+		JSON.stringify(config),
+		masterKeyBase64,
+		id,
+	);
 	await db
 		.insert(llmProvider)
 		.values({
 			ciphertext: envelope.ciphertext,
 			dataIv: envelope.dataIv,
 			id,
-			kind: input.config.kind,
+			kind: config.kind,
 			label: input.label,
 			wrapIv: envelope.wrapIv,
 			wrappedKey: envelope.wrappedKey,
 		})
 		.run();
-	return { id, kind: input.config.kind, label: input.label };
+	return { id, kind: config.kind, label: input.label };
 };
 
 // The typed accessor callers use to get a configured provider: decrypts on
@@ -69,6 +71,7 @@ const getProviderConfig = async (
 			wrappedKey: row.wrappedKey,
 		},
 		masterKeyBase64,
+		id,
 	);
 	return ProviderConfigSchema.parse(JSON.parse(plaintext));
 };
