@@ -156,7 +156,10 @@ const candidateGraph = async (
 	db: GatewayDb,
 	titles: readonly TitleRow[],
 ): Promise<CandidateGraph> => {
-	const members = titles.filter((title) => isMemberService(title.service));
+	const members = titles.filter(
+		(title): title is TitleRow & { service: MemberService } =>
+			isMemberService(title.service),
+	);
 	const covered = await Promise.all(
 		members.map(async (title) => ({
 			title,
@@ -166,9 +169,6 @@ const candidateGraph = async (
 	const byService = new Map<MemberService, Candidate[]>();
 	const unitsByTitle = new Map<number, ReadonlySet<UnitId>>();
 	for (const { title, units } of covered) {
-		if (!isMemberService(title.service)) {
-			continue;
-		}
 		unitsByTitle.set(title.id, units);
 		const list = byService.get(title.service) ?? [];
 		list.push({ title, units });

@@ -5,14 +5,45 @@ import { env } from "cloudflare:workers";
 
 import { createDb, schema } from "./index.ts";
 
-const tables = Object.values(schema).map((table) => getTableName(table));
+// Children before parents so DELETE respects D1 FK enforcement. Asserted against
+// `schema` so a new table fails the harness load instead of leaking across tests.
+const wipeOrder = [
+	"absence_assertions",
+	"instalment_assertions",
+	"title_assertions",
+	"relation_assertions",
+	"service_instalments",
+	"service_titles",
+	"title_group_aliases",
+	"pending_group_candidates",
+	"service_coverages",
+	"atomic_write_gates",
+	"content_units",
+	"title_groups",
+	"episode_progress",
+	"personal_rating",
+	"watch_status",
+	"session",
+	"account",
+	"user",
+	"verification",
+	"todos",
+] as const;
+
+const schemaTables = new Set(
+	Object.values(schema).map((table) => getTableName(table)),
+);
+if (
+	wipeOrder.length !== schemaTables.size ||
+	wipeOrder.some((name) => !schemaTables.has(name))
+) {
+	throw new Error("wipeOrder drifted from db schema tables");
+}
 
 const freshDb = async () => {
 	await env.DB.batch([
-		env.DB.prepare("PRAGMA foreign_keys = OFF"),
-		...tables.map((table) => env.DB.prepare(`DELETE FROM ${table}`)),
+		...wipeOrder.map((table) => env.DB.prepare(`DELETE FROM ${table}`)),
 		env.DB.prepare("DELETE FROM sqlite_sequence"),
-		env.DB.prepare("PRAGMA foreign_keys = ON"),
 	]);
 	return createDb(env.DB);
 };
