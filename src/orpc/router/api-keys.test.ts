@@ -32,11 +32,8 @@ const expectEveryOperationRejected = async (user: SessionUser | undefined) => {
 };
 
 describe("api key admin gate", () => {
-	it("rejects every operation for an unauthenticated caller", async () => {
+	it("rejects every operation for unauthenticated and non-admin callers", async () => {
 		await expectEveryOperationRejected(undefined);
-	});
-
-	it("rejects every operation for a signed-in non-admin", async () => {
 		await expectEveryOperationRejected({ id: "user-1" });
 	});
 });
