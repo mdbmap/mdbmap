@@ -1,14 +1,8 @@
 import { eq, inArray } from "drizzle-orm";
 
 import type { Db } from "@/db";
-import type {
-	CandidateEvidence,
-	CandidateSubject,
-} from "@/db/engine-schema";
 import {
-	candidateSubjectKey,
 	instalmentAssertions,
-	pendingGroupCandidates,
 	relationAssertions,
 	serviceTitles,
 	titleAssertions,
@@ -17,10 +11,15 @@ import { titleSimilarity } from "@/engine/matcher";
 import type { BudgetLedger } from "@/engine/matcher";
 
 import type { ResearchAssertion } from "./assertions.ts";
-import { listResearchAssertions, RESEARCH } from "./assertions.ts";
+import { listResearchAssertions } from "./assertions.ts";
 import { toCatalogueTitle } from "./catalogue.ts";
 import type { ResearchCatalogueRecord } from "./catalogue.ts";
 import { fetchCatalogueRecord } from "./fetch-catalogue-record.ts";
+import {
+	queueInstalmentFlag,
+	queueRelationFlag,
+	queueTitlePairFlag,
+} from "./low-confidence-flag.ts";
 import type { ResearchCatalogueClients } from "./tools.ts";
 
 const FETCH_COST = 1;
@@ -33,45 +32,6 @@ interface ResearchRecheckOutcome {
 	readonly flagged: number;
 	readonly remainingBudget: number;
 }
-
-type LowConfidenceEvidence = Extract<
-	CandidateEvidence,
-	{ kind: "low-confidence-flag" }
->;
-
-const flagEvidenceHash = (evidence: LowConfidenceEvidence): string => {
-	switch (evidence.target) {
-		case "instalment": {
-			return `low-confidence-flag:${evidence.instalmentId}:${evidence.unitId}`;
-		}
-		case "title": {
-			return `low-confidence-flag:title:${evidence.titleAId}:${evidence.titleBId}`;
-		}
-		case "relation": {
-			return `low-confidence-flag:relation:${evidence.fromTitleId}->${evidence.toTitleId}`;
-		}
-	}
-};
-
-const queueFlag = async (
-	db: Db,
-	input: {
-		readonly evidence: LowConfidenceEvidence;
-		readonly subject: CandidateSubject;
-	},
-): Promise<void> => {
-	await db
-		.insert(pendingGroupCandidates)
-		.values({
-			evidence: input.evidence,
-			evidenceHash: flagEvidenceHash(input.evidence),
-			kind: "low-confidence-flag",
-			subject: input.subject,
-			subjectKey: candidateSubjectKey(input.subject),
-		})
-		.onConflictDoNothing()
-		.run();
-};
 
 const fetchPair = async (
 	clients: ResearchCatalogueClients,
@@ -89,6 +49,9 @@ const fetchPair = async (
 		clients[left.service],
 		left.serviceId,
 	);
+	if (leftRecord === undefined) {
+		return { kind: "unavailable" };
+	}
 	if (!budget.spend(FETCH_COST)) {
 		return { kind: "unavailable" };
 	}
@@ -96,7 +59,7 @@ const fetchPair = async (
 		clients[right.service],
 		right.serviceId,
 	);
-	if (leftRecord === undefined || rightRecord === undefined) {
+	if (rightRecord === undefined) {
 		return { kind: "unavailable" };
 	}
 	return { kind: "pair", left: leftRecord, right: rightRecord };
@@ -228,20 +191,10 @@ const demoteAndFlag = async (
 				.set({ confidence: "low" })
 				.where(eq(titleAssertions.id, assertion.id))
 				.run();
-			await queueFlag(db, {
-				evidence: {
-					confidence: assertion.confidence,
-					kind: "low-confidence-flag",
-					source: RESEARCH,
-					target: "title",
-					titleAId: assertion.titleAId,
-					titleBId: assertion.titleBId,
-				},
-				subject: {
-					subjectType: "title-pair",
-					titleAId: assertion.titleAId,
-					titleBId: assertion.titleBId,
-				},
+			await queueTitlePairFlag(db, {
+				assertionConfidence: assertion.confidence,
+				titleAId: assertion.titleAId,
+				titleBId: assertion.titleBId,
 			});
 			return;
 		}
@@ -251,20 +204,10 @@ const demoteAndFlag = async (
 				.set({ confidence: "low" })
 				.where(eq(relationAssertions.id, assertion.id))
 				.run();
-			await queueFlag(db, {
-				evidence: {
-					confidence: assertion.confidence,
-					fromTitleId: assertion.fromTitleId,
-					kind: "low-confidence-flag",
-					source: RESEARCH,
-					target: "relation",
-					toTitleId: assertion.toTitleId,
-				},
-				subject: {
-					subjectType: "title-pair",
-					titleAId: assertion.fromTitleId,
-					titleBId: assertion.toTitleId,
-				},
+			await queueRelationFlag(db, {
+				assertionConfidence: assertion.confidence,
+				fromTitleId: assertion.fromTitleId,
+				toTitleId: assertion.toTitleId,
 			});
 			return;
 		}
@@ -274,19 +217,11 @@ const demoteAndFlag = async (
 				.set({ confidence: "low" })
 				.where(eq(instalmentAssertions.id, assertion.id))
 				.run();
-			await queueFlag(db, {
-				evidence: {
-					confidence: assertion.confidence,
-					instalmentId: assertion.instalmentId,
-					kind: "low-confidence-flag",
-					source: RESEARCH,
-					target: "instalment",
-					unitId: assertion.unitId,
-				},
-				subject: {
-					subjectType: "title",
-					titleId: assertion.titleId,
-				},
+			await queueInstalmentFlag(db, {
+				assertionConfidence: assertion.confidence,
+				instalmentId: assertion.instalmentId,
+				titleId: assertion.titleId,
+				unitId: assertion.unitId,
 			});
 			return;
 		}
