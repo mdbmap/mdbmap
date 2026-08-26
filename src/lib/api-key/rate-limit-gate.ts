@@ -6,6 +6,7 @@ import { verifyApiKey } from "./verify.ts";
 
 const RETRY_AFTER_SECONDS = 60;
 
+// ADR-0006: paid-tier bindings deferred — every plan uses the free binding for now.
 const API_RATE_LIMIT_BINDING_BY_PLAN = {
 	free: "API_RATE_LIMIT",
 	pro: "API_RATE_LIMIT",
@@ -18,7 +19,7 @@ type ApiRateLimitBindings = Readonly<Record<ApiKeyPlan, RateLimit>>;
 
 interface ApiKeyRateLimitGateDeps {
 	readonly db?: Db | undefined;
-	readonly rateLimits: ApiRateLimitBindings;
+	readonly rateLimits?: ApiRateLimitBindings | undefined;
 }
 
 const unauthorizedResponse = (): Response =>
@@ -49,9 +50,19 @@ const resolveApiRateLimits = (
 	pro: env[API_RATE_LIMIT_BINDING_BY_PLAN.pro],
 });
 
+const resolveRateLimits = async (
+	rateLimits: ApiRateLimitBindings | undefined,
+): Promise<ApiRateLimitBindings> => {
+	if (rateLimits !== undefined) {
+		return rateLimits;
+	}
+	const { env } = await import("cloudflare:workers");
+	return resolveApiRateLimits(env);
+};
+
 const enforceApiKeyRateLimit = async (
 	request: Request,
-	deps: ApiKeyRateLimitGateDeps,
+	deps: ApiKeyRateLimitGateDeps = {},
 ): Promise<Response | undefined> => {
 	const secret = extractBearerSecret(request);
 	if (secret === undefined) {
@@ -64,7 +75,8 @@ const enforceApiKeyRateLimit = async (
 		return unauthorizedResponse();
 	}
 
-	const limiter = deps.rateLimits[verified.plan];
+	const rateLimits = await resolveRateLimits(deps.rateLimits);
+	const limiter = rateLimits[verified.plan];
 	const { success } = await limiter.limit({ key: verified.id });
 	if (!success) {
 		return tooManyRequestsResponse();
@@ -75,20 +87,9 @@ const enforceApiKeyRateLimit = async (
 const withPublicApiGate = async (
 	request: Request,
 	next: () => Promise<Response>,
-	deps: {
-		readonly db?: Db | undefined;
-		readonly rateLimits?: ApiRateLimitBindings | undefined;
-	} = {},
+	deps: ApiKeyRateLimitGateDeps = {},
 ): Promise<Response> => {
-	let { rateLimits } = deps;
-	if (rateLimits === undefined) {
-		const { env } = await import("cloudflare:workers");
-		rateLimits = resolveApiRateLimits(env);
-	}
-	const denial = await enforceApiKeyRateLimit(request, {
-		db: deps.db,
-		rateLimits,
-	});
+	const denial = await enforceApiKeyRateLimit(request, deps);
 	if (denial !== undefined) {
 		return denial;
 	}
