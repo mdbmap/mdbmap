@@ -3,26 +3,26 @@ import type { Promisable } from "type-fest";
 
 import type { Db } from "@/db";
 import { researchTiming, researchTimings } from "@/db/schema";
-import type { ResearchTiming } from "@/db/schema";
+import type { ResearchTiming as TimingValue } from "@/db/schema";
 
-type ResearchPhase = Exclude<ResearchTiming, "off">;
+type ResearchPhase = Exclude<TimingValue, "off">;
 
 interface ResearchTimingStore {
-	readonly read: () => Promisable<ResearchTiming>;
-	readonly write: (timing: ResearchTiming) => Promisable<void>;
+	readonly read: () => Promisable<TimingValue>;
+	readonly write: (timing: TimingValue) => Promisable<void>;
 }
 
-const isResearchTiming = (value: unknown): value is ResearchTiming =>
+const isResearchTiming = (value: unknown): value is TimingValue =>
 	typeof value === "string" &&
 	(researchTimings as readonly string[]).includes(value);
 
 const shouldRunResearch = (
-	timing: ResearchTiming,
+	timing: TimingValue,
 	phase: ResearchPhase,
 ): boolean => timing === phase;
 
 const createMemoryTimingStore = (
-	initial: ResearchTiming = "off",
+	initial: TimingValue = "off",
 ): ResearchTimingStore => {
 	let current = initial;
 	return {
@@ -69,7 +69,8 @@ export {
 	createDbTimingStore,
 	createMemoryTimingStore,
 	isResearchTiming,
-	researchTimings,
 	shouldRunResearch,
 };
-export type { ResearchPhase, ResearchTiming, ResearchTimingStore };
+export { researchTimings } from "@/db/schema";
+export type { ResearchTiming } from "@/db/schema";
+export type { ResearchPhase, ResearchTimingStore };
