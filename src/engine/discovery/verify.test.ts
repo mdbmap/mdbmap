@@ -3,9 +3,9 @@ import { describe, expect, it } from "vitest";
 import type { SimklExternalIds, SimklRelation, SimklService } from "./simkl.ts";
 import { simklServices } from "./simkl.ts";
 import { anime } from "./test-fixtures.ts";
-import type { ChainSegment, ContinuityChain } from "./walk.ts";
 import type { CatalogueTitle, VerificationClients } from "./verify.ts";
 import { verifyChain } from "./verify.ts";
+import type { ChainSegment, ContinuityChain } from "./walk.ts";
 
 const segment = (
 	id: string,
@@ -52,16 +52,40 @@ const catalogue = (fields: Partial<CatalogueTitle>): CatalogueTitle => ({
 describe("simkl verification", () => {
 	it("splits a combined target across the segments it covers at high confidence", async () => {
 		const chain = chainOf([
-			segment("so2", { anidb: "d2", anilist: "al" }, [{ kind: "sequel", toId: "so3" }], 0, "Stone Ocean Part 2"),
-			segment("so3", { anidb: "d3", anilist: "al" }, [{ kind: "prequel", toId: "so2" }], 1, "Stone Ocean Part 3"),
+			segment(
+				"so2",
+				{ anidb: "d2", anilist: "al" },
+				[{ kind: "sequel", toId: "so3" }],
+				0,
+				"Stone Ocean Part 2",
+			),
+			segment(
+				"so3",
+				{ anidb: "d3", anilist: "al" },
+				[{ kind: "prequel", toId: "so2" }],
+				1,
+				"Stone Ocean Part 3",
+			),
 		]);
 		const clients = clientsFrom({
 			anidb: {
-				d2: catalogue({ instalmentCount: 12, releaseDate: "2022-01-07", title: "Stone Ocean Part 2" }),
-				d3: catalogue({ instalmentCount: 14, releaseDate: "2022-08-01", title: "Stone Ocean Part 3" }),
+				d2: catalogue({
+					instalmentCount: 12,
+					releaseDate: "2022-01-07",
+					title: "Stone Ocean Part 2",
+				}),
+				d3: catalogue({
+					instalmentCount: 14,
+					releaseDate: "2022-08-01",
+					title: "Stone Ocean Part 3",
+				}),
 			},
 			anilist: {
-				al: catalogue({ instalmentCount: 26, releaseDate: "2022-01-07", title: "Stone Ocean Part 2" }),
+				al: catalogue({
+					instalmentCount: 26,
+					releaseDate: "2022-01-07",
+					title: "Stone Ocean Part 2",
+				}),
 			},
 		});
 
@@ -79,7 +103,9 @@ describe("simkl verification", () => {
 			{ anchor: "d2", confidence: "high", range: { from: 1, to: 12 } },
 			{ anchor: "d3", confidence: "high", range: { from: 13, to: 26 } },
 		]);
-		expect(result.titleAssertions.every((plan) => plan.target.serviceId === "al")).toBe(true);
+		expect(
+			result.titleAssertions.every((plan) => plan.target.serviceId === "al"),
+		).toBe(true);
 	});
 
 	it("publishes a one-sided mainline edge as low and flagged", async () => {
@@ -94,7 +120,10 @@ describe("simkl verification", () => {
 		const result = await verifyChain(chain, { clients, target: "anilist" });
 
 		expect(result.relationAssertions).toHaveLength(1);
-		expect(result.relationAssertions[0]).toMatchObject({ confidence: "low", flagged: true });
+		expect(result.relationAssertions[0]).toMatchObject({
+			confidence: "low",
+			flagged: true,
+		});
 	});
 
 	it("keeps a two-sided mainline edge high and unflagged", async () => {
@@ -108,14 +137,31 @@ describe("simkl verification", () => {
 
 		const result = await verifyChain(chain, { clients, target: "anilist" });
 
-		expect(result.relationAssertions[0]).toMatchObject({ confidence: "high", flagged: false });
+		expect(result.relationAssertions[0]).toMatchObject({
+			confidence: "high",
+			flagged: false,
+		});
 	});
 
 	it("treats a failed date check as a conflict, not a low-confidence publish", async () => {
-		const chain = chainOf([segment("x", { anidb: "dx", anilist: "alx" }, [], 0)]);
+		const chain = chainOf([
+			segment("x", { anidb: "dx", anilist: "alx" }, [], 0),
+		]);
 		const clients = clientsFrom({
-			anidb: { dx: catalogue({ instalmentCount: 12, releaseDate: "2020-01-01", title: "X" }) },
-			anilist: { alx: catalogue({ instalmentCount: 12, releaseDate: "2023-06-01", title: "X" }) },
+			anidb: {
+				dx: catalogue({
+					instalmentCount: 12,
+					releaseDate: "2020-01-01",
+					title: "X",
+				}),
+			},
+			anilist: {
+				alx: catalogue({
+					instalmentCount: 12,
+					releaseDate: "2023-06-01",
+					title: "X",
+				}),
+			},
 		});
 
 		const result = await verifyChain(chain, { clients, target: "anilist" });
@@ -132,7 +178,9 @@ describe("simkl verification", () => {
 	});
 
 	it("treats a mismatched combined count as a conflict", async () => {
-		const chain = chainOf([segment("x", { anidb: "dx", anilist: "alx" }, [], 0)]);
+		const chain = chainOf([
+			segment("x", { anidb: "dx", anilist: "alx" }, [], 0),
+		]);
 		const clients = clientsFrom({
 			anidb: { dx: catalogue({ instalmentCount: 12, title: "X" }) },
 			anilist: { alx: catalogue({ instalmentCount: 20, title: "X" }) },
@@ -145,10 +193,14 @@ describe("simkl verification", () => {
 	});
 
 	it("publishes low and flags when the count fits but nothing corroborates", async () => {
-		const chain = chainOf([segment("x", { anidb: "dx", anilist: "alx" }, [], 0, "Blue Lock")]);
+		const chain = chainOf([
+			segment("x", { anidb: "dx", anilist: "alx" }, [], 0, "Blue Lock"),
+		]);
 		const clients = clientsFrom({
 			anidb: { dx: catalogue({ instalmentCount: 12, title: "Blue Lock" }) },
-			anilist: { alx: catalogue({ instalmentCount: 12, title: "Something Unrelated" }) },
+			anilist: {
+				alx: catalogue({ instalmentCount: 12, title: "Something Unrelated" }),
+			},
 		});
 
 		const result = await verifyChain(chain, { clients, target: "anilist" });
@@ -163,9 +215,16 @@ describe("simkl verification", () => {
 	});
 
 	it("refuses to anchor when the native record is not the SIMKL entry's title", async () => {
-		const chain = chainOf([segment("x", { anidb: "dx", anilist: "alx" }, [], 0, "Real Show")]);
+		const chain = chainOf([
+			segment("x", { anidb: "dx", anilist: "alx" }, [], 0, "Real Show"),
+		]);
 		const clients = clientsFrom({
-			anidb: { dx: catalogue({ instalmentCount: 12, title: "Totally Different Anime" }) },
+			anidb: {
+				dx: catalogue({
+					instalmentCount: 12,
+					title: "Totally Different Anime",
+				}),
+			},
 			anilist: { alx: catalogue({ instalmentCount: 12, title: "Real Show" }) },
 		});
 
@@ -192,7 +251,9 @@ describe("simkl verification", () => {
 	});
 
 	it("leaves a target id the catalogue does not recognise as a candidate", async () => {
-		const chain = chainOf([segment("x", { anidb: "dx", anilist: "gone" }, [], 0)]);
+		const chain = chainOf([
+			segment("x", { anidb: "dx", anilist: "gone" }, [], 0),
+		]);
 		const clients = clientsFrom({
 			anidb: { dx: catalogue({ instalmentCount: 12, title: "X" }) },
 			anilist: {},
@@ -207,35 +268,68 @@ describe("simkl verification", () => {
 	});
 
 	it("reaches high on format agreement when the title does not corroborate", async () => {
-		const chain = chainOf([segment("x", { anidb: "dx", anilist: "alx" }, [], 0, "Blue Lock")]);
+		const chain = chainOf([
+			segment("x", { anidb: "dx", anilist: "alx" }, [], 0, "Blue Lock"),
+		]);
 		const clients = clientsFrom({
-			anidb: { dx: catalogue({ format: "ONA", instalmentCount: 12, title: "Blue Lock" }) },
-			anilist: { alx: catalogue({ format: "ona", instalmentCount: 12, title: "Different Name" }) },
+			anidb: {
+				dx: catalogue({
+					format: "ONA",
+					instalmentCount: 12,
+					title: "Blue Lock",
+				}),
+			},
+			anilist: {
+				alx: catalogue({
+					format: "ona",
+					instalmentCount: 12,
+					title: "Different Name",
+				}),
+			},
 		});
 
 		const result = await verifyChain(chain, { clients, target: "anilist" });
 
 		expect(result.conflicts).toStrictEqual([]);
-		expect(result.titleAssertions[0]).toMatchObject({ confidence: "high", flagged: false });
+		expect(result.titleAssertions[0]).toMatchObject({
+			confidence: "high",
+			flagged: false,
+		});
 	});
 
 	it("reaches high on a two-sided mainline edge when nothing else corroborates", async () => {
 		const chain = chainOf([
-			segment("p2", { anidb: "d2", anilist: "al" }, [{ kind: "sequel", toId: "p3" }], 0, "Part 2"),
-			segment("p3", { anidb: "d3", anilist: "al" }, [{ kind: "prequel", toId: "p2" }], 1, "Part 3"),
+			segment(
+				"p2",
+				{ anidb: "d2", anilist: "al" },
+				[{ kind: "sequel", toId: "p3" }],
+				0,
+				"Part 2",
+			),
+			segment(
+				"p3",
+				{ anidb: "d3", anilist: "al" },
+				[{ kind: "prequel", toId: "p2" }],
+				1,
+				"Part 3",
+			),
 		]);
 		const clients = clientsFrom({
 			anidb: {
 				d2: catalogue({ instalmentCount: 12, title: "Part 2" }),
 				d3: catalogue({ instalmentCount: 14, title: "Part 3" }),
 			},
-			anilist: { al: catalogue({ instalmentCount: 26, title: "Wholly Different Name" }) },
+			anilist: {
+				al: catalogue({ instalmentCount: 26, title: "Wholly Different Name" }),
+			},
 		});
 
 		const result = await verifyChain(chain, { clients, target: "anilist" });
 
 		expect(result.conflicts).toStrictEqual([]);
-		expect(result.titleAssertions.every((plan) => plan.confidence === "high")).toBe(true);
+		expect(
+			result.titleAssertions.every((plan) => plan.confidence === "high"),
+		).toBe(true);
 		expect(result.titleAssertions).toHaveLength(2);
 	});
 
@@ -251,7 +345,13 @@ describe("simkl verification", () => {
 				d1: catalogue({ instalmentCount: 12, title: "B" }),
 				d2: catalogue({ instalmentCount: 14, title: "C" }),
 			},
-			anilist: { al: catalogue({ instalmentCount: 26, releaseDate: "2022-01-07", title: "A" }) },
+			anilist: {
+				al: catalogue({
+					instalmentCount: 26,
+					releaseDate: "2022-01-07",
+					title: "A",
+				}),
+			},
 		});
 
 		const result = await verifyChain(chain, { clients, target: "anilist" });
@@ -266,7 +366,9 @@ describe("simkl verification", () => {
 	});
 
 	it("keeps the ids as candidates when there is no native count to split on", async () => {
-		const chain = chainOf([segment("x", { anidb: "dx", anilist: "alx" }, [], 0)]);
+		const chain = chainOf([
+			segment("x", { anidb: "dx", anilist: "alx" }, [], 0),
+		]);
 		const clients = clientsFrom({
 			anidb: { dx: catalogue({ title: "X" }) },
 			anilist: { alx: catalogue({ instalmentCount: 12, title: "X" }) },
@@ -278,5 +380,53 @@ describe("simkl verification", () => {
 		expect(result.candidates).toStrictEqual([
 			{ segmentOrdinal: 0, service: "anilist", serviceId: "alx" },
 		]);
+	});
+
+	it("joins a mainline film by relation only", async () => {
+		const film: ChainSegment = {
+			entry: {
+				externalIds: { anilist: "al", tmdb: "42" },
+				id: "film",
+				relations: [{ kind: "prequel", toId: "series" }],
+				title: "Code White",
+				type: "movie",
+			},
+			externalIds: { anilist: "al", tmdb: "42" },
+			nativeAnidbId: undefined,
+			ordinal: 1,
+		};
+		const chain = chainOf([
+			segment(
+				"series",
+				{ anidb: "1", anilist: "al" },
+				[{ kind: "sequel", toId: "film" }],
+				0,
+				"Spy Family",
+			),
+			film,
+		]);
+		const clients = clientsFrom({
+			anidb: { 1: catalogue({ instalmentCount: 12, title: "Spy Family" }) },
+			anilist: { al: catalogue({ instalmentCount: 12, title: "Spy Family" }) },
+			tmdb: { 42: catalogue({ instalmentCount: 1, title: "Code White" }) },
+		});
+
+		const result = await verifyChain(chain, { clients, target: "anilist" });
+
+		expect(result.conflicts).toStrictEqual([]);
+		expect(result.relationAssertions).toStrictEqual([
+			{
+				confidence: "high",
+				flagged: false,
+				from: { service: "anidb", serviceId: "1" },
+				to: { service: "tmdb", serviceId: "42" },
+			},
+		]);
+		expect(result.titleAssertions.map((plan) => plan.anchor)).toStrictEqual([
+			{ service: "anidb", serviceId: "1" },
+		]);
+		expect(
+			result.titleAssertions.every((plan) => plan.target.serviceId === "al"),
+		).toBe(true);
 	});
 });

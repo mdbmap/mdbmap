@@ -6,7 +6,14 @@ import { z } from "zod";
 // the interface. A missing record answers `undefined`; a failed request throws,
 // and the broker turns either into a fall-through to direct discovery.
 
-const simklServices = ["anidb", "anilist", "imdb", "mal", "tmdb", "tvdb"] as const;
+const simklServices = [
+	"anidb",
+	"anilist",
+	"imdb",
+	"mal",
+	"tmdb",
+	"tvdb",
+] as const;
 type SimklService = (typeof simklServices)[number];
 
 // The catalogues SIMKL can align natively vs. the ones it only carries as
@@ -29,7 +36,10 @@ const auxiliaryRelations = [
 	"summary",
 ] as const;
 
-const knownRelationKinds = [...mainlineRelations, ...auxiliaryRelations] as const;
+const knownRelationKinds = [
+	...mainlineRelations,
+	...auxiliaryRelations,
+] as const;
 type SimklRelationKind = (typeof knownRelationKinds)[number];
 
 interface SimklRelation {
@@ -42,7 +52,8 @@ interface SimklEntry {
 	id: string;
 	relations: readonly SimklRelation[];
 	title: string;
-	// SIMKL carries films and shows too; only anime-shaped records are walked.
+	// SIMKL carries films and shows too. Anime walks start on anime; mainline
+	// movie-shaped sequels and prequels join the chain. Shows still conflict.
 	type: "anime" | "movie" | "show";
 }
 
@@ -135,7 +146,9 @@ const createSimklClient = (deps: SimklClientDeps): SimklClient => {
 		schema: Schema,
 	): Promise<z.infer<Schema>> => {
 		const separator = path.includes("?") ? "&" : "?";
-		const response = await fetchFn(`${baseUrl}${path}${separator}client_id=${apiKey}`);
+		const response = await fetchFn(
+			`${baseUrl}${path}${separator}client_id=${apiKey}`,
+		);
 		if (!response.ok) {
 			throw new Error(`simkl: ${response.status} for ${path}`);
 		}
@@ -149,7 +162,10 @@ const createSimklClient = (deps: SimklClientDeps): SimklClient => {
 			return normalise(raw);
 		},
 		findByExternalId: async (service, serviceId) => {
-			const found = await getJson(`/search/id?${service}=${serviceId}`, searchSchema);
+			const found = await getJson(
+				`/search/id?${service}=${serviceId}`,
+				searchSchema,
+			);
 			const [raw] = found;
 			return raw === undefined ? undefined : normalise(raw);
 		},

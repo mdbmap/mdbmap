@@ -101,8 +101,6 @@ interface VerifyDeps {
 	target: SimklService;
 }
 
-// Every chain segment is anime-shaped (the walk guards it), but keeping the map
-// explicit lets a future TV/film continuity anchor against its own catalogue.
 const nativeServiceFor = (type: SimklEntry["type"]): SimklService => {
 	if (type === "movie") {
 		return "tmdb";
@@ -238,7 +236,11 @@ const targetRuns = (
 		// anchor already is that service's verified identity, and a title
 		// assertion pairs two different services. Such a request is answered by
 		// the anchor and the emitted relations, not by a self-pair.
-		if (serviceId === undefined || item.nativeService === target) {
+		if (
+			serviceId === undefined ||
+			item.nativeService === target ||
+			item.segment.entry.type === "movie"
+		) {
 			previousIndex = undefined;
 			continue;
 		}

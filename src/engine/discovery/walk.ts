@@ -7,13 +7,14 @@ import type {
 	SimklRelationKind,
 } from "./simkl.ts";
 
-// The continuity walk (ADR-0002 discovery). From a known SIMKL anime it walks
-// explicit prequel links back and sequel links forward, fetching and checking
-// each entry separately, and emits an ordered chain of segments the matcher
-// consumes. Order derives from the directed edges; the cached ordinal is a
-// build hint, never the source of truth. An ambiguous branch, a cycle-closing
-// link or a non-anime candidate refuses to guess and yields a
-// continuity-conflict instead.
+// The continuity walk (ADR-0002 discovery, ADR-0008 film segments). From a
+// known SIMKL anime it walks explicit prequel links back and sequel links
+// forward, fetching and checking each entry separately, and emits an ordered
+// chain of segments the matcher consumes. Mainline movie-shaped candidates
+// join the chain; show-shaped records, ambiguous branches, and cycle-closing
+// links refuse to guess and yield a continuity-conflict. Order derives from
+// the directed edges; the cached ordinal is a build hint, never the source
+// of truth.
 
 // One title on the chain. Segment boundaries are soft evidence for the matcher;
 // SIMKL's non-native ids ride along as candidates the target must still verify.
@@ -132,7 +133,7 @@ const extend = async (
 	if (next === undefined) {
 		return { entries: [] };
 	}
-	if (next.type !== "anime") {
+	if (next.type === "show") {
 		return {
 			conflict: edgeConflict(from, edge, "non-anime-candidate", edge.toId),
 			entries: [],
