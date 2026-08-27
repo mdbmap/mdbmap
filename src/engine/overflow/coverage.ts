@@ -4,6 +4,7 @@ import type { Db as CoverageDb } from "@/db";
 import { serviceCoverages } from "@/db/engine-schema";
 import type { CoverageState } from "@/db/engine-schema";
 import type { ContinuityKey } from "@/db/schema.ts";
+import { serviceOrder } from "@/engine/identity.ts";
 import type { Service } from "@/engine/identity.ts";
 
 const revisionMatch = (
@@ -140,9 +141,9 @@ const reconcileCoveragesAfterMerge = async (
 		.run();
 	const maxRevisionByService = new Map<Service, number>();
 	for (const row of rows) {
-		const service = (
-			["anilist", "imdb", "kitsu", "mal", "tmdb", "tvdb"] as const
-		).find((candidate) => candidate === row.targetService);
+		const service = serviceOrder.find(
+			(candidate) => candidate === row.targetService,
+		);
 		if (service === undefined) {
 			continue;
 		}
