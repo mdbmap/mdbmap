@@ -259,13 +259,26 @@ const resolve = async (
 		.all();
 	const titles = titleRows.toSorted(compareTitles);
 	const mediaKind = detectMediaKind(titles);
-	const graph = await candidateGraph(db, titles);
+	const graphByGroup = new Map(
+		await Promise.all(
+			groupIds.map(async (groupId) => {
+				const groupTitles = titles.filter((title) => title.groupId === groupId);
+				return [groupId, await candidateGraph(db, groupTitles)] as const;
+			}),
+		),
+	);
 	const segments: Segment[] = await Promise.all(
 		persistedSegments.map(async (segment): Promise<Segment> => {
 			const title = segmentTitleById.get(segment.titleId);
 			if (title === undefined) {
 				throw new Error(
 					`engine: continuity ${requestedKey} has a missing segment`,
+				);
+			}
+			const graph = graphByGroup.get(title.groupId);
+			if (graph === undefined) {
+				throw new Error(
+					`engine: continuity ${requestedKey} has no graph for group ${title.groupId}`,
 				);
 			}
 			const segmentProvider = title.service;
