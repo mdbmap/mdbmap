@@ -230,17 +230,29 @@ const targetRuns = (
 ): TargetRun[] => {
 	const runs: TargetRun[] = [];
 	let previousIndex: number | undefined;
+	const copiedOntoNonMovie = (serviceId: string): boolean =>
+		anchored.some(
+			(other) =>
+				other.segment.entry.type !== "movie" &&
+				other.segment.externalIds[target] === serviceId,
+		);
 	for (const [index, item] of anchored.entries()) {
 		const serviceId = item.segment.externalIds[target];
 		// A target that is the segment's own native service needs no run: its
 		// anchor already is that service's verified identity, and a title
 		// assertion pairs two different services. Such a request is answered by
 		// the anchor and the emitted relations, not by a self-pair.
-		if (
-			serviceId === undefined ||
-			item.nativeService === target ||
-			item.segment.entry.type === "movie"
-		) {
+		if (serviceId === undefined || item.nativeService === target) {
+			previousIndex = undefined;
+			continue;
+		}
+		if (item.segment.entry.type === "movie") {
+			if (!copiedOntoNonMovie(serviceId)) {
+				runs.push({
+					segments: [item],
+					target: { service: target, serviceId },
+				});
+			}
 			previousIndex = undefined;
 			continue;
 		}

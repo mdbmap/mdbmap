@@ -429,4 +429,57 @@ describe("simkl verification", () => {
 			result.titleAssertions.every((plan) => plan.target.serviceId === "al"),
 		).toBe(true);
 	});
+
+	it("verifies a film against its own distinct target id", async () => {
+		const film: ChainSegment = {
+			entry: {
+				externalIds: { anilist: "al-film", tmdb: "42" },
+				id: "film",
+				relations: [{ kind: "prequel", toId: "series" }],
+				title: "Code White",
+				type: "movie",
+			},
+			externalIds: { anilist: "al-film", tmdb: "42" },
+			nativeAnidbId: undefined,
+			ordinal: 1,
+		};
+		const chain = chainOf([
+			segment(
+				"series",
+				{ anidb: "1", anilist: "al" },
+				[{ kind: "sequel", toId: "film" }],
+				0,
+				"Spy Family",
+			),
+			film,
+		]);
+		const clients = clientsFrom({
+			anidb: { 1: catalogue({ instalmentCount: 12, title: "Spy Family" }) },
+			anilist: {
+				al: catalogue({ instalmentCount: 12, title: "Spy Family" }),
+				"al-film": catalogue({ instalmentCount: 1, title: "Code White" }),
+			},
+			tmdb: { 42: catalogue({ instalmentCount: 1, title: "Code White" }) },
+		});
+
+		const result = await verifyChain(chain, { clients, target: "anilist" });
+
+		expect(result.conflicts).toStrictEqual([]);
+		expect(result.relationAssertions).toHaveLength(1);
+		expect(result.titleAssertions).toEqual(
+			expect.arrayContaining([
+				expect.objectContaining({
+					anchor: { service: "anidb", serviceId: "1" },
+					target: { service: "anilist", serviceId: "al" },
+					targetRange: { from: 1, to: 12 },
+				}),
+				expect.objectContaining({
+					anchor: { service: "tmdb", serviceId: "42" },
+					target: { service: "anilist", serviceId: "al-film" },
+					targetRange: { from: 1, to: 1 },
+				}),
+			]),
+		);
+		expect(result.titleAssertions).toHaveLength(2);
+	});
 });
