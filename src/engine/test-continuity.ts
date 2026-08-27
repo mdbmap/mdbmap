@@ -1,6 +1,8 @@
 import type { Db } from "@/db";
 import {
 	contentUnits,
+	continuities,
+	continuitySegments,
 	instalmentAssertions,
 	serviceInstalments,
 	serviceTitles,
@@ -98,7 +100,9 @@ const seedCour = async (
 		(_ignored, offset) => offset + 1,
 	);
 	const spokeIds = await Promise.all(
-		episodeNumbers.map(async (episode) => insertSpoke(db, anidbId, `s1e${episode}`)),
+		episodeNumbers.map(async (episode) =>
+			insertSpoke(db, anidbId, `s1e${episode}`),
+		),
 	);
 	const [firstSpoke] = spokeIds;
 	if (firstSpoke !== undefined) {
@@ -149,7 +153,13 @@ const seedTmdbContinuity = async (
 	const groupId = one(groupRows).id;
 	const unitRows = await db.insert(contentUnits).values({}).returning().all();
 	const unitId = one(unitRows).id;
-	const titleId = await insertTitle(db, groupId, "tmdb", `${namespace}:${tmdbId}`, 0);
+	const titleId = await insertTitle(
+		db,
+		groupId,
+		"tmdb",
+		`${namespace}:${tmdbId}`,
+		0,
+	);
 	await Promise.all(
 		locators.map(async (locator) => {
 			const spokeId = await insertSpoke(db, titleId, locator);
@@ -159,4 +169,86 @@ const seedTmdbContinuity = async (
 	return { continuityId: `group:${groupId}` };
 };
 
-export { seedSpyXFamily, seedTmdbContinuity };
+const insertGroup = async (db: Db): Promise<number> => {
+	const groupRows = await db
+		.insert(titleGroups)
+		.values({ source: "t1-structure" })
+		.returning()
+		.all();
+	return one(groupRows).id;
+};
+
+// Two title groups, one continuity. The series cour stays episodic; the film is
+// an atomic segment on its own AniDB title. No title assertion joins the groups.
+const seedCrossGroupFranchise = async (
+	db: Db,
+): Promise<{
+	readonly continuityId: string;
+	readonly filmGroupId: number;
+	readonly seriesGroupId: number;
+}> => {
+	const seriesGroupId = await insertGroup(db);
+	const filmGroupId = await insertGroup(db);
+	const seriesUnitRows = await db
+		.insert(contentUnits)
+		.values({})
+		.returning()
+		.all();
+	const filmUnitRows = await db
+		.insert(contentUnits)
+		.values({})
+		.returning()
+		.all();
+	const seriesUnitId = one(seriesUnitRows).id;
+	const filmUnitId = one(filmUnitRows).id;
+	const seriesAnidbId = await insertTitle(
+		db,
+		seriesGroupId,
+		"anidb",
+		"1001",
+		0,
+	);
+	const filmAnidbId = await insertTitle(db, filmGroupId, "anidb", "1002", 0);
+	await insertSpoke(db, seriesAnidbId, "s0e1");
+	const seriesMain = await insertSpoke(db, seriesAnidbId, "s1e1");
+	await insertSpoke(db, seriesAnidbId, "s1e2");
+	const filmSpokeId = await insertSpoke(db, filmAnidbId, "s1e1");
+	await Promise.all([
+		coverUnit(db, seriesMain, seriesUnitId),
+		coverUnit(db, filmSpokeId, filmUnitId),
+		anchorTitle(db, seriesGroupId, "mal", "2001", 0, seriesUnitId),
+		anchorTitle(db, seriesGroupId, "tmdb", "tv:3001", 0, seriesUnitId),
+		anchorTitle(db, filmGroupId, "mal", "2002", 0, filmUnitId),
+		anchorTitle(db, filmGroupId, "tmdb", "movie:3002", 0, filmUnitId),
+	]);
+	const continuityRows = await db
+		.insert(continuities)
+		.values({ source: "t1-structure" })
+		.returning()
+		.all();
+	const continuityRowId = one(continuityRows).id;
+	await db
+		.insert(continuitySegments)
+		.values([
+			{
+				continuityId: continuityRowId,
+				kind: "episodic",
+				releaseOrdinal: 0,
+				titleId: seriesAnidbId,
+			},
+			{
+				continuityId: continuityRowId,
+				kind: "atomic",
+				releaseOrdinal: 1,
+				titleId: filmAnidbId,
+			},
+		])
+		.run();
+	return {
+		continuityId: `continuity:${continuityRowId}`,
+		filmGroupId,
+		seriesGroupId,
+	};
+};
+
+export { seedCrossGroupFranchise, seedSpyXFamily, seedTmdbContinuity };
