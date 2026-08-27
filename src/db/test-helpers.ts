@@ -1,7 +1,7 @@
 /// <reference types="@cloudflare/vitest-pool-workers/types" />
 
-import { getTableName } from "drizzle-orm";
 import { env } from "cloudflare:workers";
+import { getTableName } from "drizzle-orm";
 
 import { createDb, schema } from "./index.ts";
 
@@ -30,7 +30,6 @@ const wipeOrder = [
 	"account",
 	"user",
 	"verification",
-	"todos",
 ] as const;
 
 const schemaTables = new Set(

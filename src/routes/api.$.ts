@@ -6,7 +6,6 @@ import { ZodToJsonSchemaConverter } from "@orpc/zod/zod4";
 import { createFileRoute } from "@tanstack/react-router";
 
 import { router } from "@/orpc/router";
-import { TodoSchema } from "@/orpc/schema";
 
 const handler = new OpenAPIHandler(router, {
 	interceptors: [
@@ -31,7 +30,6 @@ const handler = new OpenAPIHandler(router, {
 			schemaConverters: [new ZodToJsonSchemaConverter()],
 			specGenerateOptions: {
 				commonSchemas: {
-					Todo: { schema: TodoSchema },
 					UndefinedError: { error: "UndefinedError" },
 				},
 				components: {

@@ -46,16 +46,6 @@ const llmProviderKinds = [
 ] as const;
 type LlmProviderKind = (typeof llmProviderKinds)[number];
 
-const todos = sqliteTable("todos", {
-	createdAt: integer("created_at", { mode: "timestamp" }).default(
-		sql`(unixepoch())`,
-	),
-	id: integer({ mode: "number" }).primaryKey({
-		autoIncrement: true,
-	}),
-	title: text().notNull(),
-});
-
 // `role`, `banned`, `banReason` and `banExpires` back Better-Auth's admin plugin
 // (the moderation surface gates on `role` containing `admin`).
 const user = sqliteTable("user", {
@@ -247,7 +237,6 @@ export {
 	researchTimings,
 	DEFAULT_RESEARCH_TIMING,
 	session,
-	todos,
 	user,
 	vercelAiSdkProviderKinds,
 	verification,
