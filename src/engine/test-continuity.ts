@@ -180,7 +180,7 @@ const insertGroup = async (db: Db): Promise<number> => {
 
 // Two title groups, one continuity. The series cour stays episodic; the film is
 // an atomic segment on its own AniDB title. No title assertion joins the groups.
-const seedCrossGroupFranchise = async (
+const seedCrossGroupContinuity = async (
 	db: Db,
 ): Promise<{
 	readonly continuityId: string;
@@ -251,4 +251,4 @@ const seedCrossGroupFranchise = async (
 	};
 };
 
-export { seedCrossGroupFranchise, seedSpyXFamily, seedTmdbContinuity };
+export { seedCrossGroupContinuity, seedSpyXFamily, seedTmdbContinuity };

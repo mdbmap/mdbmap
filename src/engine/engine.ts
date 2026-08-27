@@ -270,11 +270,15 @@ const resolve = async (
 	const segments: Segment[] = await Promise.all(
 		persistedSegments.map(async (segment): Promise<Segment> => {
 			const title = segmentTitleById.get(segment.titleId);
-			const graph =
-				title === undefined ? undefined : graphByGroup.get(title.groupId);
-			if (title === undefined || graph === undefined) {
+			if (title === undefined) {
 				throw new Error(
 					`engine: continuity ${requestedKey} has a missing segment`,
+				);
+			}
+			const graph = graphByGroup.get(title.groupId);
+			if (graph === undefined) {
+				throw new Error(
+					`engine: continuity ${requestedKey} has no graph for group ${title.groupId}`,
 				);
 			}
 			const segmentProvider = title.service;

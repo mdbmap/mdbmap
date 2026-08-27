@@ -6,7 +6,7 @@ import { freshDb } from "@/db/test-helpers";
 import { createEngine } from "./engine.ts";
 import { metadataProviderFor } from "./seam.ts";
 import {
-	seedCrossGroupFranchise,
+	seedCrossGroupContinuity,
 	seedSpyXFamily,
 	seedTmdbContinuity,
 } from "./test-continuity.ts";
@@ -97,7 +97,7 @@ describe("createEngine.resolveContinuity", () => {
 	it("walks a multi-group continuity as episodic then one atomic film locator", async () => {
 		const db = await freshDb();
 		const { continuityId, filmGroupId, seriesGroupId } =
-			await seedCrossGroupFranchise(db);
+			await seedCrossGroupContinuity(db);
 		const result = await createEngine(db).resolveContinuity(continuityId);
 		const [series, film] = result.segments;
 
