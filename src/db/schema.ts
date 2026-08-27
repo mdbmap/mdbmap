@@ -9,7 +9,7 @@ import {
 
 import { timestamp } from "./columns.ts";
 
-// Provisional opaque keys onto engine identities; #4 finalises their shapes.
+// Opaque engine identity; canonical construction lives in continuity/keys.ts.
 type ContinuityKey = string;
 type InstalmentLocator = string;
 type RateableUnitKey = string;

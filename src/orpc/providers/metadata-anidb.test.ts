@@ -3,17 +3,26 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import type { ResolveResult } from "@/engine";
 
 import { createAnidbProvider } from "./metadata-anidb.ts";
-import { createRateLimiter } from "./rate-limit.ts";
 import type { MetadataKv } from "./metadata-tmdb.ts";
+import { createRateLimiter } from "./rate-limit.ts";
 
 const COUR1_ID = "16947";
 const COUR2_ID = "16948";
 
 const resolved: ResolveResult = {
+	continuityId: "continuity:1",
 	mediaKind: "anime",
 	segments: [
-		{ instalments: ["anidb:16947#1", "anidb:16947#2"], members: { anidb: COUR1_ID } },
-		{ instalments: ["anidb:16948#1"], members: { anidb: COUR2_ID } },
+		{
+			instalments: ["anidb:16947#1", "anidb:16947#2"],
+			kind: "episodic",
+			members: { anidb: COUR1_ID },
+		},
+		{
+			instalments: ["anidb:16948#1"],
+			kind: "episodic",
+			members: { anidb: COUR2_ID },
+		},
 	],
 };
 
@@ -81,7 +90,8 @@ const urlOf = (input: RequestInfo | URL): string => {
 	return input instanceof URL ? input.href : input.url;
 };
 
-const xmlFor = (url: string): string => (url.includes(`aid=${COUR2_ID}`) ? cour2Xml : cour1Xml);
+const xmlFor = (url: string): string =>
+	url.includes(`aid=${COUR2_ID}`) ? cour2Xml : cour1Xml;
 
 const makeFetch = () =>
 	vi.fn(async (input: RequestInfo | URL): Promise<Response> => {
@@ -136,15 +146,27 @@ describe("anidb metadata provider", () => {
 
 		expect(meta.cast).toStrictEqual([
 			{ name: "Takuya Eguchi", ref: "anidb:creator:201", role: "Loid Forger" },
-			{ name: "Atsumi Tanezaki", ref: "anidb:creator:202", role: "Anya Forger" },
+			{
+				name: "Atsumi Tanezaki",
+				ref: "anidb:creator:202",
+				role: "Anya Forger",
+			},
 		]);
 		expect(meta.staff).toStrictEqual([
 			{ name: "Kazuhiro Furuhashi", ref: "anidb:creator:1", role: "Director" },
-			{ name: "Tatsuya Endo", ref: "anidb:creator:2", role: "Original Creator" },
+			{
+				name: "Tatsuya Endo",
+				ref: "anidb:creator:2",
+				role: "Original Creator",
+			},
 			{ name: "(K)NoW_NAME", ref: "anidb:creator:5", role: "Music" },
 		]);
 		expect(meta.ifYouLiked).toStrictEqual([
-			{ continuityId: "anidb:8069", coverRef: undefined, title: "Mob Psycho 100" },
+			{
+				continuityId: "anidb:8069",
+				coverRef: undefined,
+				title: "Mob Psycho 100",
+			},
 		]);
 
 		expect(meta.segments).toHaveLength(2);
@@ -196,11 +218,13 @@ describe("anidb metadata provider", () => {
 	it("spaces live requests at one per two seconds via the flood gate", async () => {
 		vi.useFakeTimers();
 		const times: number[] = [];
-		const fetchFn = vi.fn(async (input: RequestInfo | URL): Promise<Response> => {
-			await Promise.resolve();
-			times.push(Date.now());
-			return new Response(xmlFor(urlOf(input)));
-		});
+		const fetchFn = vi.fn(
+			async (input: RequestInfo | URL): Promise<Response> => {
+				await Promise.resolve();
+				times.push(Date.now());
+				return new Response(xmlFor(urlOf(input)));
+			},
+		);
 		const { kv } = makeKv();
 		const provider = createAnidbProvider({
 			client: "mdbmaptest",

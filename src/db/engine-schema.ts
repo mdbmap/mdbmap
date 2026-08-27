@@ -41,6 +41,9 @@ type PendingCandidateKind = (typeof pendingCandidateKinds)[number];
 const candidateStatuses = ["open", "accepted", "rejected"] as const;
 type CandidateStatus = (typeof candidateStatuses)[number];
 
+const continuitySegmentKinds = ["episodic", "atomic"] as const;
+type ContinuitySegmentKind = (typeof continuitySegmentKinds)[number];
+
 const atomicWriteGates = sqliteTable("atomic_write_gates", {
 	operationId: text("operation_id").primaryKey(),
 });
@@ -305,6 +308,41 @@ const relationAssertions = sqliteTable(
 	],
 );
 
+const continuities = sqliteTable("continuities", {
+	createdAt: timestamp("created_at"),
+	id: integer({ mode: "number" }).primaryKey({ autoIncrement: true }),
+	source: text({ enum: groupSources }).notNull(),
+	updatedAt: timestamp("updated_at").$onUpdateFn(() => new Date()),
+});
+
+const continuitySegments = sqliteTable(
+	"continuity_segments",
+	{
+		continuityId: integer("continuity_id")
+			.notNull()
+			.references(() => continuities.id, { onDelete: "cascade" }),
+		kind: text({ enum: continuitySegmentKinds }).notNull(),
+		relationAssertionId: integer("relation_assertion_id").references(
+			() => relationAssertions.id,
+			{ onDelete: "set null" },
+		),
+		releaseOrdinal: integer("release_ordinal").notNull(),
+		titleId: integer("title_id")
+			.notNull()
+			.references(() => serviceTitles.id, { onDelete: "cascade" }),
+	},
+	(table) => [
+		uniqueIndex("continuity_segments_continuity_ordinal_idx").on(
+			table.continuityId,
+			table.releaseOrdinal,
+		),
+		uniqueIndex("continuity_segments_continuity_title_idx").on(
+			table.continuityId,
+			table.titleId,
+		),
+	],
+);
+
 const absenceAssertions = sqliteTable(
 	"absence_assertions",
 	{
@@ -398,6 +436,9 @@ export {
 	candidateStatuses,
 	candidateSubjectKey,
 	contentUnits,
+	continuities,
+	continuitySegmentKinds,
+	continuitySegments,
 	coverageStates,
 	groupSources,
 	instalmentAssertions,
@@ -417,6 +458,7 @@ export type {
 	CandidateEvidence,
 	CandidateStatus,
 	CandidateSubject,
+	ContinuitySegmentKind,
 	CoverageState,
 	GroupSource,
 	InstalmentLocatorKind,

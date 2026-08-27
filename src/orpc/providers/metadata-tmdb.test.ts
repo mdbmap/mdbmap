@@ -8,10 +8,19 @@ import type { MetadataKv } from "./metadata-tmdb.ts";
 const SERIES_ID = "999";
 
 const resolved: ResolveResult = {
+	continuityId: "continuity:1",
 	mediaKind: "tv",
 	segments: [
-		{ instalments: ["tmdb:999#1", "tmdb:999#2"], members: { tmdb: SERIES_ID } },
-		{ instalments: ["tmdb:999#3"], members: { tmdb: SERIES_ID } },
+		{
+			instalments: ["tmdb:999#1", "tmdb:999#2"],
+			kind: "episodic",
+			members: { tmdb: SERIES_ID },
+		},
+		{
+			instalments: ["tmdb:999#3"],
+			kind: "episodic",
+			members: { tmdb: SERIES_ID },
+		},
 	],
 };
 
@@ -22,8 +31,18 @@ const seriesJson = {
 			{ id: 2, name: "Support Actor", roles: [{ character: "Sidekick" }] },
 		],
 		crew: [
-			{ department: "Directing", id: 3, job: "Director", name: "Jane Director" },
-			{ department: "Sound", id: 4, job: "Original Music Composer", name: "Sam Score" },
+			{
+				department: "Directing",
+				id: 3,
+				job: "Director",
+				name: "Jane Director",
+			},
+			{
+				department: "Sound",
+				id: 4,
+				job: "Original Music Composer",
+				name: "Sam Score",
+			},
 			{ department: "Editing", id: 5, job: "Editor", name: "Ignored Editor" },
 		],
 	},
@@ -106,7 +125,11 @@ describe("tmdb metadata provider", () => {
 	it("normalises a series into WorkMetadata aligned with the engine segments", async () => {
 		const fetchFn = makeFetch();
 		const { kv } = makeKv();
-		const provider = createTmdbProvider({ apiKey: "test-key", fetchFn, resolveKv: () => kv });
+		const provider = createTmdbProvider({
+			apiKey: "test-key",
+			fetchFn,
+			resolveKv: () => kv,
+		});
 
 		const meta = await provider.fetchWork(resolved);
 
@@ -128,7 +151,11 @@ describe("tmdb metadata provider", () => {
 			{ name: "Sam Score", ref: "tmdb:person:4", role: "Music" },
 		]);
 		expect(meta.ifYouLiked).toStrictEqual([
-			{ continuityId: "tmdb:tv:77", coverRef: "tmdb:/similar.jpg", title: "Similar Show" },
+			{
+				continuityId: "tmdb:tv:77",
+				coverRef: "tmdb:/similar.jpg",
+				title: "Similar Show",
+			},
 		]);
 
 		expect(meta.segments).toHaveLength(2);
@@ -147,7 +174,11 @@ describe("tmdb metadata provider", () => {
 	it("snapshots core and volatile fields to KV under distinct TTLs", async () => {
 		const fetchFn = makeFetch();
 		const { kv, puts, store } = makeKv();
-		const provider = createTmdbProvider({ apiKey: "test-key", fetchFn, resolveKv: () => kv });
+		const provider = createTmdbProvider({
+			apiKey: "test-key",
+			fetchFn,
+			resolveKv: () => kv,
+		});
 
 		await provider.fetchWork(resolved);
 
@@ -166,7 +197,11 @@ describe("tmdb metadata provider", () => {
 	it("serves a snapshot hit with zero upstream subrequests", async () => {
 		const fetchFn = makeFetch();
 		const { kv } = makeKv();
-		const provider = createTmdbProvider({ apiKey: "test-key", fetchFn, resolveKv: () => kv });
+		const provider = createTmdbProvider({
+			apiKey: "test-key",
+			fetchFn,
+			resolveKv: () => kv,
+		});
 
 		const first = await provider.fetchWork(resolved);
 		const callsAfterMiss = fetchFn.mock.calls.length;

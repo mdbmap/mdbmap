@@ -13,10 +13,12 @@ interface MemberTitles {
 
 interface Segment {
 	instalments: readonly InstalmentLocator[];
+	kind: "atomic" | "episodic";
 	members: MemberTitles;
 }
 
 interface ResolveResult {
+	continuityId: ContinuityKey;
 	mediaKind: MediaKind;
 	segments: readonly Segment[];
 }
