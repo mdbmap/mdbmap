@@ -1,6 +1,11 @@
 import type { InstalmentLocator } from "@/db/schema";
 
-import type { Instalment, InstalmentStream, StreamBoundary } from "./instalment.ts";
+import type { TierLink } from "./framework.ts";
+import type {
+	Instalment,
+	InstalmentStream,
+	StreamBoundary,
+} from "./instalment.ts";
 import type { Tier } from "./ladder.ts";
 import type { CandidatePairing, NonEmptyArray } from "./monotonic.ts";
 
@@ -16,7 +21,8 @@ const locators = (
 const pair = (
 	left: NonEmptyArray<string>,
 	right: NonEmptyArray<string>,
-): CandidatePairing => ({
+): TierLink => ({
+	confidence: "high",
 	left: locators(left),
 	right: locators(right),
 });
@@ -39,6 +45,16 @@ const streamOf = (
 const staticTier = (
 	id: Tier["id"],
 	pairings: readonly CandidatePairing[],
-): Tier => ({ id, propose: () => ({ pairings }) });
+): Tier => ({
+	id,
+	propose: () => ({
+		kind: "proposed",
+		links: pairings.map((pairing) => ({
+			confidence: "high",
+			left: pairing.left,
+			right: pairing.right,
+		})),
+	}),
+});
 
 export { locator, locators, pair, regular, special, staticTier, streamOf };

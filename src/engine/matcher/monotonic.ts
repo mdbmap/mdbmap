@@ -17,6 +17,11 @@ interface StreamIndex {
 	readonly regular: ReadonlySet<InstalmentLocator>;
 }
 
+interface MatchingOrder {
+	readonly left: StreamIndex;
+	readonly right: StreamIndex;
+}
+
 const indexStream = (stream: InstalmentStream): StreamIndex => {
 	const position = new Map<InstalmentLocator, number>();
 	const regular = new Set<InstalmentLocator>();
@@ -182,6 +187,7 @@ export { checkMonotonic, indexStream };
 export type {
 	CandidatePairing,
 	Crossing,
+	MatchingOrder,
 	MonotonicVerdict,
 	NonEmptyArray,
 	StreamIndex,

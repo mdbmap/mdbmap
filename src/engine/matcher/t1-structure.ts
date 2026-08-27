@@ -1,7 +1,7 @@
 import type { InstalmentLocator } from "@/db/schema";
 
+import type { TierLink } from "./framework.ts";
 import type { Tier, TierContext, TierProposal } from "./ladder.ts";
-import type { CandidatePairing } from "./monotonic.ts";
 
 // One regular instalment as T1 evidence: its number within its segment and,
 // where known, an air date for the spot check. The specials section (TMDB
@@ -73,8 +73,10 @@ const segmentsAgree = (left: T1Segment, right: T1Segment): boolean =>
 	left.instalments.length === right.instalments.length &&
 	left.instalments.every((instalment, index) => {
 		const counterpart = right.instalments[index];
-		return counterpart !== undefined
-			&& instalment.instalmentNumber === counterpart.instalmentNumber;
+		return (
+			counterpart !== undefined &&
+			instalment.instalmentNumber === counterpart.instalmentNumber
+		);
 	}) &&
 	spotCheckAirDatesAgree(left, right);
 
@@ -92,25 +94,29 @@ const structureAgrees = (left: T1Side, right: T1Side): boolean =>
 // One candidate pairing per instalment, in segment then instalment order. Both
 // sides were already proven equal in shape by `structureAgrees`, so every
 // index lines up.
-const buildPairings = (left: T1Side, right: T1Side): readonly CandidatePairing[] => {
-	const pairings: CandidatePairing[] = [];
+const buildLinks = (left: T1Side, right: T1Side): readonly TierLink[] => {
+	const links: TierLink[] = [];
 	for (const [segmentIndex, leftSegment] of left.segments.entries()) {
 		const rightSegment = right.segments[segmentIndex];
 		if (rightSegment === undefined) {
 			continue;
 		}
-		for (const [instalmentIndex, leftInstalment] of leftSegment.instalments.entries()) {
+		for (const [
+			instalmentIndex,
+			leftInstalment,
+		] of leftSegment.instalments.entries()) {
 			const rightInstalment = rightSegment.instalments[instalmentIndex];
 			if (rightInstalment === undefined) {
 				continue;
 			}
-			pairings.push({
+			links.push({
+				confidence: "high",
 				left: [leftInstalment.locator],
 				right: [rightInstalment.locator],
 			});
 		}
 	}
-	return pairings;
+	return links;
 };
 
 // Tier 1 — structure (ADR-0002). Aligns a pair only when segments demonstrably
@@ -122,12 +128,15 @@ const createT1StructureTier = (input: T1Input): Tier => ({
 	id: "t1-structure",
 	propose: (context: TierContext): TierProposal => {
 		if (!context.budget.spend(input.cost)) {
-			return { pairings: [] };
+			return { kind: "over-budget" };
 		}
 		if (!structureAgrees(input.left, input.right)) {
-			return { pairings: [] };
+			return { kind: "proposed", links: [] };
 		}
-		return { pairings: buildPairings(input.left, input.right) };
+		return {
+			kind: "proposed",
+			links: buildLinks(input.left, input.right),
+		};
 	},
 });
 

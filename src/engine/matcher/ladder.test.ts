@@ -4,7 +4,13 @@ import { createBudget } from "./budget.ts";
 import { runLadder } from "./ladder.ts";
 import type { Tier, TierContext } from "./ladder.ts";
 import type { CandidatePairing } from "./monotonic.ts";
-import { pair, regular, special, staticTier, streamOf } from "./test-fixtures.ts";
+import {
+	pair,
+	regular,
+	special,
+	staticTier,
+	streamOf,
+} from "./test-fixtures.ts";
 
 describe("createBudget", () => {
 	it("grants within the limit and refuses an overrun without deducting", () => {
@@ -34,7 +40,14 @@ describe("runLadder", () => {
 			propose: (context: TierContext) => {
 				context.budget.spend(cost);
 				seen.push({ placed: context.placed.length, tier: id });
-				return { pairings };
+				return {
+					kind: "proposed",
+					links: pairings.map((pairing) => ({
+						confidence: "high",
+						left: pairing.left,
+						right: pairing.right,
+					})),
+				};
 			},
 		});
 
@@ -78,5 +91,78 @@ describe("runLadder", () => {
 			},
 		});
 		expect(result.outcome.status).toBe("conflict");
+	});
+
+	it("keeps an over-budget refusal unmatched without publishing absences", () => {
+		const result = runLadder({
+			budget: createBudget(0),
+			left,
+			right,
+			tiers: {
+				t1: {
+					id: "t1-structure",
+					propose: () => ({ kind: "over-budget" }),
+				},
+				t2: staticTier("t2-pattern", []),
+				t3: staticTier("t3-episode", []),
+			},
+		});
+
+		expect(result.outcome).toStrictEqual({
+			reason: "over-budget",
+			status: "unmatched",
+		});
+	});
+
+	it("distinguishes an empty proposal from an over-budget refusal", () => {
+		const result = runLadder({
+			budget: createBudget(0),
+			left,
+			right,
+			tiers: {
+				t1: staticTier("t1-structure", []),
+				t2: staticTier("t2-pattern", []),
+				t3: staticTier("t3-episode", []),
+			},
+		});
+
+		expect(result.outcome.status).toBe("published");
+		if (result.outcome.status === "published") {
+			expect(result.outcome.alignment.left.noCounterpart).toStrictEqual([
+				"l#1",
+				"l#2",
+				"l#sp",
+			]);
+		}
+	});
+
+	it("preserves link confidence through final alignment", () => {
+		const result = runLadder({
+			budget: createBudget(0),
+			left,
+			right,
+			tiers: {
+				t1: staticTier("t1-structure", []),
+				t2: staticTier("t2-pattern", []),
+				t3: {
+					id: "t3-episode",
+					propose: () => ({
+						kind: "proposed",
+						links: [
+							{
+								confidence: "low",
+								left: ["l#1"],
+								right: ["r#1"],
+							},
+						],
+					}),
+				},
+			},
+		});
+
+		expect(result.outcome.status).toBe("published");
+		if (result.outcome.status === "published") {
+			expect(result.outcome.alignment.pairs[0]?.confidence).toBe("low");
+		}
 	});
 });

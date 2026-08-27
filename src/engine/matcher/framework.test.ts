@@ -1,8 +1,16 @@
 import { describe, expect, it } from "vitest";
 
-import { alignStreams } from "./framework.ts";
+import type { TierLink } from "./framework.ts";
+import { alignStreams as alignWithInput } from "./framework.ts";
+import type { InstalmentStream } from "./instalment.ts";
 import { mainSequence } from "./instalment.ts";
 import { locator, pair, regular, special, streamOf } from "./test-fixtures.ts";
+
+const alignStreams = (
+	left: InstalmentStream,
+	right: InstalmentStream,
+	links: readonly TierLink[],
+) => alignWithInput({ left, links, right });
 
 describe("mainSequence", () => {
 	it("excludes specials from cumulative offsets", () => {
@@ -39,11 +47,7 @@ describe("alignStreams", () => {
 
 	it("accepts a gapped and split alignment", () => {
 		const left = streamOf([regular("l#1"), regular("l#2"), regular("l#3")]);
-		const right = streamOf([
-			regular("r#1"),
-			regular("r#2a"),
-			regular("r#2b"),
-		]);
+		const right = streamOf([regular("r#1"), regular("r#2a"), regular("r#2b")]);
 		// l#2 is unmapped (a gap); l#3 splits into two right instalments.
 		const outcome = alignStreams(left, right, [
 			pair(["l#1"], ["r#1"]),
@@ -233,11 +237,7 @@ describe("alignStreams", () => {
 
 	it("publishes multi-coverage expressed within a single pairing", () => {
 		const left = streamOf([regular("l#1"), regular("l#2"), regular("l#3")]);
-		const right = streamOf([
-			regular("r#1"),
-			regular("r#2a"),
-			regular("r#2b"),
-		]);
+		const right = streamOf([regular("r#1"), regular("r#2a"), regular("r#2b")]);
 		// A merge (l#1 + l#2 into r#1) and a split (l#3 into r#2a + r#2b), each
 		// contained in one pairing, share no locator and publish.
 		const outcome = alignStreams(left, right, [

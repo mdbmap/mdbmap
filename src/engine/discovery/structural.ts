@@ -1,5 +1,6 @@
 import type { Promisable } from "type-fest";
 
+import type { AssertionConfidence } from "@/db/columns";
 import type { InstalmentLocator } from "@/db/schema";
 import { createBudget, createTier3, runLadder } from "@/engine/matcher";
 import type {
@@ -70,6 +71,7 @@ interface DiscoveryInput {
 // Per-link confidence and provenance are out of scope here; the persistence path
 // reads them from the matcher's own per-link output.
 interface MappedPair {
+	readonly confidence: AssertionConfidence;
 	readonly memberLocators: readonly InstalmentLocator[];
 	readonly sharedLocators: readonly InstalmentLocator[];
 }
@@ -106,10 +108,8 @@ const sameRef = (first: ServiceRef, second: ServiceRef): boolean =>
 // A candidate joins only when its own ids name the shared title back. A `/find`
 // hit that lists no such id (one-sided) or names a different one (conflicting)
 // attaches nothing.
-const pointsBack = (
-	descriptor: TitleDescriptor,
-	shared: ServiceRef,
-): boolean => descriptor.externalIds.some((external) => sameRef(external, shared));
+const pointsBack = (descriptor: TitleDescriptor, shared: ServiceRef): boolean =>
+	descriptor.externalIds.some((external) => sameRef(external, shared));
 
 interface OrderedMember {
 	readonly firstAirDate: string | undefined;
@@ -156,7 +156,10 @@ const byMemberOrder = (first: OrderedMember, second: OrderedMember): number => {
 	return 0;
 };
 
-const noopTier = (id: TierId): Tier => ({ id, propose: () => ({ pairings: [] }) });
+const noopTier = (id: TierId): Tier => ({
+	id,
+	propose: () => ({ kind: "proposed", links: [] }),
+});
 
 // Run the deterministic matcher for one member against the shared title. T1/T2
 // need segment structure the discovery path does not carry, so this leans on T3,
@@ -188,6 +191,7 @@ const publishedPairs = (
 		return undefined;
 	}
 	return outcome.alignment.pairs.map((aligned) => ({
+		confidence: aligned.confidence,
 		memberLocators: aligned.right,
 		sharedLocators: aligned.left,
 	}));

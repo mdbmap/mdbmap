@@ -3,7 +3,8 @@ import { describe, expect, it } from "vitest";
 import type { InstalmentLocator } from "@/db/schema";
 
 import { createBudget } from "./budget.ts";
-import { alignStreams } from "./framework.ts";
+import { alignStreams as alignWithInput } from "./framework.ts";
+import type { InstalmentStream } from "./instalment.ts";
 import { runLadder } from "./ladder.ts";
 import type { CandidatePairing } from "./monotonic.ts";
 import {
@@ -16,6 +17,21 @@ import {
 } from "./test-fixtures.ts";
 import { createTier3, matchTier3 } from "./tier3.ts";
 import type { FactsByLocator, InstalmentFacts } from "./tier3.ts";
+
+const alignStreams = (
+	left: InstalmentStream,
+	right: InstalmentStream,
+	pairings: readonly CandidatePairing[],
+) =>
+	alignWithInput({
+		left,
+		links: pairings.map((pairing) => ({
+			confidence: "high",
+			left: pairing.left,
+			right: pairing.right,
+		})),
+		right,
+	});
 
 const factsOf = (
 	entries: readonly (readonly [string, InstalmentFacts])[],
@@ -43,7 +59,10 @@ describe("matchTier3", () => {
 					title: "Pups and the Kitty-tastrophe",
 				},
 			],
-			["tmdb#1b", { airDate: "2013-08-12", runtime: 11, title: "Pups Save a Train" }],
+			[
+				"tmdb#1b",
+				{ airDate: "2013-08-12", runtime: 11, title: "Pups Save a Train" },
+			],
 			[
 				"imdb#1",
 				{
@@ -57,21 +76,14 @@ describe("matchTier3", () => {
 		const result = matchTier3({ facts, left, right });
 		expect(result.links).toHaveLength(1);
 		const [link] = result.links;
-		expect(link?.pairing.left).toStrictEqual([
-			locator("tmdb#1a"),
-			locator("tmdb#1b"),
-		]);
-		expect(link?.pairing.right).toStrictEqual([locator("imdb#1")]);
+		expect(link?.left).toStrictEqual([locator("tmdb#1a"), locator("tmdb#1b")]);
+		expect(link?.right).toStrictEqual([locator("imdb#1")]);
 		expect(link?.confidence).toBe("high");
 		expect(link?.flagged).toBe(false);
 		expect(result.unlinkedLeft).toStrictEqual([]);
 		expect(result.unlinkedRight).toStrictEqual([]);
 
-		const outcome = alignStreams(
-			left,
-			right,
-			result.links.map((entry) => entry.pairing),
-		);
+		const outcome = alignStreams(left, right, result.links);
 		expect(outcome.status).toBe("published");
 	});
 
@@ -97,12 +109,12 @@ describe("matchTier3", () => {
 		const result = matchTier3({ facts, left, placed, right });
 		expect(result.links).toHaveLength(1);
 		const [link] = result.links;
-		expect(link?.pairing.left).toStrictEqual([locator("tmdb#ova")]);
-		expect(link?.pairing.right).toStrictEqual([locator("imdb#late")]);
+		expect(link?.left).toStrictEqual([locator("tmdb#ova")]);
+		expect(link?.right).toStrictEqual([locator("imdb#late")]);
 		expect(link?.confidence).toBe("high");
 		expect(result.unlinkedRight).toStrictEqual([locator("imdb#2")]);
 
-		const pairings = [...placed, ...result.links.map((entry) => entry.pairing)];
+		const pairings = [...placed, ...result.links];
 		expect(alignStreams(left, right, pairings).status).toBe("published");
 	});
 
@@ -188,7 +200,12 @@ describe("matchTier3 position support", () => {
 		]);
 
 		const result = matchTier3({ facts, left, right });
-		expect(result.links.map((link) => link.pairing)).toStrictEqual([
+		expect(
+			result.links.map(({ left: linkedLeft, right: linkedRight }) => ({
+				left: linkedLeft,
+				right: linkedRight,
+			})),
+		).toStrictEqual([
 			{ left: [locator("l#1")], right: [locator("r#1")] },
 			{ left: [locator("l#2")], right: [locator("r#2")] },
 		]);
@@ -248,9 +265,9 @@ describe("matchTier3 position support", () => {
 
 		const result = matchTier3({ facts, left, right });
 		const special3 = result.links.find((link) =>
-			link.pairing.left.includes(locator("l#sp")),
+			link.left.includes(locator("l#sp")),
 		);
-		expect(special3?.pairing.right).toStrictEqual([locator("r#late")]);
+		expect(special3?.right).toStrictEqual([locator("r#late")]);
 	});
 });
 
@@ -271,7 +288,7 @@ describe("matchTier3 same-day runs", () => {
 		]);
 
 		const result = matchTier3({ facts, left, placed, right });
-		const merged = result.links.find((link) => link.pairing.left.length > 1);
+		const merged = result.links.find((link) => link.left.length > 1);
 		expect(merged).toBeUndefined();
 	});
 });
@@ -331,11 +348,7 @@ describe("matchTier3 monotonicity", () => {
 
 		const result = matchTier3({ facts, left, right });
 		expect(result.links).toHaveLength(1);
-		const outcome = alignStreams(
-			left,
-			right,
-			result.links.map((entry) => entry.pairing),
-		);
+		const outcome = alignStreams(left, right, result.links);
 		expect(outcome.status).toBe("published");
 	});
 
@@ -388,7 +401,12 @@ describe("createTier3", () => {
 		if (result.outcome.status === "published") {
 			expect(result.outcome.alignment.pairs).toHaveLength(2);
 		}
-		const t3 = result.contributions.find((entry) => entry.tier === "t3-episode");
-		expect(t3?.pairings).toStrictEqual([pair(["l#sp"], ["r#2"])]);
+		const t3 = result.contributions.find(
+			(entry) => entry.tier === "t3-episode",
+		);
+		expect(t3?.proposal).toMatchObject({
+			kind: "proposed",
+			links: [pair(["l#sp"], ["r#2"])],
+		});
 	});
 });
