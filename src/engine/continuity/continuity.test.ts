@@ -139,6 +139,50 @@ describe("persisted continuity", () => {
 		expect(await db.select().from(continuitySegments).all()).toHaveLength(2);
 	});
 
+	it("types an AniDB spine title as atomic when its group holds a TMDB movie", async () => {
+		const db = await freshDb();
+		const group = one(
+			await db
+				.insert(titleGroups)
+				.values({ source: "t1-structure" })
+				.returning()
+				.all(),
+		);
+		const anidbFilm = one(
+			await db
+				.insert(serviceTitles)
+				.values({
+					groupId: group.id,
+					service: "anidb",
+					serviceId: "99",
+				})
+				.returning()
+				.all(),
+		);
+		await db
+			.insert(serviceTitles)
+			.values({
+				groupId: group.id,
+				service: "tmdb",
+				serviceId: "movie:43",
+			})
+			.run();
+
+		const continuityId = await ensureGroupContinuity(db, group.id);
+		const segments = await db
+			.select()
+			.from(continuitySegments)
+			.where(eq(continuitySegments.continuityId, continuityId))
+			.all();
+
+		expect(segments).toEqual([
+			expect.objectContaining({
+				kind: "atomic",
+				titleId: anidbFilm.id,
+			}),
+		]);
+	});
+
 	it("types a TMDB movie as atomic on the legacy group path", async () => {
 		const db = await freshDb();
 		const group = one(

@@ -33,14 +33,14 @@ describe("continuity walk", () => {
 			"b",
 			"c",
 		]);
-		expect(result.segments.map((segment) => segment.ordinal)).toStrictEqual([0, 1, 2]);
+		expect(result.segments.map((segment) => segment.ordinal)).toStrictEqual([
+			0, 1, 2,
+		]);
 		expect(result.rebase.entry.id).toBe("a");
 		expect(result.rebase.ordinal).toBe(0);
-		expect(result.segments.map((segment) => segment.nativeAnidbId)).toStrictEqual([
-			"1",
-			"2",
-			"3",
-		]);
+		expect(
+			result.segments.map((segment) => segment.nativeAnidbId),
+		).toStrictEqual(["1", "2", "3"]);
 	});
 
 	it("refuses an ambiguous same-direction branch", async () => {
@@ -50,7 +50,9 @@ describe("continuity walk", () => {
 			{ kind: "sequel", toId: "c2" },
 		]);
 
-		const result = await walkContinuity(branching, { fetchEntry: fetcherFor([]) });
+		const result = await walkContinuity(branching, {
+			fetchEntry: fetcherFor([]),
+		});
 
 		expect(result.kind).toBe("continuity-conflict");
 		if (result.kind !== "continuity-conflict") {
@@ -77,8 +79,41 @@ describe("continuity walk", () => {
 		expect(result.entryId).toBe("b");
 	});
 
-	it("refuses a candidate whose record is not anime-shaped", async () => {
-		const first = anime("a", {}, [{ kind: "sequel", toId: "film" }]);
+	it("walks a mainline movie sequel as a chain segment", async () => {
+		const first = anime("a", { anidb: "1" }, [
+			{ kind: "sequel", toId: "film" },
+		]);
+		const film: SimklEntry = {
+			externalIds: { tmdb: "42" },
+			id: "film",
+			relations: [{ kind: "prequel", toId: "a" }],
+			title: "A Film",
+			type: "movie",
+		};
+
+		const result = await walkContinuity(first, {
+			fetchEntry: fetcherFor([first, film]),
+		});
+
+		if (result.kind !== "chain") {
+			throw new Error(`expected a chain, got ${result.kind}`);
+		}
+		expect(result.segments.map((segment) => segment.entry.id)).toStrictEqual([
+			"a",
+			"film",
+		]);
+		expect(result.segments.map((segment) => segment.entry.type)).toStrictEqual([
+			"anime",
+			"movie",
+		]);
+		expect(result.rebase.entry.id).toBe("a");
+		expect(result.segments[1]?.nativeAnidbId).toBeUndefined();
+	});
+
+	it("leaves a non-mainline movie out of the chain", async () => {
+		const first = anime("a", { anidb: "1" }, [
+			{ kind: "side_story", toId: "film" },
+		]);
 		const film: SimklEntry = {
 			externalIds: { tmdb: "42" },
 			id: "film",
@@ -91,11 +126,11 @@ describe("continuity walk", () => {
 			fetchEntry: fetcherFor([first, film]),
 		});
 
-		expect(result.kind).toBe("continuity-conflict");
-		if (result.kind !== "continuity-conflict") {
-			throw new Error("unreachable");
+		if (result.kind !== "chain") {
+			throw new Error(`expected a chain, got ${result.kind}`);
 		}
-		expect(result.reason).toBe("non-anime-candidate");
-		expect(result.entryId).toBe("film");
+		expect(result.segments.map((segment) => segment.entry.id)).toStrictEqual([
+			"a",
+		]);
 	});
 });

@@ -112,10 +112,24 @@ const retireContinuities = async (
 
 const animeServices = new Set(["anidb", "anilist", "kitsu", "mal"]);
 
-const kindForTitle = (title: TitleRow): ContinuitySegmentKind =>
-	title.service === "tmdb" && title.serviceId.startsWith("movie:")
-		? "atomic"
-		: "episodic";
+const isTmdbMovie = (title: TitleRow): boolean =>
+	title.service === "tmdb" && title.serviceId.startsWith("movie:");
+
+const kindForTitle = (
+	title: TitleRow,
+	groupTitles: readonly TitleRow[],
+): ContinuitySegmentKind => {
+	if (isTmdbMovie(title)) {
+		return "atomic";
+	}
+	if (
+		animeServices.has(title.service) &&
+		groupTitles.some((member) => isTmdbMovie(member))
+	) {
+		return "atomic";
+	}
+	return "episodic";
+};
 
 const spineTitles = (titles: readonly TitleRow[]): readonly TitleRow[] => {
 	const provider = titles.some((title) => animeServices.has(title.service))
@@ -319,7 +333,7 @@ const ensureGroupContinuity = async (
 		.values(
 			spine.map((title, releaseOrdinal) => ({
 				continuityId,
-				kind: kindForTitle(title),
+				kind: kindForTitle(title, titles),
 				releaseOrdinal,
 				titleId: title.id,
 			})),
@@ -377,8 +391,22 @@ const upsertRelationContinuity = async (
 	if (additions.length === 0 && foreignIds.length === 0) {
 		return continuityId;
 	}
+	const additionGroupIds = [
+		...new Set(additions.map((title) => title.groupId)),
+	];
+	const additionGroupTitles =
+		additionGroupIds.length === 0
+			? []
+			: await db
+					.select()
+					.from(serviceTitles)
+					.where(inArray(serviceTitles.groupId, additionGroupIds))
+					.all();
 	const additionDrafts: SegmentDraft[] = additions.map((title) => ({
-		kind: kindForTitle(title),
+		kind: kindForTitle(
+			title,
+			additionGroupTitles.filter((row) => row.groupId === title.groupId),
+		),
 		titleId: title.id,
 	}));
 	const ordered =
