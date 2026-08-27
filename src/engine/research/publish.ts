@@ -287,10 +287,14 @@ const ensureRelationContinuity = async (
 	input: {
 		readonly assertionId: number;
 		readonly fromTitleId: number;
+		readonly reviewFlag: "low-confidence-flag" | undefined;
 		readonly source: AssertionSource;
 		readonly toTitleId: number;
 	},
 ): Promise<void> => {
+	if (input.reviewFlag !== undefined) {
+		return;
+	}
 	await upsertRelationContinuity(db, {
 		fromTitleId: input.fromTitleId,
 		relationAssertionId: input.assertionId,
@@ -474,6 +478,7 @@ const publishRelationProposal = async (
 		await ensureRelationContinuity(db, {
 			assertionId: exact.id,
 			fromTitleId,
+			reviewFlag: decision.reviewFlag,
 			source: exact.source,
 			toTitleId,
 		});
@@ -519,6 +524,7 @@ const publishRelationProposal = async (
 			await ensureRelationContinuity(db, {
 				assertionId: racedExact.id,
 				fromTitleId,
+				reviewFlag: decision.reviewFlag,
 				source: racedExact.source,
 				toTitleId,
 			});
@@ -543,6 +549,7 @@ const publishRelationProposal = async (
 	await ensureRelationContinuity(db, {
 		assertionId,
 		fromTitleId,
+		reviewFlag: decision.reviewFlag,
 		source: RESEARCH,
 		toTitleId,
 	});

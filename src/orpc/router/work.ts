@@ -4,6 +4,8 @@ import type { WatchStatus } from "@/db/schema";
 import { episodeProgress, personalRating, watchStatus } from "@/db/schema";
 import type { ResolveResult } from "@/engine";
 import { metadataProviderFor } from "@/engine";
+import { parseContinuityKey } from "@/engine/continuity/keys";
+import { retiredContinuityKeys } from "@/engine/continuity/persist";
 import { pub } from "@/orpc/base";
 import type { Db } from "@/orpc/context";
 import { instalmentsOf } from "@/orpc/instalments";
@@ -53,19 +55,31 @@ const loadViewerState = async (
 		}
 	}
 
+	const parsedCanonical = parseContinuityKey(canonicalId);
+	const retiredKeys =
+		parsedCanonical?.type === "continuity"
+			? await retiredContinuityKeys(db, parsedCanonical.id)
+			: [];
+	const continuityKeys = [
+		...new Set([canonicalId, requestedId, ...retiredKeys]),
+	];
+
 	const statusRows = await db
 		.select()
 		.from(watchStatus)
 		.where(
 			and(
 				eq(watchStatus.userId, userId),
-				inArray(watchStatus.continuityKey, [canonicalId, requestedId]),
+				inArray(watchStatus.continuityKey, continuityKeys),
 			),
 		)
 		.all();
 	const statusRow =
 		statusRows.find((row) => row.continuityKey === canonicalId) ??
-		statusRows.find((row) => row.continuityKey === requestedId);
+		statusRows.find((row) => row.continuityKey === requestedId) ??
+		statusRows.find((row) =>
+			retiredKeys.some((key) => key === row.continuityKey),
+		);
 
 	const personalByUnit = new Map<string, number>();
 	const ratings = await db
@@ -75,12 +89,19 @@ const loadViewerState = async (
 		.all();
 	const canonicalRank = (unitKey: string): number =>
 		unitKey.includes(canonicalId) ? 1 : 0;
+	const rewriteUnitKey = (unitKey: string): string => {
+		let next = unitKey;
+		for (const retired of retiredKeys) {
+			next = next.replaceAll(retired, canonicalId);
+		}
+		return next.replaceAll(requestedId, canonicalId);
+	};
 	for (const row of ratings.toSorted(
 		(left, right) => canonicalRank(left.unitKey) - canonicalRank(right.unitKey),
 	)) {
 		const canonicalUnitKey =
 			row.unitKind === "work" || row.unitKind === "part"
-				? row.unitKey.replace(requestedId, canonicalId)
+				? rewriteUnitKey(row.unitKey)
 				: row.unitKey;
 		personalByUnit.set(`${row.unitKind}:${canonicalUnitKey}`, row.score);
 	}

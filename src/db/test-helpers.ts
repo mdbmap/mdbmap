@@ -13,6 +13,7 @@ const wipeOrder = [
 	"instalment_assertions",
 	"title_assertions",
 	"continuity_segments",
+	"continuity_aliases",
 	"relation_assertions",
 	"service_instalments",
 	"service_titles",

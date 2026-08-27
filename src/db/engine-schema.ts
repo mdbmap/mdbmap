@@ -430,6 +430,30 @@ const titleGroupAliases = sqliteTable(
 	],
 );
 
+// Retired id is not FK'd: the continuity row is deleted after the alias is
+// written so watch_status / personal_rating keys can still resolve.
+const continuityAliases = sqliteTable(
+	"continuity_aliases",
+	{
+		createdAt: timestamp("created_at"),
+		id: integer({ mode: "number" }).primaryKey({ autoIncrement: true }),
+		retiredContinuityId: integer("retired_continuity_id").notNull(),
+		survivorContinuityId: integer("survivor_continuity_id")
+			.notNull()
+			.references(() => continuities.id, { onDelete: "cascade" }),
+		updatedAt: timestamp("updated_at").$onUpdateFn(() => new Date()),
+	},
+	(table) => [
+		check(
+			"continuity_aliases_not_self",
+			sql`${table.retiredContinuityId} != ${table.survivorContinuityId}`,
+		),
+		uniqueIndex("continuity_aliases_retired_continuity_id_idx").on(
+			table.retiredContinuityId,
+		),
+	],
+);
+
 export {
 	absenceAssertions,
 	atomicWriteGates,
@@ -437,6 +461,7 @@ export {
 	candidateSubjectKey,
 	contentUnits,
 	continuities,
+	continuityAliases,
 	continuitySegmentKinds,
 	continuitySegments,
 	coverageStates,

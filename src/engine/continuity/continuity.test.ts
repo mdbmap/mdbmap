@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 
 import {
 	continuities,
+	continuityAliases,
 	continuitySegments,
 	relationAssertions,
 	serviceTitles,
@@ -18,7 +19,11 @@ import {
 	groupContinuityKey,
 	parseContinuityKey,
 } from "./keys.ts";
-import { ensureGroupContinuity, upsertRelationContinuity } from "./persist.ts";
+import {
+	ensureGroupContinuity,
+	retiredContinuityKeys,
+	upsertRelationContinuity,
+} from "./persist.ts";
 
 const one = <Row>(rows: readonly Row[]): Row => {
 	const [row] = rows;
@@ -260,10 +265,24 @@ describe("persisted continuity", () => {
 			"episodic",
 			"atomic",
 		]);
+		expect(await db.select().from(continuityAliases).all()).toEqual([
+			expect.objectContaining({
+				retiredContinuityId: filmContinuity,
+				survivorContinuityId: seriesContinuity,
+			}),
+		]);
+		expect(await retiredContinuityKeys(db, seriesContinuity)).toEqual([
+			continuityKey(filmContinuity),
+		]);
 		expect(
 			await createEngine(db).resolveContinuity(`group:${filmGroup.id}`),
 		).toMatchObject({
-			continuityId: `continuity:${seriesContinuity}`,
+			continuityId: continuityKey(seriesContinuity),
+		});
+		expect(
+			await createEngine(db).resolveContinuity(continuityKey(filmContinuity)),
+		).toMatchObject({
+			continuityId: continuityKey(seriesContinuity),
 		});
 	});
 
@@ -343,7 +362,93 @@ describe("persisted continuity", () => {
 		expect(
 			await createEngine(db).resolveContinuity(`group:${seriesGroup.id}`),
 		).toMatchObject({
-			continuityId: `continuity:${filmContinuity}`,
+			continuityId: continuityKey(filmContinuity),
 		});
+		expect(
+			await createEngine(db).resolveContinuity(continuityKey(seriesContinuity)),
+		).toMatchObject({
+			continuityId: continuityKey(filmContinuity),
+		});
+	});
+
+	it("does not merge continuities for a flagged relation publish", async () => {
+		const db = await freshDb();
+		const fromGroup = one(
+			await db
+				.insert(titleGroups)
+				.values({ source: "t1-structure" })
+				.returning()
+				.all(),
+		);
+		const toGroup = one(
+			await db
+				.insert(titleGroups)
+				.values({ source: "t1-structure" })
+				.returning()
+				.all(),
+		);
+		const fromTitle = one(
+			await db
+				.insert(serviceTitles)
+				.values({
+					groupId: fromGroup.id,
+					service: "tmdb",
+					serviceId: "tv:1",
+				})
+				.returning()
+				.all(),
+		);
+		const toTitle = one(
+			await db
+				.insert(serviceTitles)
+				.values({
+					groupId: toGroup.id,
+					service: "tmdb",
+					serviceId: "movie:2",
+				})
+				.returning()
+				.all(),
+		);
+		const fromContinuity = await ensureGroupContinuity(db, fromGroup.id);
+		const toContinuity = await ensureGroupContinuity(db, toGroup.id);
+
+		const { published } = await publishResearchProposals(
+			db,
+			[
+				{
+					claim: "weak cross-group relation",
+					evidence: [
+						{
+							kind: "api",
+							official: true,
+							operator: "tmdb",
+							stance: "corroborates",
+							url: "https://api.themoviedb.org/3/tv/1",
+							validated: true,
+						},
+					],
+					from: { service: "tmdb", serviceId: "tv:1" },
+					kind: "relation",
+					to: { service: "tmdb", serviceId: "movie:2" },
+				},
+			],
+			async () => {
+				/* empty */
+			},
+		);
+
+		expect(published).toMatchObject([
+			{ confidence: "low", reviewFlag: "low-confidence-flag" },
+		]);
+		expect(await db.select().from(relationAssertions).all()).toHaveLength(1);
+		const remaining = await db.select().from(continuities).all();
+		const remainingIds = remaining
+			.map((row) => row.id)
+			.toSorted((left, right) => left - right);
+		expect(remainingIds).toEqual(
+			[fromContinuity, toContinuity].toSorted((left, right) => left - right),
+		);
+		expect(await db.select().from(continuityAliases).all()).toEqual([]);
+		expect(fromTitle.id).not.toBe(toTitle.id);
 	});
 });

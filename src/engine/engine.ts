@@ -11,7 +11,10 @@ import {
 import type { InstalmentLocator } from "@/db/schema";
 
 import { continuityKey, parseContinuityKey } from "./continuity/keys.ts";
-import { ensureGroupContinuity } from "./continuity/persist.ts";
+import {
+	ensureGroupContinuity,
+	survivorContinuityId,
+} from "./continuity/persist.ts";
 import { toLocator } from "./gateway/keys.ts";
 import type {
 	EngineRead,
@@ -212,10 +215,12 @@ const resolve = async (
 	if (parsed === undefined) {
 		throw new Error(`engine: malformed continuity ${requestedKey}`);
 	}
-	const continuityId =
+	const continuityId = await survivorContinuityId(
+		db,
 		parsed.type === "group"
 			? await ensureGroupContinuity(db, parsed.id)
-			: parsed.id;
+			: parsed.id,
+	);
 	const continuity = await db
 		.select({ id: continuities.id })
 		.from(continuities)

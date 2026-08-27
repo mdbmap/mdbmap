@@ -3,6 +3,7 @@ import { asc, eq, inArray } from "drizzle-orm";
 import type { Db } from "@/db";
 import {
 	continuities,
+	continuityAliases,
 	continuitySegments,
 	serviceTitles,
 	titleGroups,
@@ -11,7 +12,65 @@ import type { ContinuitySegmentKind, GroupSource } from "@/db/engine-schema";
 import { one } from "@/db/one";
 import { survivorGroupId } from "@/engine/gateway";
 
+import { continuityKey } from "./keys.ts";
+
 type TitleRow = typeof serviceTitles.$inferSelect;
+
+const takeFirst = <Row>(rows: readonly Row[]): Row | undefined => rows[0];
+
+const survivorContinuityId = async (
+	db: Db,
+	continuityId: number,
+): Promise<number> => {
+	const aliases = await db
+		.select({ survivorContinuityId: continuityAliases.survivorContinuityId })
+		.from(continuityAliases)
+		.where(eq(continuityAliases.retiredContinuityId, continuityId))
+		.all();
+	return takeFirst(aliases)?.survivorContinuityId ?? continuityId;
+};
+
+const retiredContinuityKeys = async (
+	db: Db,
+	survivorId: number,
+): Promise<readonly `continuity:${number}`[]> => {
+	const rows = await db
+		.select({ retiredContinuityId: continuityAliases.retiredContinuityId })
+		.from(continuityAliases)
+		.where(eq(continuityAliases.survivorContinuityId, survivorId))
+		.all();
+	return rows.map((row) => continuityKey(row.retiredContinuityId));
+};
+
+const retireContinuities = async (
+	db: Db,
+	input: {
+		readonly foreignIds: readonly number[];
+		readonly survivorId: number;
+	},
+): Promise<void> => {
+	if (input.foreignIds.length === 0) {
+		return;
+	}
+	await db
+		.update(continuityAliases)
+		.set({ survivorContinuityId: input.survivorId })
+		.where(inArray(continuityAliases.survivorContinuityId, input.foreignIds))
+		.run();
+	await db
+		.insert(continuityAliases)
+		.values(
+			input.foreignIds.map((retiredContinuityId) => ({
+				retiredContinuityId,
+				survivorContinuityId: input.survivorId,
+			})),
+		)
+		.run();
+	await db
+		.delete(continuities)
+		.where(inArray(continuities.id, input.foreignIds))
+		.run();
+};
 
 const animeServices = new Set(["anidb", "anilist", "kitsu", "mal"]);
 
@@ -269,19 +328,19 @@ const upsertRelationContinuity = async (
 		segments: ordered,
 		toTitleId: input.toTitleId,
 	});
-	if (foreignIds.length > 0) {
-		await db
-			.delete(continuities)
-			.where(inArray(continuities.id, foreignIds))
-			.run();
-	}
+	await retireContinuities(db, {
+		foreignIds,
+		survivorId: continuityId,
+	});
 	return continuityId;
 };
 
 export {
 	ensureGroupContinuity,
 	kindForTitle,
+	retiredContinuityKeys,
 	spineTitles,
+	survivorContinuityId,
 	upsertRelationContinuity,
 };
 export type { RelationContinuityInput };
