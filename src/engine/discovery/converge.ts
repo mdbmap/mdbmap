@@ -20,6 +20,7 @@ import { ensureGroupContinuity } from "@/engine/continuity/persist";
 import { survivorGroupId } from "@/engine/gateway";
 import type { GatewayDb } from "@/engine/gateway";
 import { tierIds } from "@/engine/matcher";
+import { reconcileCoveragesAfterMerge } from "@/engine/overflow/coverage.ts";
 import { isCuratedSource } from "@/engine/recompute";
 
 // A member the discovery named, in the order the discovery placed it (live
@@ -461,6 +462,12 @@ const commitMerge = async (
 		return { kind: "aborted" };
 	}
 	await ensureGroupContinuity(db, plan.survivorId);
+	if (plan.retiredIds.length > 0) {
+		await reconcileCoveragesAfterMerge(db, {
+			retiredGroupIds: plan.retiredIds,
+			survivorGroupId: plan.survivorId,
+		});
+	}
 	return {
 		kind: "merged",
 		retiredIds: plan.retiredIds,

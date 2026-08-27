@@ -8,6 +8,7 @@ import {
 	completeCoverage,
 	coverageStateFor,
 	coverageStatesFor,
+	reconcileCoveragesAfterMerge,
 	seedPendingCoverage,
 } from "./coverage.ts";
 
@@ -20,7 +21,9 @@ describe("overflow coverage", () => {
 		await seedPendingCoverage(db, continuity, revision, "mal");
 		await seedPendingCoverage(db, continuity, revision, "mal");
 		expect(await db.select().from(serviceCoverages).all()).toHaveLength(1);
-		expect(await coverageStateFor(db, continuity, revision, "mal")).toBe("pending");
+		expect(await coverageStateFor(db, continuity, revision, "mal")).toBe(
+			"pending",
+		);
 	});
 
 	it("flips a seeded service to complete atomically", async () => {
@@ -28,7 +31,9 @@ describe("overflow coverage", () => {
 		await seedPendingCoverage(db, continuity, revision, "mal");
 		await completeCoverage(db, continuity, revision, "mal");
 		expect(await db.select().from(serviceCoverages).all()).toHaveLength(1);
-		expect(await coverageStateFor(db, continuity, revision, "mal")).toBe("complete");
+		expect(await coverageStateFor(db, continuity, revision, "mal")).toBe(
+			"complete",
+		);
 	});
 
 	it("never lets a reader observe a partial group", async () => {
@@ -43,7 +48,43 @@ describe("overflow coverage", () => {
 		const states = await coverageStatesFor(db, continuity, revision);
 		expect(states.get("anilist")).toBe("complete");
 		expect(states.get("mal")).toBe("complete");
-		// The service still mid-build reads pending, not a silent no-counterpart.
 		expect(states.get("kitsu")).toBe("pending");
+	});
+});
+
+describe("reconcileCoveragesAfterMerge", () => {
+	it("deletes retired group keys and seeds survivor pending at next revision", async () => {
+		const db = await freshDb();
+		const survivor: ContinuityKey = "group:1";
+		const retired: ContinuityKey = "group:2";
+		await seedPendingCoverage(db, retired, 1, "tmdb");
+		await completeCoverage(db, retired, 1, "tmdb");
+		await reconcileCoveragesAfterMerge(db, {
+			retiredGroupIds: [2],
+			survivorGroupId: 1,
+		});
+		const rows = await db.select().from(serviceCoverages).all();
+		expect(rows.every((row) => row.baselineContinuity !== retired)).toBe(true);
+		expect(await coverageStateFor(db, survivor, 2, "tmdb")).toBe("pending");
+	});
+
+	it("avoids UNIQUE collision when survivor and retired share service revision", async () => {
+		const db = await freshDb();
+		const survivor: ContinuityKey = "group:10";
+		const retired: ContinuityKey = "group:11";
+		await seedPendingCoverage(db, survivor, 1, "mal");
+		await completeCoverage(db, survivor, 1, "mal");
+		await seedPendingCoverage(db, retired, 1, "mal");
+		await completeCoverage(db, retired, 1, "mal");
+		await reconcileCoveragesAfterMerge(db, {
+			retiredGroupIds: [11],
+			survivorGroupId: 10,
+		});
+		const rows = await db.select().from(serviceCoverages).all();
+		expect(
+			rows.filter((row) => row.baselineContinuity === retired),
+		).toHaveLength(0);
+		expect(await coverageStateFor(db, survivor, 1, "mal")).toBe("complete");
+		expect(await coverageStateFor(db, survivor, 2, "mal")).toBe("pending");
 	});
 });
