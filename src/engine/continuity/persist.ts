@@ -12,7 +12,7 @@ import type { ContinuitySegmentKind, GroupSource } from "@/db/engine-schema";
 import { one } from "@/db/one";
 import { survivorGroupId } from "@/engine/gateway";
 
-import { continuityKey } from "./keys.ts";
+import { continuityKey, groupContinuityKey } from "./keys.ts";
 
 type TitleRow = typeof serviceTitles.$inferSelect;
 
@@ -41,6 +41,29 @@ const retiredContinuityKeys = async (
 		.all();
 	return rows.map((row) => continuityKey(row.retiredContinuityId));
 };
+
+const groupKeysForContinuity = async (
+	db: Db,
+	survivorId: number,
+): Promise<readonly `group:${number}`[]> => {
+	const rows = await db
+		.select({ groupId: serviceTitles.groupId })
+		.from(continuitySegments)
+		.innerJoin(serviceTitles, eq(serviceTitles.id, continuitySegments.titleId))
+		.where(eq(continuitySegments.continuityId, survivorId))
+		.all();
+	return [...new Set(rows.map((row) => groupContinuityKey(row.groupId)))];
+};
+
+const trackingAliasKeys = async (
+	db: Db,
+	survivorId: number,
+): Promise<readonly string[]> => [
+	...new Set([
+		...(await retiredContinuityKeys(db, survivorId)),
+		...(await groupKeysForContinuity(db, survivorId)),
+	]),
+];
 
 const retireContinuities = async (
 	db: Db,
@@ -337,10 +360,9 @@ const upsertRelationContinuity = async (
 
 export {
 	ensureGroupContinuity,
-	kindForTitle,
 	retiredContinuityKeys,
-	spineTitles,
 	survivorContinuityId,
+	trackingAliasKeys,
 	upsertRelationContinuity,
 };
 export type { RelationContinuityInput };

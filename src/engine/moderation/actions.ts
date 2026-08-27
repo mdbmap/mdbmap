@@ -492,8 +492,8 @@ const withOpenFlag = async (
 	return act(candidate);
 };
 
-// Clear a review flag: the low-confidence link stays published and visible, the row
-// leaves the queue. The graph is untouched — only the flag is resolved.
+// Clear a review flag: the low-confidence link stays published. Relation flags
+// deferred continuity formation at publish time, so clearing runs the upsert.
 const clearReviewFlag = async (
 	db: GatewayDb,
 	candidateId: number,
@@ -504,6 +504,33 @@ const clearReviewFlag = async (
 			.set({ status: "accepted" })
 			.where(eq(pendingGroupCandidates.id, candidate.id))
 			.run();
+		const { evidence } = candidate;
+		if (
+			evidence.kind === "low-confidence-flag" &&
+			evidence.target === "relation"
+		) {
+			const assertion = await db
+				.select({
+					id: relationAssertions.id,
+					source: relationAssertions.source,
+				})
+				.from(relationAssertions)
+				.where(
+					and(
+						eq(relationAssertions.fromTitleId, evidence.fromTitleId),
+						eq(relationAssertions.toTitleId, evidence.toTitleId),
+					),
+				)
+				.get();
+			if (assertion !== undefined) {
+				await upsertRelationContinuity(db, {
+					fromTitleId: evidence.fromTitleId,
+					relationAssertionId: assertion.id,
+					source: assertion.source,
+					toTitleId: evidence.toTitleId,
+				});
+			}
+		}
 		return { kind: "cleared" };
 	});
 

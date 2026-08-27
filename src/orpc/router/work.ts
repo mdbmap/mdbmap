@@ -5,7 +5,7 @@ import { episodeProgress, personalRating, watchStatus } from "@/db/schema";
 import type { ResolveResult } from "@/engine";
 import { metadataProviderFor } from "@/engine";
 import { parseContinuityKey } from "@/engine/continuity/keys";
-import { retiredContinuityKeys } from "@/engine/continuity/persist";
+import { trackingAliasKeys } from "@/engine/continuity/persist";
 import { pub } from "@/orpc/base";
 import type { Db } from "@/orpc/context";
 import { instalmentsOf } from "@/orpc/instalments";
@@ -31,12 +31,31 @@ const unitId = (unit: RateableUnit) => `${unit.kind}:${unit.key}`;
 const partKeyFor = (continuityId: string, index: number) =>
 	`part:${continuityId}:${index}`;
 
+const keyOwnsContinuity = (unitKey: string, continuityKey: string): boolean =>
+	unitKey === continuityKey || unitKey.startsWith(`part:${continuityKey}:`);
+
+const rewriteContinuityToken = (
+	unitKey: string,
+	from: string,
+	to: string,
+): string => {
+	if (unitKey === from) {
+		return to;
+	}
+	const prefix = `part:${from}:`;
+	if (unitKey.startsWith(prefix)) {
+		return `part:${to}:${unitKey.slice(prefix.length)}`;
+	}
+	return unitKey;
+};
+
 const loadViewerState = async (
 	db: Db,
 	userId: string,
 	locators: string[],
 	canonicalId: string,
 	requestedId: string,
+	aliasKeys: readonly string[],
 ): Promise<ViewerState> => {
 	const watchedSet = new Set<string>();
 	if (locators.length > 0) {
@@ -55,14 +74,7 @@ const loadViewerState = async (
 		}
 	}
 
-	const parsedCanonical = parseContinuityKey(canonicalId);
-	const retiredKeys =
-		parsedCanonical?.type === "continuity"
-			? await retiredContinuityKeys(db, parsedCanonical.id)
-			: [];
-	const continuityKeys = [
-		...new Set([canonicalId, requestedId, ...retiredKeys]),
-	];
+	const continuityKeys = [...new Set([canonicalId, requestedId, ...aliasKeys])];
 
 	const statusRows = await db
 		.select()
@@ -78,7 +90,7 @@ const loadViewerState = async (
 		statusRows.find((row) => row.continuityKey === canonicalId) ??
 		statusRows.find((row) => row.continuityKey === requestedId) ??
 		statusRows.find((row) =>
-			retiredKeys.some((key) => key === row.continuityKey),
+			aliasKeys.some((key) => key === row.continuityKey),
 		);
 
 	const personalByUnit = new Map<string, number>();
@@ -88,13 +100,13 @@ const loadViewerState = async (
 		.where(eq(personalRating.userId, userId))
 		.all();
 	const canonicalRank = (unitKey: string): number =>
-		unitKey.includes(canonicalId) ? 1 : 0;
+		keyOwnsContinuity(unitKey, canonicalId) ? 1 : 0;
 	const rewriteUnitKey = (unitKey: string): string => {
 		let next = unitKey;
-		for (const retired of retiredKeys) {
-			next = next.replaceAll(retired, canonicalId);
+		for (const from of aliasKeys) {
+			next = rewriteContinuityToken(next, from, canonicalId);
 		}
-		return next.replaceAll(requestedId, canonicalId);
+		return rewriteContinuityToken(next, requestedId, canonicalId);
 	};
 	for (const row of ratings.toSorted(
 		(left, right) => canonicalRank(left.unitKey) - canonicalRank(right.unitKey),
@@ -115,7 +127,7 @@ const buildParts = async (
 	providers: Providers,
 	db: Db,
 	continuityId: string,
-	requestedId: string,
+	aliasKeys: readonly string[],
 	viewer: ViewerState | undefined,
 ): Promise<PartView[]> =>
 	Promise.all(
@@ -145,15 +157,10 @@ const buildParts = async (
 					};
 				}),
 			);
-			const aliases =
-				requestedId === continuityId
-					? []
-					: [
-							{
-								key: partKeyFor(requestedId, index),
-								kind: "part" as const,
-							},
-						];
+			const aliases = aliasKeys.map((key) => ({
+				key: partKeyFor(key, index),
+				kind: "part" as const,
+			}));
 			const communityScore = await providers.community.scoreFor(
 				partUnit,
 				db,
@@ -189,6 +196,16 @@ const get = pub
 				metadataProviderFor(resolved.mediaKind)
 			].fetchWork(resolved);
 
+		const parsedCanonical = parseContinuityKey(continuityId);
+		const aliasKeys = [
+			...new Set([
+				...(parsedCanonical?.type === "continuity"
+					? await trackingAliasKeys(context.db, parsedCanonical.id)
+					: []),
+				...(requestedId === continuityId ? [] : [requestedId]),
+			]),
+		].filter((key) => key !== continuityId);
+
 		const { user } = context;
 		let viewerState: ViewerState | undefined;
 		if (user !== undefined) {
@@ -198,6 +215,7 @@ const get = pub
 				instalmentsOf(resolved),
 				continuityId,
 				requestedId,
+				aliasKeys,
 			);
 		}
 
@@ -218,7 +236,7 @@ const get = pub
 			context.providers,
 			context.db,
 			continuityId,
-			requestedId,
+			aliasKeys,
 			viewerState,
 		);
 
