@@ -16,6 +16,7 @@ import type {
 	CandidateSubject,
 	GroupSource,
 } from "@/db/engine-schema";
+import { ensureGroupContinuity } from "@/engine/continuity/persist";
 import { survivorGroupId } from "@/engine/gateway";
 import type { GatewayDb } from "@/engine/gateway";
 import { tierIds } from "@/engine/matcher";
@@ -456,13 +457,15 @@ const commitMerge = async (
 		);
 		return statements;
 	});
-	return acquired
-		? {
-				kind: "merged",
-				retiredIds: plan.retiredIds,
-				survivorId: plan.survivorId,
-			}
-		: { kind: "aborted" };
+	if (!acquired) {
+		return { kind: "aborted" };
+	}
+	await ensureGroupContinuity(db, plan.survivorId);
+	return {
+		kind: "merged",
+		retiredIds: plan.retiredIds,
+		survivorId: plan.survivorId,
+	};
 };
 
 // One stored member as a revalidation sees it: its title and the spokes it owns,
