@@ -1,17 +1,21 @@
-import { eq, inArray } from "drizzle-orm";
+import { asc, eq, inArray } from "drizzle-orm";
 
+import type { Db as GatewayDb } from "@/db";
 import {
+	continuities,
+	continuitySegments,
 	instalmentAssertions,
 	serviceInstalments,
 	serviceTitles,
-	titleGroups,
 } from "@/db/engine-schema";
 import type { InstalmentLocator } from "@/db/schema";
 
-import type { Db as GatewayDb } from "@/db";
-
+import { continuityKey, parseContinuityKey } from "./continuity/keys.ts";
+import {
+	ensureGroupContinuity,
+	survivorContinuityId,
+} from "./continuity/persist.ts";
 import { toLocator } from "./gateway/keys.ts";
-import { survivorGroupId } from "./gateway/read.ts";
 import type {
 	EngineRead,
 	MediaKind,
@@ -19,12 +23,6 @@ import type {
 	ResolveResult,
 	Segment,
 } from "./seam.ts";
-import { metadataProviderFor } from "./seam.ts";
-
-// The EngineRead over the hub-and-spoke graph (ADR-0002). The continuity key names
-// a title group; its ordered spine (the metadata provider's own titles) gives the
-// segments, and every other service's member id aligns to a segment through the
-// content units they share — no group/spoke/unit internal crosses the seam.
 
 type TitleRow = typeof serviceTitles.$inferSelect;
 type UnitId = string;
@@ -35,17 +33,6 @@ const memberServices = ["anidb", "anilist", "mal", "tmdb"] as const;
 type MemberService = (typeof memberServices)[number];
 
 const animeServices = new Set<string>(["anidb", "anilist", "kitsu", "mal"]);
-
-const continuityPrefix = "group:";
-
-const parseGroupId = (continuityId: string): number | undefined => {
-	if (!continuityId.startsWith(continuityPrefix)) {
-		return undefined;
-	}
-	const raw = continuityId.slice(continuityPrefix.length);
-	const id = Number(raw);
-	return raw !== "" && Number.isInteger(id) ? id : undefined;
-};
 
 // TMDB spokes fold their movie/tv namespace into the stored id (keys.ts); the
 // seam publishes the bare numeric id the metadata provider expects.
@@ -63,8 +50,11 @@ const detectMediaKind = (titles: readonly TitleRow[]): MediaKind => {
 	if (titles.some((title) => animeServices.has(title.service))) {
 		return "anime";
 	}
-	const tmdb = titles.find((title) => title.service === "tmdb");
-	return tmdb?.serviceId.startsWith("movie:") === true ? "film" : "tv";
+	return titles.some(
+		(title) => title.service === "tmdb" && title.serviceId.startsWith("tv:"),
+	)
+		? "tv"
+		: "film";
 };
 
 const compareTitles = (left: TitleRow, right: TitleRow): number =>
@@ -139,7 +129,9 @@ const buildMembers = (
 	for (const service of memberServices) {
 		const candidates = byService.get(service);
 		const aligned =
-			candidates === undefined ? undefined : bestAligned(candidates, spineUnits);
+			candidates === undefined
+				? undefined
+				: bestAligned(candidates, spineUnits);
 		if (aligned !== undefined) {
 			members[service] = memberId(aligned);
 		}
@@ -201,43 +193,93 @@ const segmentLocators = async (
 	return locators;
 };
 
+const membersForSegment = (
+	graph: CandidateGraph,
+	title: TitleRow,
+): MemberTitles => {
+	const members = buildMembers(
+		graph.byService,
+		graph.unitsByTitle.get(title.id) ?? new Set(),
+	);
+	if (isMemberService(title.service)) {
+		members[title.service] = memberId(title);
+	}
+	return members;
+};
+
 const resolve = async (
 	db: GatewayDb,
-	continuityId: string,
+	requestedKey: string,
 ): Promise<ResolveResult> => {
-	const requested = parseGroupId(continuityId);
-	if (requested === undefined) {
-		throw new Error(`engine: malformed continuity ${continuityId}`);
+	const parsed = parseContinuityKey(requestedKey);
+	if (parsed === undefined) {
+		throw new Error(`engine: malformed continuity ${requestedKey}`);
 	}
-	const groupId = await survivorGroupId(db, requested);
-	const group = await db
+	const continuityId = await survivorContinuityId(
+		db,
+		parsed.type === "group"
+			? await ensureGroupContinuity(db, parsed.id)
+			: parsed.id,
+	);
+	const continuity = await db
+		.select({ id: continuities.id })
+		.from(continuities)
+		.where(eq(continuities.id, continuityId))
+		.get();
+	if (continuity === undefined) {
+		throw new Error(`engine: no continuity ${requestedKey}`);
+	}
+	const persistedSegments = await db
 		.select()
-		.from(titleGroups)
-		.where(eq(titleGroups.id, groupId))
+		.from(continuitySegments)
+		.where(eq(continuitySegments.continuityId, continuityId))
+		.orderBy(asc(continuitySegments.releaseOrdinal))
 		.all();
-	if (group.length === 0) {
-		throw new Error(`engine: no continuity ${continuityId}`);
+	if (persistedSegments.length === 0) {
+		throw new Error(`engine: continuity ${requestedKey} has no segments`);
 	}
+	const segmentTitles = await db
+		.select()
+		.from(serviceTitles)
+		.where(
+			inArray(
+				serviceTitles.id,
+				persistedSegments.map((segment) => segment.titleId),
+			),
+		)
+		.all();
+	const segmentTitleById = new Map(
+		segmentTitles.map((title) => [title.id, title]),
+	);
+	const groupIds = [...new Set(segmentTitles.map((title) => title.groupId))];
 	const titleRows = await db
 		.select()
 		.from(serviceTitles)
-		.where(eq(serviceTitles.groupId, groupId))
+		.where(inArray(serviceTitles.groupId, groupIds))
 		.all();
 	const titles = titleRows.toSorted(compareTitles);
 	const mediaKind = detectMediaKind(titles);
-	const provider = metadataProviderFor(mediaKind);
-	const spine = titles.filter((title) => title.service === provider);
-	if (spine.length === 0) {
-		throw new Error(`engine: continuity ${continuityId} has no ${provider} spine`);
-	}
-	const { byService, unitsByTitle } = await candidateGraph(db, titles);
+	const graph = await candidateGraph(db, titles);
 	const segments: Segment[] = await Promise.all(
-		spine.map(async (title): Promise<Segment> => ({
-			instalments: await segmentLocators(db, provider, title),
-			members: buildMembers(byService, unitsByTitle.get(title.id) ?? new Set()),
-		})),
+		persistedSegments.map(async (segment): Promise<Segment> => {
+			const title = segmentTitleById.get(segment.titleId);
+			if (title === undefined) {
+				throw new Error(
+					`engine: continuity ${requestedKey} has a missing segment`,
+				);
+			}
+			const segmentProvider = title.service;
+			return {
+				instalments:
+					segment.kind === "atomic"
+						? [`${segmentProvider}:${memberId(title)}#1`]
+						: await segmentLocators(db, segmentProvider, title),
+				kind: segment.kind,
+				members: membersForSegment(graph, title),
+			};
+		}),
 	);
-	return { mediaKind, segments };
+	return { continuityId: continuityKey(continuityId), mediaKind, segments };
 };
 
 const createEngine = (db: GatewayDb): EngineRead => ({

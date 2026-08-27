@@ -6,11 +6,13 @@ import {
 	candidateSubjectKey,
 	instalmentAssertions,
 	pendingGroupCandidates,
+	relationAssertions,
 	serviceTitles,
 	titleAssertions,
 	titleGroups,
 } from "@/db/engine-schema";
 import type { CandidateEvidence, CandidateSubject } from "@/db/engine-schema";
+import { upsertRelationContinuity } from "@/engine/continuity/persist";
 import {
 	acceptFuzzyCandidate,
 	commitMerge,
@@ -72,7 +74,9 @@ const rankedUnion = async (
 	db: GatewayDb,
 	survivorId: number,
 	retiredIds: readonly number[],
-): Promise<readonly { readonly ordinal: number; readonly titleId: number }[]> => {
+): Promise<
+	readonly { readonly ordinal: number; readonly titleId: number }[]
+> => {
 	const groupIds = [survivorId, ...retiredIds];
 	const rankOf = (groupId: number): number =>
 		groupId === survivorId ? 0 : retiredIds.indexOf(groupId) + 1;
@@ -108,7 +112,9 @@ const acceptStructural = async (
 		return { kind: "wrong-kind" };
 	}
 	const resolved = await Promise.all(
-		evidence.competingGroupIds.map(async (groupId) => survivorGroupId(db, groupId)),
+		evidence.competingGroupIds.map(async (groupId) =>
+			survivorGroupId(db, groupId),
+		),
 	);
 	const groupIds = [...new Set(resolved)].toSorted(ascending);
 	const [survivorId] = groupIds;
@@ -199,7 +205,9 @@ const rejectMembership = async (
 	}
 	if (candidate.kind === "fuzzy-group") {
 		const result = await rejectFuzzyCandidate(db, candidateId);
-		return result.kind === "rejected" ? { kind: "rejected" } : { kind: result.kind };
+		return result.kind === "rejected"
+			? { kind: "rejected" }
+			: { kind: result.kind };
 	}
 	if (candidate.kind === "structural") {
 		await db
@@ -327,7 +335,9 @@ const settleGateLost = async (
 		return { kind: "missing" };
 	}
 	// Still open after a lost gate: concurrent writer raced; leave the row for retry.
-	return current.status === "open" ? { kind: "collision" } : { kind: "not-open" };
+	return current.status === "open"
+		? { kind: "collision" }
+		: { kind: "not-open" };
 };
 
 // Settle a queued conflict. Accepting publishes the proposed side as a `manual`
@@ -386,35 +396,38 @@ const settleConflict = async (
 	if (insert.kind === "wrong-kind") {
 		return { kind: "wrong-kind" };
 	}
-	const { acquired, results } = await runAtomicBatch(db, (database, operationId) => {
-		const statements: PreparedBatch = [
-			database
-				.prepare(
-					`INSERT INTO atomic_write_gates (operation_id)
+	const { acquired, results } = await runAtomicBatch(
+		db,
+		(database, operationId) => {
+			const statements: PreparedBatch = [
+				database
+					.prepare(
+						`INSERT INTO atomic_write_gates (operation_id)
 						SELECT ? WHERE EXISTS (
 							SELECT 1 FROM pending_group_candidates
 							WHERE id = ? AND status = 'open'
 						)
 						RETURNING operation_id`,
-				)
-				.bind(operationId, input.candidateId),
-			database.prepare(insert.sql).bind(...insert.binds, operationId),
-			database
-				.prepare(
-					`UPDATE pending_group_candidates SET status = 'accepted'
+					)
+					.bind(operationId, input.candidateId),
+				database.prepare(insert.sql).bind(...insert.binds, operationId),
+				database
+					.prepare(
+						`UPDATE pending_group_candidates SET status = 'accepted'
 						WHERE id = ? AND status = 'open'
 						AND EXISTS (
 							SELECT 1 FROM atomic_write_gates WHERE operation_id = ?
 						)
 						AND changes() > 0`,
-				)
-				.bind(input.candidateId, operationId),
-			database
-				.prepare("DELETE FROM atomic_write_gates WHERE operation_id = ?")
-				.bind(operationId),
-		];
-		return statements;
-	});
+					)
+					.bind(input.candidateId, operationId),
+				database
+					.prepare("DELETE FROM atomic_write_gates WHERE operation_id = ?")
+					.bind(operationId),
+			];
+			return statements;
+		},
+	);
 	if (!acquired) {
 		return settleGateLost(db, input.candidateId);
 	}
@@ -425,6 +438,29 @@ const settleConflict = async (
 			: "collision";
 	if (write === "collision") {
 		return { kind: "collision" };
+	}
+	if (evidence.kind === "continuity-conflict") {
+		const relation = evidence.competingRelations[input.relationIndex ?? 0];
+		if (relation !== undefined) {
+			const assertion = await db
+				.select({ id: relationAssertions.id })
+				.from(relationAssertions)
+				.where(
+					and(
+						eq(relationAssertions.fromTitleId, relation.fromTitleId),
+						eq(relationAssertions.toTitleId, relation.toTitleId),
+					),
+				)
+				.get();
+			if (assertion !== undefined) {
+				await upsertRelationContinuity(db, {
+					fromTitleId: relation.fromTitleId,
+					relationAssertionId: assertion.id,
+					source: MANUAL,
+					toTitleId: relation.toTitleId,
+				});
+			}
+		}
 	}
 	return { kind: "settled" };
 };
@@ -456,8 +492,8 @@ const withOpenFlag = async (
 	return act(candidate);
 };
 
-// Clear a review flag: the low-confidence link stays published and visible, the row
-// leaves the queue. The graph is untouched — only the flag is resolved.
+// Clear a review flag: the low-confidence link stays published. Relation flags
+// deferred continuity formation at publish time, so clearing runs the upsert.
 const clearReviewFlag = async (
 	db: GatewayDb,
 	candidateId: number,
@@ -468,6 +504,33 @@ const clearReviewFlag = async (
 			.set({ status: "accepted" })
 			.where(eq(pendingGroupCandidates.id, candidate.id))
 			.run();
+		const { evidence } = candidate;
+		if (
+			evidence.kind === "low-confidence-flag" &&
+			evidence.target === "relation"
+		) {
+			const assertion = await db
+				.select({
+					id: relationAssertions.id,
+					source: relationAssertions.source,
+				})
+				.from(relationAssertions)
+				.where(
+					and(
+						eq(relationAssertions.fromTitleId, evidence.fromTitleId),
+						eq(relationAssertions.toTitleId, evidence.toTitleId),
+					),
+				)
+				.get();
+			if (assertion !== undefined) {
+				await upsertRelationContinuity(db, {
+					fromTitleId: evidence.fromTitleId,
+					relationAssertionId: assertion.id,
+					source: assertion.source,
+					toTitleId: evidence.toTitleId,
+				});
+			}
+		}
 		return { kind: "cleared" };
 	});
 
@@ -476,7 +539,8 @@ const clearReviewFlag = async (
 const keepReviewFlag = async (
 	db: GatewayDb,
 	candidateId: number,
-): Promise<FlagOutcome> => withOpenFlag(db, candidateId, () => ({ kind: "kept" }));
+): Promise<FlagOutcome> =>
+	withOpenFlag(db, candidateId, () => ({ kind: "kept" }));
 
 // --- Group-level fiats ------------------------------------------------------
 
@@ -492,7 +556,11 @@ const markAsMatched = async (
 ): Promise<MarkMatchedOutcome> => {
 	const survivor = await survivorGroupId(db, groupId);
 	const group = takeFirst(
-		await db.select().from(titleGroups).where(eq(titleGroups.id, survivor)).all(),
+		await db
+			.select()
+			.from(titleGroups)
+			.where(eq(titleGroups.id, survivor))
+			.all(),
 	);
 	if (group === undefined) {
 		return { kind: "missing" };
@@ -536,7 +604,9 @@ const manualPairing = async (
 	const statements: D1PreparedStatement[] = [];
 	if (minting) {
 		statements.push(
-			db.$client.prepare("INSERT INTO content_units (id) VALUES (?)").bind(unitId),
+			db.$client
+				.prepare("INSERT INTO content_units (id) VALUES (?)")
+				.bind(unitId),
 		);
 	}
 	for (const instalmentId of input.instalmentIds) {
@@ -631,7 +701,10 @@ const priorManualAssertion = async (
 			.select({ source: titleAssertions.source })
 			.from(titleAssertions)
 			.where(
-				and(eq(titleAssertions.titleAId, lowId), eq(titleAssertions.titleBId, highId)),
+				and(
+					eq(titleAssertions.titleAId, lowId),
+					eq(titleAssertions.titleBId, highId),
+				),
 			)
 			.all();
 		return rows.some((row) => row.source === MANUAL);

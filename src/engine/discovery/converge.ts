@@ -16,6 +16,7 @@ import type {
 	CandidateSubject,
 	GroupSource,
 } from "@/db/engine-schema";
+import { ensureGroupContinuity } from "@/engine/continuity/persist";
 import { survivorGroupId } from "@/engine/gateway";
 import type { GatewayDb } from "@/engine/gateway";
 import { tierIds } from "@/engine/matcher";
@@ -460,6 +461,7 @@ const commitMerge = async (
 	if (!acquired) {
 		return { kind: "aborted" };
 	}
+	await ensureGroupContinuity(db, plan.survivorId);
 	if (plan.retiredIds.length > 0) {
 		await reconcileCoveragesAfterMerge(db, {
 			retiredGroupIds: plan.retiredIds,

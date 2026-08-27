@@ -1,18 +1,26 @@
 import { createRouterClient } from "@orpc/server";
 import { describe, expect, it } from "vitest";
 
-import { episodeProgress, personalRating, user } from "@/db/schema";
+import {
+	episodeProgress,
+	personalRating,
+	user,
+	watchStatus,
+} from "@/db/schema";
 import { freshDb } from "@/db/test-helpers";
 import { createEngine } from "@/engine";
 import { seedSpyXFamily } from "@/engine/test-continuity";
-
 import type { ORPCContext } from "@/orpc/context";
 import { instalmentsOf } from "@/orpc/instalments";
+
 import { router } from "./index.ts";
 
 const seeded = async () => {
 	const db = await freshDb();
-	await db.insert(user).values({ email: "a@b.test", id: "user-1", name: "Ada" }).run();
+	await db
+		.insert(user)
+		.values({ email: "a@b.test", id: "user-1", name: "Ada" })
+		.run();
 	const { continuityId } = await seedSpyXFamily(db);
 	return { continuityId, db };
 };
@@ -29,8 +37,7 @@ const clientFor = (
 	createRouterClient(router, {
 		context: {
 			db,
-			resolveSession: () =>
-				userId === undefined ? undefined : { id: userId },
+			resolveSession: () => (userId === undefined ? undefined : { id: userId }),
 		} satisfies ORPCContext,
 	});
 
@@ -52,11 +59,15 @@ describe("tracking + work.get seam", () => {
 		);
 
 		expect(results.some((result) => result.status === "completed")).toBe(true);
-		expect(await db.select().from(episodeProgress).all()).toHaveLength(locators.length);
+		expect(await db.select().from(episodeProgress).all()).toHaveLength(
+			locators.length,
+		);
 
 		const view = await client.work.get({ continuityId });
 		expect(view.viewer?.status).toBe("completed");
-		expect(view.parts[0]?.episodes.every((episode) => episode.watched)).toBe(true);
+		expect(view.parts[0]?.episodes.every((episode) => episode.watched)).toBe(
+			true,
+		);
 	});
 
 	it("writes, clears, and range-checks a rating", async () => {
@@ -70,8 +81,40 @@ describe("tracking + work.get seam", () => {
 		await client.tracking.setRating({ unit });
 		expect(await db.select().from(personalRating).all()).toHaveLength(0);
 
-		await expect(client.tracking.setRating({ score: 11, unit })).rejects.toThrow();
-		await expect(client.tracking.setRating({ score: 0, unit })).rejects.toThrow();
+		await expect(
+			client.tracking.setRating({ score: 11, unit }),
+		).rejects.toThrow();
+		await expect(
+			client.tracking.setRating({ score: 0, unit }),
+		).rejects.toThrow();
+	});
+
+	it("reads legacy tracking through the canonical continuity", async () => {
+		const { continuityId: requestedId, db } = await seeded();
+		const resolved = await createEngine(db).resolveContinuity(requestedId);
+		const canonicalId = resolved.continuityId;
+		await db
+			.insert(watchStatus)
+			.values({
+				continuityKey: requestedId,
+				status: "watching",
+				userId: "user-1",
+			})
+			.run();
+		const client = clientFor(db, "user-1");
+
+		const legacy = await client.work.get({ continuityId: requestedId });
+		expect(legacy.continuityId).toBe(canonicalId);
+		expect(legacy.viewer?.status).toBe("watching");
+
+		await client.tracking.setStatus({
+			continuityId: requestedId,
+			status: "completed",
+		});
+		const canonical = await client.work.get({ continuityId: requestedId });
+		expect(canonical.viewer?.status).toBe("completed");
+		const rows = await db.select().from(watchStatus).all();
+		expect(rows.map((row) => row.continuityKey)).toContain(canonicalId);
 	});
 
 	it("serves metadata and ratings but no viewer when unauthenticated", async () => {
@@ -93,7 +136,9 @@ describe("tracking + work.get seam", () => {
 		expect(view.header.title).toBe("Spy × Family");
 		expect(view.parts[0]?.serviceRatings.length).toBeGreaterThan(0);
 		expect(view.parts[0]?.communityScore.count).toBeGreaterThan(0);
-		expect(view.parts[0]?.episodes.every((episode) => !episode.watched)).toBe(true);
+		expect(view.parts[0]?.episodes.every((episode) => !episode.watched)).toBe(
+			true,
+		);
 
 		await expect(
 			client.tracking.setStatus({ continuityId, status: "watching" }),

@@ -4,6 +4,8 @@ import type { WatchStatus } from "@/db/schema";
 import { episodeProgress, personalRating, watchStatus } from "@/db/schema";
 import type { ResolveResult } from "@/engine";
 import { metadataProviderFor } from "@/engine";
+import { parseContinuityKey } from "@/engine/continuity/keys";
+import { trackingAliasKeys } from "@/engine/continuity/persist";
 import { pub } from "@/orpc/base";
 import type { Db } from "@/orpc/context";
 import { instalmentsOf } from "@/orpc/instalments";
@@ -19,7 +21,9 @@ import { WorkGetInput } from "@/orpc/schema";
 
 interface ViewerState {
 	personalByUnit: Map<string, number>;
-	statusRow: { rewatchCount: number; status: WatchStatus | undefined } | undefined;
+	statusRow:
+		| { rewatchCount: number; status: WatchStatus | undefined }
+		| undefined;
 	watchedSet: Set<string>;
 }
 
@@ -27,11 +31,31 @@ const unitId = (unit: RateableUnit) => `${unit.kind}:${unit.key}`;
 const partKeyFor = (continuityId: string, index: number) =>
 	`part:${continuityId}:${index}`;
 
+const keyOwnsContinuity = (unitKey: string, continuityKey: string): boolean =>
+	unitKey === continuityKey || unitKey.startsWith(`part:${continuityKey}:`);
+
+const rewriteContinuityToken = (
+	unitKey: string,
+	from: string,
+	to: string,
+): string => {
+	if (unitKey === from) {
+		return to;
+	}
+	const prefix = `part:${from}:`;
+	if (unitKey.startsWith(prefix)) {
+		return `part:${to}:${unitKey.slice(prefix.length)}`;
+	}
+	return unitKey;
+};
+
 const loadViewerState = async (
 	db: Db,
 	userId: string,
 	locators: string[],
-	continuityId: string,
+	canonicalId: string,
+	requestedId: string,
+	aliasKeys: readonly string[],
 ): Promise<ViewerState> => {
 	const watchedSet = new Set<string>();
 	if (locators.length > 0) {
@@ -50,16 +74,24 @@ const loadViewerState = async (
 		}
 	}
 
-	const statusRow = await db
+	const continuityKeys = [...new Set([canonicalId, requestedId, ...aliasKeys])];
+
+	const statusRows = await db
 		.select()
 		.from(watchStatus)
 		.where(
 			and(
 				eq(watchStatus.userId, userId),
-				eq(watchStatus.continuityKey, continuityId),
+				inArray(watchStatus.continuityKey, continuityKeys),
 			),
 		)
-		.get();
+		.all();
+	const statusRow =
+		statusRows.find((row) => row.continuityKey === canonicalId) ??
+		statusRows.find((row) => row.continuityKey === requestedId) ??
+		statusRows.find((row) =>
+			aliasKeys.some((key) => key === row.continuityKey),
+		);
 
 	const personalByUnit = new Map<string, number>();
 	const ratings = await db
@@ -67,8 +99,23 @@ const loadViewerState = async (
 		.from(personalRating)
 		.where(eq(personalRating.userId, userId))
 		.all();
-	for (const row of ratings) {
-		personalByUnit.set(`${row.unitKind}:${row.unitKey}`, row.score);
+	const canonicalRank = (unitKey: string): number =>
+		keyOwnsContinuity(unitKey, canonicalId) ? 1 : 0;
+	const rewriteUnitKey = (unitKey: string): string => {
+		let next = unitKey;
+		for (const from of aliasKeys) {
+			next = rewriteContinuityToken(next, from, canonicalId);
+		}
+		return rewriteContinuityToken(next, requestedId, canonicalId);
+	};
+	for (const row of ratings.toSorted(
+		(left, right) => canonicalRank(left.unitKey) - canonicalRank(right.unitKey),
+	)) {
+		const canonicalUnitKey =
+			row.unitKind === "work" || row.unitKind === "part"
+				? rewriteUnitKey(row.unitKey)
+				: row.unitKey;
+		personalByUnit.set(`${row.unitKind}:${canonicalUnitKey}`, row.score);
 	}
 
 	return { personalByUnit, statusRow, watchedSet };
@@ -80,6 +127,7 @@ const buildParts = async (
 	providers: Providers,
 	db: Db,
 	continuityId: string,
+	aliasKeys: readonly string[],
 	viewer: ViewerState | undefined,
 ): Promise<PartView[]> =>
 	Promise.all(
@@ -109,7 +157,15 @@ const buildParts = async (
 					};
 				}),
 			);
-			const communityScore = await providers.community.scoreFor(partUnit, db);
+			const aliases = aliasKeys.map((key) => ({
+				key: partKeyFor(key, index),
+				kind: "part" as const,
+			}));
+			const communityScore = await providers.community.scoreFor(
+				partUnit,
+				db,
+				aliases,
+			);
 			const ratings = await providers.serviceRatings.ratingsFor(
 				partUnit,
 				segment.members,
@@ -129,63 +185,80 @@ const buildParts = async (
 		}),
 	);
 
-const get = pub.input(WorkGetInput).handler(async ({ context, input }): Promise<WorkView> => {
-	const { continuityId } = input;
-	const resolved = await context.engine.resolveContinuity(continuityId);
-	const meta = await context.providers.metadata[
-		metadataProviderFor(resolved.mediaKind)
-	].fetchWork(resolved);
+const get = pub
+	.input(WorkGetInput)
+	.handler(async ({ context, input }): Promise<WorkView> => {
+		const requestedId = input.continuityId;
+		const resolved = await context.engine.resolveContinuity(requestedId);
+		const { continuityId } = resolved;
+		const meta =
+			await context.providers.metadata[
+				metadataProviderFor(resolved.mediaKind)
+			].fetchWork(resolved);
 
-	const { user } = context;
-	let viewerState: ViewerState | undefined;
-	if (user !== undefined) {
-		viewerState = await loadViewerState(
+		const parsedCanonical = parseContinuityKey(continuityId);
+		const aliasKeys = [
+			...new Set([
+				...(parsedCanonical?.type === "continuity"
+					? await trackingAliasKeys(context.db, parsedCanonical.id)
+					: []),
+				...(requestedId === continuityId ? [] : [requestedId]),
+			]),
+		].filter((key) => key !== continuityId);
+
+		const { user } = context;
+		let viewerState: ViewerState | undefined;
+		if (user !== undefined) {
+			viewerState = await loadViewerState(
+				context.db,
+				user.id,
+				instalmentsOf(resolved),
+				continuityId,
+				requestedId,
+				aliasKeys,
+			);
+		}
+
+		let viewer: ViewerTracking | undefined;
+		if (viewerState !== undefined) {
+			const workUnit: RateableUnit = { key: continuityId, kind: "work" };
+			viewer = {
+				personalRating: viewerState.personalByUnit.get(unitId(workUnit)),
+				rewatchCount: viewerState.statusRow?.rewatchCount ?? 0,
+				status: viewerState.statusRow?.status,
+				watched: [...viewerState.watchedSet],
+			};
+		}
+
+		const parts = await buildParts(
+			resolved,
+			meta,
+			context.providers,
 			context.db,
-			user.id,
-			instalmentsOf(resolved),
 			continuityId,
+			aliasKeys,
+			viewerState,
 		);
-	}
 
-	let viewer: ViewerTracking | undefined;
-	if (viewerState !== undefined) {
-		const workUnit: RateableUnit = { key: continuityId, kind: "work" };
-		viewer = {
-			personalRating: viewerState.personalByUnit.get(unitId(workUnit)),
-			rewatchCount: viewerState.statusRow?.rewatchCount ?? 0,
-			status: viewerState.statusRow?.status,
-			watched: [...viewerState.watchedSet],
+		return {
+			cast: [...meta.cast],
+			continuityId,
+			header: {
+				backdropRef: meta.backdropRef,
+				coverRef: meta.coverRef,
+				nativeTitle: meta.nativeTitle,
+				span: meta.span,
+				synopsis: meta.synopsis,
+				title: meta.title,
+			},
+			ifYouLiked: [...meta.ifYouLiked],
+			mediaKind: resolved.mediaKind,
+			parts,
+			staff: [...meta.staff],
+			studios: [...meta.studios],
+			viewer,
 		};
-	}
-
-	const parts = await buildParts(
-		resolved,
-		meta,
-		context.providers,
-		context.db,
-		continuityId,
-		viewerState,
-	);
-
-	return {
-		cast: [...meta.cast],
-		continuityId,
-		header: {
-			backdropRef: meta.backdropRef,
-			coverRef: meta.coverRef,
-			nativeTitle: meta.nativeTitle,
-			span: meta.span,
-			synopsis: meta.synopsis,
-			title: meta.title,
-		},
-		ifYouLiked: [...meta.ifYouLiked],
-		mediaKind: resolved.mediaKind,
-		parts,
-		staff: [...meta.staff],
-		studios: [...meta.studios],
-		viewer,
-	};
-});
+	});
 
 const work = { get };
 

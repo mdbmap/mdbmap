@@ -48,7 +48,9 @@ interface MetadataProvider {
 	fetchWork: (resolved: ResolveResult) => Promise<WorkMetadata>;
 }
 
-type MetadataRegistry = Readonly<Record<MetadataProviderKind, MetadataProvider>>;
+type MetadataRegistry = Readonly<
+	Record<MetadataProviderKind, MetadataProvider>
+>;
 
 // External per-service ratings, never merged (#7). Keyed by rateable unit and
 // driven by the unit's resolved member ids. Async because the live per-service
@@ -64,7 +66,11 @@ interface ServiceRatingsProvider {
 // mdbmap's own mean + count over personal ratings (#8). Async because it
 // queries D1; the request-scoped db is threaded in at the call site.
 interface CommunityScoreProvider {
-	scoreFor: (unit: RateableUnit, db: Db) => Promise<CommunityScore>;
+	scoreFor: (
+		unit: RateableUnit,
+		db: Db,
+		aliases?: readonly RateableUnit[],
+	) => Promise<CommunityScore>;
 }
 
 interface Providers {

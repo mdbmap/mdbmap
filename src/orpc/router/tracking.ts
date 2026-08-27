@@ -8,6 +8,7 @@ import type { Db } from "@/orpc/context";
 import { instalmentsOf } from "@/orpc/instalments";
 import type {
 	EpisodeWatchedResult,
+	RateableUnit,
 	RatingResult,
 	TrackingSummary,
 } from "@/orpc/schema";
@@ -59,19 +60,57 @@ const readSummary = async (db: Db, userId: string, continuityKey: string) =>
 		)
 		.get();
 
+const canonicalContinuityId = async (
+	engine: EngineRead,
+	requestedId: string,
+): Promise<string> => {
+	const resolved = await engine.resolveContinuity(requestedId);
+	return resolved.continuityId;
+};
+
+const canonicalRateableUnit = async (
+	engine: EngineRead,
+	unit: RateableUnit,
+): Promise<RateableUnit> => {
+	if (unit.kind === "work") {
+		return {
+			key: await canonicalContinuityId(engine, unit.key),
+			kind: unit.kind,
+		};
+	}
+	if (unit.kind === "part") {
+		const match =
+			/^part:(?<requestedId>(?:continuity|group):\d+):(?<index>\d+)$/u.exec(
+				unit.key,
+			);
+		if (match !== null) {
+			const { index, requestedId } = match.groups ?? {};
+			if (requestedId !== undefined && index !== undefined) {
+				const canonicalId = await canonicalContinuityId(engine, requestedId);
+				return { key: `part:${canonicalId}:${index}`, kind: unit.kind };
+			}
+		}
+	}
+	return unit;
+};
+
 const setStatus = authed
 	.input(SetStatusInput)
 	.handler(async ({ context, input }): Promise<TrackingSummary> => {
 		const userId = context.user.id;
+		const continuityId = await canonicalContinuityId(
+			context.engine,
+			input.continuityId,
+		);
 		await context.db
 			.insert(watchStatus)
-			.values({ continuityKey: input.continuityId, status: input.status, userId })
+			.values({ continuityKey: continuityId, status: input.status, userId })
 			.onConflictDoUpdate({
 				set: { status: input.status },
 				target: [watchStatus.userId, watchStatus.continuityKey],
 			})
 			.run();
-		const row = await readSummary(context.db, userId, input.continuityId);
+		const row = await readSummary(context.db, userId, continuityId);
 		return {
 			rewatchCount: row?.rewatchCount ?? 0,
 			status: row?.status ?? input.status,
@@ -82,10 +121,14 @@ const setRewatch = authed
 	.input(SetRewatchInput)
 	.handler(async ({ context, input }): Promise<TrackingSummary> => {
 		const userId = context.user.id;
+		const continuityId = await canonicalContinuityId(
+			context.engine,
+			input.continuityId,
+		);
 		await context.db
 			.insert(watchStatus)
 			.values({
-				continuityKey: input.continuityId,
+				continuityKey: continuityId,
 				rewatchCount: input.count,
 				status: "watching",
 				userId,
@@ -95,7 +138,7 @@ const setRewatch = authed
 				target: [watchStatus.userId, watchStatus.continuityKey],
 			})
 			.run();
-		const row = await readSummary(context.db, userId, input.continuityId);
+		const row = await readSummary(context.db, userId, continuityId);
 		return {
 			rewatchCount: row?.rewatchCount ?? input.count,
 			status: row?.status,
@@ -106,33 +149,41 @@ const setEpisodeWatched = authed
 	.input(SetEpisodeWatchedInput)
 	.handler(async ({ context, input }): Promise<EpisodeWatchedResult> => {
 		const userId = context.user.id;
-		await (input.watched
-			? context.db
-					.insert(episodeProgress)
-					.values({ instalmentLocator: input.instalmentLocator, userId })
-					.onConflictDoNothing({
-						target: [episodeProgress.userId, episodeProgress.instalmentLocator],
-					})
-			: context.db
-					.delete(episodeProgress)
-					.where(
-						and(
-							eq(episodeProgress.userId, userId),
-							eq(episodeProgress.instalmentLocator, input.instalmentLocator),
-						),
-					)
+		const continuityId = await canonicalContinuityId(
+			context.engine,
+			input.continuityId,
+		);
+		await (
+			input.watched
+				? context.db
+						.insert(episodeProgress)
+						.values({ instalmentLocator: input.instalmentLocator, userId })
+						.onConflictDoNothing({
+							target: [
+								episodeProgress.userId,
+								episodeProgress.instalmentLocator,
+							],
+						})
+				: context.db
+						.delete(episodeProgress)
+						.where(
+							and(
+								eq(episodeProgress.userId, userId),
+								eq(episodeProgress.instalmentLocator, input.instalmentLocator),
+							),
+						)
 		).run();
 
 		const derived = await deriveWholeSeriesStatus(
 			context.db,
 			context.engine,
 			userId,
-			input.continuityId,
+			continuityId,
 		);
 
 		await context.db
 			.insert(watchStatus)
-			.values({ continuityKey: input.continuityId, status: derived.status, userId })
+			.values({ continuityKey: continuityId, status: derived.status, userId })
 			.onConflictDoUpdate({
 				set: { status: derived.status },
 				target: [watchStatus.userId, watchStatus.continuityKey],
@@ -146,34 +197,36 @@ const setRating = authed
 	.input(SetRatingInput)
 	.handler(async ({ context, input }): Promise<RatingResult> => {
 		const userId = context.user.id;
-		await (input.score === undefined
-			? context.db
-					.delete(personalRating)
-					.where(
-						and(
-							eq(personalRating.userId, userId),
-							eq(personalRating.unitKind, input.unit.kind),
-							eq(personalRating.unitKey, input.unit.key),
-						),
-					)
-			: context.db
-					.insert(personalRating)
-					.values({
-						score: input.score,
-						unitKey: input.unit.key,
-						unitKind: input.unit.kind,
-						userId,
-					})
-					.onConflictDoUpdate({
-						set: { score: input.score },
-						target: [
-							personalRating.userId,
-							personalRating.unitKind,
-							personalRating.unitKey,
-						],
-					})
+		const unit = await canonicalRateableUnit(context.engine, input.unit);
+		await (
+			input.score === undefined
+				? context.db
+						.delete(personalRating)
+						.where(
+							and(
+								eq(personalRating.userId, userId),
+								eq(personalRating.unitKind, unit.kind),
+								eq(personalRating.unitKey, unit.key),
+							),
+						)
+				: context.db
+						.insert(personalRating)
+						.values({
+							score: input.score,
+							unitKey: unit.key,
+							unitKind: unit.kind,
+							userId,
+						})
+						.onConflictDoUpdate({
+							set: { score: input.score },
+							target: [
+								personalRating.userId,
+								personalRating.unitKind,
+								personalRating.unitKey,
+							],
+						})
 		).run();
-		return { score: input.score, unit: input.unit };
+		return { score: input.score, unit };
 	});
 
 const tracking = { setEpisodeWatched, setRating, setRewatch, setStatus };

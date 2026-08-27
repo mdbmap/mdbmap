@@ -18,6 +18,7 @@ import {
 	serviceTitles,
 	titleAssertions,
 } from "@/db/engine-schema";
+import { upsertRelationContinuity } from "@/engine/continuity/persist";
 import type { ReviewProposal } from "@/engine/reviewer";
 
 import { RESEARCH } from "./assertions.ts";
@@ -281,6 +282,27 @@ const existingRelationAssertion = async (
 	return existing[0];
 };
 
+const ensureRelationContinuity = async (
+	db: Db,
+	input: {
+		readonly assertionId: number;
+		readonly fromTitleId: number;
+		readonly reviewFlag: "low-confidence-flag" | undefined;
+		readonly source: AssertionSource;
+		readonly toTitleId: number;
+	},
+): Promise<void> => {
+	if (input.reviewFlag !== undefined) {
+		return;
+	}
+	await upsertRelationContinuity(db, {
+		fromTitleId: input.fromTitleId,
+		relationAssertionId: input.assertionId,
+		source: input.source,
+		toTitleId: input.toTitleId,
+	});
+};
+
 const endpointConflicts = async (
 	db: Db,
 	fromTitleId: number,
@@ -453,6 +475,13 @@ const publishRelationProposal = async (
 			fromTitleId,
 			toTitleId,
 		});
+		await ensureRelationContinuity(db, {
+			assertionId: exact.id,
+			fromTitleId,
+			reviewFlag: decision.reviewFlag,
+			source: exact.source,
+			toTitleId,
+		});
 		return publishedResult(proposal, exact.id, decision);
 	}
 
@@ -492,6 +521,13 @@ const publishRelationProposal = async (
 				fromTitleId,
 				toTitleId,
 			});
+			await ensureRelationContinuity(db, {
+				assertionId: racedExact.id,
+				fromTitleId,
+				reviewFlag: decision.reviewFlag,
+				source: racedExact.source,
+				toTitleId,
+			});
 			return publishedResult(proposal, racedExact.id, decision);
 		}
 		const raced = await endpointConflicts(db, fromTitleId, toTitleId);
@@ -510,6 +546,13 @@ const publishRelationProposal = async (
 			toTitleId,
 		});
 	}
+	await ensureRelationContinuity(db, {
+		assertionId,
+		fromTitleId,
+		reviewFlag: decision.reviewFlag,
+		source: RESEARCH,
+		toTitleId,
+	});
 
 	return publishedResult(proposal, assertionId, decision);
 };
