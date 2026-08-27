@@ -171,6 +171,7 @@ interface MovieRateableUnit {
 }
 
 interface PartView {
+	airDate?: string | undefined;
 	airedFrom: string | undefined;
 	airedTo: string | undefined;
 	communityScore: CommunityScore;
@@ -181,6 +182,7 @@ interface PartView {
 	personalRating: number | undefined;
 	rateableUnit: RateableUnit;
 	serviceRatings: ServiceRating[];
+	watched?: boolean;
 	year: number | undefined;
 }
 
