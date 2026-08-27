@@ -1,4 +1,4 @@
-import { and, eq } from "drizzle-orm";
+import { and, eq, inArray } from "drizzle-orm";
 
 import type { Db as CoverageDb } from "@/db";
 import { serviceCoverages } from "@/db/engine-schema";
@@ -101,9 +101,68 @@ const coverageStatesFor = async (
 	return new Map(rows.map((row) => [row.targetService, row.state]));
 };
 
+interface MergeCoverageInput {
+	readonly retiredGroupIds: readonly number[];
+	readonly survivorGroupId: number;
+}
+
+const groupCoverageKey = (groupId: number): ContinuityKey => `group:${groupId}`;
+
+// After converge retires loser groups, coverage rows keyed by those group
+// continuities would orphan. Do not rename into the survivor (UNIQUE collisions).
+// Delete retired keys and seed a fresh pending revision under the survivor so
+// overflow rebuilds coverage for every service that had any prior row.
+const reconcileCoveragesAfterMerge = async (
+	db: CoverageDb,
+	input: MergeCoverageInput,
+): Promise<void> => {
+	if (input.retiredGroupIds.length === 0) {
+		return;
+	}
+	const survivorKey = groupCoverageKey(input.survivorGroupId);
+	const retiredKeys = input.retiredGroupIds.map(groupCoverageKey);
+	const rows = await db
+		.select()
+		.from(serviceCoverages)
+		.where(
+			inArray(serviceCoverages.baselineContinuity, [
+				survivorKey,
+				...retiredKeys,
+			]),
+		)
+		.all();
+	if (rows.length === 0) {
+		return;
+	}
+	await db
+		.delete(serviceCoverages)
+		.where(inArray(serviceCoverages.baselineContinuity, retiredKeys))
+		.run();
+	const maxRevisionByService = new Map<Service, number>();
+	for (const row of rows) {
+		const service = (
+			["anilist", "imdb", "kitsu", "mal", "tmdb", "tvdb"] as const
+		).find((candidate) => candidate === row.targetService);
+		if (service === undefined) {
+			continue;
+		}
+		const previous = maxRevisionByService.get(service) ?? 0;
+		if (row.revision > previous) {
+			maxRevisionByService.set(service, row.revision);
+		}
+	}
+	await Promise.all(
+		[...maxRevisionByService].map(async ([service, maxRevision]) =>
+			seedPendingCoverage(db, survivorKey, maxRevision + 1, service),
+		),
+	);
+};
+
 export {
 	completeCoverage,
 	coverageStateFor,
 	coverageStatesFor,
+	reconcileCoveragesAfterMerge,
 	seedPendingCoverage,
 };
+export type { MergeCoverageInput };
