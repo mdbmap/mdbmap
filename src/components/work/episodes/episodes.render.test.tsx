@@ -89,7 +89,7 @@ const renderOrdered = (orders: readonly PresentationOrderSlug[]) =>
 
 describe("Episodes", () => {
 	afterEach(() => {
-		usePartSelectionStore.setState({ selectedIndex: undefined });
+		usePartSelectionStore.setState({ selectedKey: undefined });
 	});
 
 	it("shows the selected part's episode list with a watched control", () => {
@@ -102,10 +102,10 @@ describe("Episodes", () => {
 	});
 
 	it("resolves a chosen part index to that part's episodes", () => {
-		usePartSelectionStore.getState().selectPart(0);
+		usePartSelectionStore.getState().selectKey(partOne.rateableUnit.key);
 		const index = resolveSelectedIndex(
-			usePartSelectionStore.getState().selectedIndex,
-			parts.length,
+			usePartSelectionStore.getState().selectedKey,
+			parts,
 		);
 		expect(index).toBe(0);
 		const html = renderToStaticMarkup(
@@ -118,7 +118,7 @@ describe("Episodes", () => {
 
 describe("Episodes films", () => {
 	afterEach(() => {
-		usePartSelectionStore.setState({ selectedIndex: undefined });
+		usePartSelectionStore.setState({ selectedKey: undefined });
 	});
 
 	it("shows a film in the selector and a watched control on its row", () => {
@@ -148,5 +148,21 @@ describe("Episodes films", () => {
 		expect(html).toContain("Part 1");
 		expect(html).toContain("Operation Strix");
 		expect(html).toContain('aria-label="Mark episode 01 watched"');
+	});
+
+	it("keeps the selected part when block order changes", () => {
+		usePartSelectionStore.getState().selectKey(partOne.rateableUnit.key);
+		expect(
+			resolveSelectedIndex(
+				usePartSelectionStore.getState().selectedKey,
+				courThenFilm,
+			),
+		).toBe(0);
+		expect(
+			resolveSelectedIndex(
+				usePartSelectionStore.getState().selectedKey,
+				filmThenCour,
+			),
+		).toBe(1);
 	});
 });

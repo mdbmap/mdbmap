@@ -1,22 +1,53 @@
 import { describe, expect, it } from "vitest";
 
+import type { EpisodeView, PartView, WorkBlock } from "@/orpc/schema";
+
 import { resolveSelectedIndex, workGetInput } from "./part-state";
+
+const emptyScore = { count: 0, mean: undefined };
+
+const episode = (locator: string): EpisodeView => ({
+	airDate: "2022-04-09",
+	communityScore: emptyScore,
+	instalmentLocator: locator,
+	number: 1,
+	personalRating: undefined,
+	rateableUnit: { key: `episode:${locator}`, kind: "episode" },
+	title: locator,
+	watched: false,
+});
+
+const part = (key: string): PartView => ({
+	airedFrom: undefined,
+	airedTo: undefined,
+	communityScore: emptyScore,
+	episodeCount: 1,
+	episodes: [episode(`${key}:1`)],
+	kind: "part",
+	label: key,
+	personalRating: undefined,
+	rateableUnit: { key, kind: "part" },
+	serviceRatings: [],
+	year: 2022,
+});
+
+const blocks = (...keys: string[]): WorkBlock[] => keys.map((key) => part(key));
 
 describe("resolveSelectedIndex", () => {
 	it("defaults an untouched selection to the last part", () => {
-		expect(resolveSelectedIndex(undefined, 3)).toBe(2);
+		expect(resolveSelectedIndex(undefined, blocks("a", "b", "c"))).toBe(2);
 	});
 
 	it("keeps an explicit in-range selection", () => {
-		expect(resolveSelectedIndex(1, 3)).toBe(1);
+		expect(resolveSelectedIndex("b", blocks("a", "b", "c"))).toBe(1);
 	});
 
-	it("clamps a selection carried over from a longer work", () => {
-		expect(resolveSelectedIndex(4, 2)).toBe(1);
+	it("falls back to the last part when the stored key is absent", () => {
+		expect(resolveSelectedIndex("missing", blocks("a", "b"))).toBe(1);
 	});
 
 	it("stays at zero when there are no parts", () => {
-		expect(resolveSelectedIndex(undefined, 0)).toBe(0);
+		expect(resolveSelectedIndex(undefined, [])).toBe(0);
 	});
 });
 

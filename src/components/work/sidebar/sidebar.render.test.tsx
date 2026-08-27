@@ -95,7 +95,7 @@ describe("YouBlock", () => {
 
 describe("PartPanel", () => {
 	afterEach(() => {
-		usePartSelectionStore.setState({ selectedIndex: undefined });
+		usePartSelectionStore.setState({ selectedKey: undefined });
 	});
 
 	it("renders the selected part's three rating layers as separate values", () => {
