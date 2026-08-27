@@ -8,6 +8,7 @@ import {
 	seedMonogatari,
 } from "@/engine/test-continuity";
 import type { ORPCContext, SessionUser } from "@/orpc/context";
+import type { WorkBlock } from "@/orpc/schema";
 
 import { router } from "./index.ts";
 
@@ -22,9 +23,11 @@ const clientFor = (
 		} satisfies ORPCContext,
 	});
 
-const locatorsOf = (parts: { episodes: { instalmentLocator: string }[] }[]) =>
+const locatorsOf = (parts: WorkBlock[]) =>
 	parts.flatMap((part) =>
-		part.episodes.map((episode) => episode.instalmentLocator),
+		part.kind === "film"
+			? [part.instalmentLocator]
+			: part.episodes.map((episode) => episode.instalmentLocator),
 	);
 
 describe("work.get franchise fixtures", () => {
@@ -62,8 +65,8 @@ describe("work.get franchise fixtures", () => {
 			view.parts[0]?.episodes.map((episode) => episode.instalmentLocator),
 		).toEqual(["anidb:9101#1", "anidb:9101#2"]);
 		expect(
-			view.parts[1]?.episodes.map((episode) => episode.instalmentLocator),
-		).toEqual(["anidb:9102#1"]);
+			view.parts[1]?.kind === "film" ? view.parts[1].instalmentLocator : "",
+		).toBe("anidb:9102#1");
 	});
 
 	it("Monogatari watch order is Kizu then Bake then Nise", async () => {

@@ -1,41 +1,73 @@
+import { useCallback } from "react";
 import { create } from "zustand";
 
-import type { PartView } from "@/orpc/schema";
+import type { PresentationOrderSlug } from "@/db/engine-schema";
+import type { WorkBlock } from "@/orpc/schema";
 
 // Selected part is shared across subtrees: the Episodes list (#11) drives it and
 // the sidebar This-part panel (#13) reads it. A store keeps the two in sync with
 // no provider. `undefined` means "untouched" and resolves to the last part, so
 // the server and the first client render agree without an effect.
 interface PartSelectionStore {
-	selectPart: (index: number) => void;
-	selectedIndex: number | undefined;
+	selectKey: (key: string) => void;
+	selectedKey: string | undefined;
 }
 
 const usePartSelectionStore = create<PartSelectionStore>((set) => ({
-	selectPart: (index) => {
-		set({ selectedIndex: index });
+	selectKey: (key) => {
+		set({ selectedKey: key });
 	},
-	selectedIndex: undefined,
+	selectedKey: undefined,
 }));
 
 interface SelectedPart {
 	selectPart: (index: number) => void;
 	selectedIndex: number;
-	selectedPart: PartView | undefined;
+	selectedPart: WorkBlock | undefined;
 }
 
-// `undefined` resolves to the last part (newest cour); an explicit choice is
-// clamped so a selection carried over from a longer work never points past the end.
-function resolveSelectedIndex(stored: number | undefined, partCount: number): number {
-	const lastIndex = Math.max(0, partCount - 1);
-	return stored === undefined ? lastIndex : Math.min(Math.max(stored, 0), lastIndex);
+// `undefined` resolves to the last block; an explicit key is kept across order
+// changes and falls back to the last block when the key is absent from the list.
+function resolveSelectedIndex(
+	storedKey: string | undefined,
+	parts: WorkBlock[],
+): number {
+	if (parts.length === 0) {
+		return 0;
+	}
+	if (storedKey !== undefined) {
+		const index = parts.findIndex(
+			(part) => part.rateableUnit.key === storedKey,
+		);
+		if (index !== -1) {
+			return index;
+		}
+	}
+	return parts.length - 1;
 }
 
-function useSelectedPart(parts: PartView[]): SelectedPart {
-	const stored = usePartSelectionStore((state) => state.selectedIndex);
-	const selectPart = usePartSelectionStore((state) => state.selectPart);
-	const selectedIndex = resolveSelectedIndex(stored, parts.length);
+const workGetInput = (continuityId: string, order?: PresentationOrderSlug) =>
+	order === undefined ? { continuityId } : { continuityId, order };
+
+function useSelectedPart(parts: WorkBlock[]): SelectedPart {
+	const storedKey = usePartSelectionStore((state) => state.selectedKey);
+	const selectKey = usePartSelectionStore((state) => state.selectKey);
+	const selectPart = useCallback(
+		(index: number) => {
+			const part = parts[index];
+			if (part !== undefined) {
+				selectKey(part.rateableUnit.key);
+			}
+		},
+		[parts, selectKey],
+	);
+	const selectedIndex = resolveSelectedIndex(storedKey, parts);
 	return { selectPart, selectedIndex, selectedPart: parts[selectedIndex] };
 }
 
-export { resolveSelectedIndex, usePartSelectionStore, useSelectedPart };
+export {
+	resolveSelectedIndex,
+	usePartSelectionStore,
+	useSelectedPart,
+	workGetInput,
+};

@@ -12,6 +12,7 @@ const part = (key: string): PartView => ({
 	communityScore: emptyScore,
 	episodeCount: 1,
 	episodes: [],
+	kind: "part",
 	label: "Part 1",
 	personalRating: undefined,
 	rateableUnit: { key, kind: "part" },
@@ -68,12 +69,20 @@ describe("applyRating", () => {
 
 	it("clears a work score when the score is undefined", () => {
 		const rated = applyRating(work(), { key: "continuity:x", kind: "work" }, 8);
-		const cleared = applyRating(rated, { key: "continuity:x", kind: "work" }, undefined);
+		const cleared = applyRating(
+			rated,
+			{ key: "continuity:x", kind: "work" },
+			undefined,
+		);
 		expect(cleared.viewer?.personalRating).toBeUndefined();
 	});
 
 	it("writes a part score onto the matching part only", () => {
-		const next = applyRating(work(), { key: "part:continuity:x:0", kind: "part" }, 9);
+		const next = applyRating(
+			work(),
+			{ key: "part:continuity:x:0", kind: "part" },
+			9,
+		);
 		expect(next.parts[0]?.personalRating).toBe(9);
 		expect(next.viewer?.personalRating).toBeUndefined();
 	});

@@ -1,6 +1,10 @@
 import { produce } from "immer";
 
-import type { EpisodeWatchedResult, ViewerTracking, WorkView } from "@/orpc/schema";
+import type {
+	EpisodeWatchedResult,
+	ViewerTracking,
+	WorkView,
+} from "@/orpc/schema";
 
 const emptyViewer = (): ViewerTracking => ({
 	personalRating: undefined,
@@ -20,6 +24,12 @@ function applyEpisodeWatched(
 ): WorkView {
 	return produce(work, (draft) => {
 		for (const part of draft.parts) {
+			if (part.kind === "film") {
+				if (part.instalmentLocator === instalmentLocator) {
+					part.watched = watched;
+				}
+				continue;
+			}
 			for (const episode of part.episodes) {
 				if (episode.instalmentLocator === instalmentLocator) {
 					episode.watched = watched;
@@ -43,10 +53,17 @@ function applyEpisodeWatched(
 
 // Reconcile against the server's derived whole-series result: the authoritative
 // watched set and status replace the optimistic guess.
-function applyDerivedTracking(work: WorkView, result: EpisodeWatchedResult): WorkView {
+function applyDerivedTracking(
+	work: WorkView,
+	result: EpisodeWatchedResult,
+): WorkView {
 	return produce(work, (draft) => {
 		const watchedSet = new Set(result.watched);
 		for (const part of draft.parts) {
+			if (part.kind === "film") {
+				part.watched = watchedSet.has(part.instalmentLocator);
+				continue;
+			}
 			for (const episode of part.episodes) {
 				episode.watched = watchedSet.has(episode.instalmentLocator);
 			}

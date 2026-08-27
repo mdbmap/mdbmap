@@ -12,22 +12,25 @@ import { YouBlock } from "./you-block";
 const NO_PARTS: PartView[] = [];
 const noRate = vi.fn<(score: number | undefined) => void>();
 
-const service = (name: string, score: number, scale: number, votes: number): ServiceRating => ({
+const service = (
+	name: string,
+	score: number,
+	scale: number,
+	votes: number,
+): ServiceRating => ({
 	scale,
 	score,
 	service: name,
 	votes,
 });
 
-const part = (
-	label: string,
-	overrides: Partial<PartView> = {},
-): PartView => ({
+const part = (label: string, overrides: Partial<PartView> = {}): PartView => ({
 	airedFrom: undefined,
 	airedTo: undefined,
 	communityScore: { count: 0, mean: undefined },
 	episodeCount: 12,
 	episodes: [],
+	kind: "part",
 	label,
 	personalRating: undefined,
 	rateableUnit: { key: `part:${label}`, kind: "part" },
@@ -45,7 +48,10 @@ const seasonTwo = part("Season 2", {
 	airedTo: "Dec 2023",
 	communityScore: { count: 120_000, mean: 8.41 },
 	episodeCount: 12,
-	serviceRatings: [service("mal", 8.45, 10, 210_000), service("anilist", 83, 100, 150_000)],
+	serviceRatings: [
+		service("mal", 8.45, 10, 210_000),
+		service("anilist", 83, 100, 150_000),
+	],
 });
 const parts = [partOne, part("Part 2"), seasonTwo];
 
@@ -58,7 +64,9 @@ const viewer: ViewerTracking = {
 
 const render = (node: ReactNode) =>
 	renderToStaticMarkup(
-		<QueryClientProvider client={new QueryClient()}>{node}</QueryClientProvider>,
+		<QueryClientProvider client={new QueryClient()}>
+			{node}
+		</QueryClientProvider>,
 	);
 
 describe("YouBlock", () => {
@@ -87,11 +95,13 @@ describe("YouBlock", () => {
 
 describe("PartPanel", () => {
 	afterEach(() => {
-		usePartSelectionStore.setState({ selectedIndex: undefined });
+		usePartSelectionStore.setState({ selectedKey: undefined });
 	});
 
 	it("renders the selected part's three rating layers as separate values", () => {
-		const html = render(<PartPanel continuityId="continuity:x" parts={parts} />);
+		const html = render(
+			<PartPanel continuityId="continuity:x" parts={parts} />,
+		);
 		// Untouched selection resolves to the last part.
 		expect(html).toContain("Season 2 · this part");
 		expect(html).toContain("mdbmap average");
@@ -120,7 +130,9 @@ describe("PartPanel", () => {
 	});
 
 	it("shows a placeholder when there are no parts", () => {
-		const html = render(<PartPanel continuityId="continuity:x" parts={NO_PARTS} />);
+		const html = render(
+			<PartPanel continuityId="continuity:x" parts={NO_PARTS} />,
+		);
 		expect(html).toContain("No parts");
 	});
 });
