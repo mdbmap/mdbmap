@@ -3,11 +3,13 @@ export type { BudgetLedger, BudgetSnapshot } from "./budget.ts";
 export { alignStreams } from "./framework.ts";
 export type {
 	AlignedPair,
+	AlignInput,
 	AlignmentOutcome,
 	PublishedAlignment,
 	ReusedLocator,
 	SideDisposition,
 	StrayLocator,
+	TierLink,
 } from "./framework.ts";
 export {
 	instalmentKinds,
@@ -36,6 +38,7 @@ export { checkMonotonic, indexStream } from "./monotonic.ts";
 export type {
 	CandidatePairing,
 	Crossing,
+	MatchingOrder,
 	MonotonicVerdict,
 	NonEmptyArray,
 	StreamIndex,

@@ -1,15 +1,20 @@
-import type { AssertionConfidence } from "@/db/columns";
 import type { InstalmentLocator } from "@/db/schema";
 
+import type { TierLink } from "./framework.ts";
 import type { InstalmentKind, InstalmentStream } from "./instalment.ts";
 import type { Tier } from "./ladder.ts";
 import type {
 	CandidatePairing,
+	MatchingOrder,
 	NonEmptyArray,
 	StreamIndex,
 } from "./monotonic.ts";
 import { checkMonotonic, indexStream } from "./monotonic.ts";
-import { dayDistance, normaliseTitle, titleSimilarity } from "./tier3-scoring.ts";
+import {
+	dayDistance,
+	normaliseTitle,
+	titleSimilarity,
+} from "./tier3-scoring.ts";
 
 // Per-instalment metadata the tier scores on, keyed by locator. Everything is
 // optional: absence is absent evidence, never a mismatch.
@@ -24,10 +29,8 @@ type FactsByLocator = ReadonlyMap<InstalmentLocator, InstalmentFacts>;
 // A high link auto-accepts; a mid-band link publishes `low` and raises a review
 // flag; below the mid band nothing links and the instalment stays an unlinked
 // spoke.
-interface Tier3Link {
-	readonly confidence: AssertionConfidence;
+interface Tier3Link extends TierLink {
 	readonly flagged: boolean;
-	readonly pairing: CandidatePairing;
 	readonly score: number;
 }
 
@@ -52,6 +55,7 @@ interface Disposition {
 interface Tier3Input {
 	readonly facts: FactsByLocator;
 	readonly left: InstalmentStream;
+	readonly order?: MatchingOrder;
 	readonly placed?: readonly CandidatePairing[];
 	readonly right: InstalmentStream;
 }
@@ -130,7 +134,8 @@ const membersOf = (
 const makeUnit = (members: NonEmptyArray<Member>, length: number): Unit => {
 	const [first] = members;
 	const sharedDate = members.every(
-		(member) => member.airDate !== undefined && member.airDate === first.airDate,
+		(member) =>
+			member.airDate !== undefined && member.airDate === first.airDate,
 	);
 	const timed = members.every(
 		(member) => member.runtime !== undefined && member.runtime > 0,
@@ -146,7 +151,9 @@ const makeUnit = (members: NonEmptyArray<Member>, length: number): Unit => {
 		runtime: timed
 			? members.reduce((sum, member) => sum + (member.runtime ?? 0), 0)
 			: undefined,
-		title: normaliseTitle(members.map((member) => member.title ?? "").join(" ")),
+		title: normaliseTitle(
+			members.map((member) => member.title ?? "").join(" "),
+		),
 	};
 };
 
@@ -193,7 +200,8 @@ const runtimeBonus = (left: Unit, right: Unit): number => {
 		return 0;
 	}
 	const ratio =
-		Math.min(left.runtime, right.runtime) / Math.max(left.runtime, right.runtime);
+		Math.min(left.runtime, right.runtime) /
+		Math.max(left.runtime, right.runtime);
 	if (ratio <= RUNTIME_FLOOR) {
 		return 0;
 	}
@@ -206,8 +214,10 @@ const positionBonus = (left: Unit, right: Unit): number => {
 	if (left.hasSpecial || right.hasSpecial) {
 		return 0;
 	}
-	return Math.max(0, 1 - Math.abs(left.position - right.position)) *
-		POSITION_BONUS_MAX;
+	return (
+		Math.max(0, 1 - Math.abs(left.position - right.position)) *
+		POSITION_BONUS_MAX
+	);
 };
 
 // Score a candidate, or reject it. At least one identifying signal (air date or
@@ -336,7 +346,8 @@ const greedyLink = (input: GreedyInput): GreedyResult => {
 		links.push({
 			confidence: high ? "high" : "low",
 			flagged: !high,
-			pairing,
+			left: pairing.left,
+			right: pairing.right,
 			score: candidate.score,
 		});
 	}
@@ -396,11 +407,16 @@ const matchTier3 = (input: Tier3Input): Tier3Result => {
 		greedyLink({
 			base: placed,
 			candidates: rankCandidates(leftUnits, rightUnits),
-			leftIndex: indexStream(input.left),
-			rightIndex: indexStream(input.right),
+			leftIndex: input.order?.left ?? indexStream(input.left),
+			rightIndex: input.order?.right ?? indexStream(input.right),
 		});
 
-	const left = disposeUnlinked(input.left, consumedLeft, takenLeft, conflictedLeft);
+	const left = disposeUnlinked(
+		input.left,
+		consumedLeft,
+		takenLeft,
+		conflictedLeft,
+	);
 	const right = disposeUnlinked(
 		input.right,
 		consumedRight,
@@ -416,23 +432,25 @@ const matchTier3 = (input: Tier3Input): Tier3Result => {
 	};
 };
 
-// Adapt the scorer to the ladder seam: T3 always runs, scores whatever earlier
-// rungs left unplaced, and proposes only the pairings that cleared the mid band.
-// The `Tier` seam carries pairings alone, so per-link confidence and review
-// flags do not survive this path — persistence reads them from `matchTier3`
-// directly, which is the authoritative T3 output; `createTier3` exists only to
-// fold T3's pairings into the framework's monotonic assembly.
 const createTier3 = (facts: FactsByLocator): Tier => ({
 	id: "t3-episode",
 	propose: (context) => ({
-		pairings: matchTier3({
+		kind: "proposed",
+		links: matchTier3({
 			facts,
 			left: context.left,
+			order: context.order,
 			placed: context.placed,
 			right: context.right,
-		}).links.map((link) => link.pairing),
+		}).links,
 	}),
 });
 
 export { createTier3, matchTier3 };
-export type { FactsByLocator, InstalmentFacts, Tier3Input, Tier3Link, Tier3Result };
+export type {
+	FactsByLocator,
+	InstalmentFacts,
+	Tier3Input,
+	Tier3Link,
+	Tier3Result,
+};

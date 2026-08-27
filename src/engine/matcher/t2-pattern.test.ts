@@ -3,9 +3,9 @@ import { describe, expect, it } from "vitest";
 import { createBudget } from "./budget.ts";
 import type { BudgetLedger } from "./budget.ts";
 import { runLadder } from "./ladder.ts";
-import type { Tier, TierContext } from "./ladder.ts";
+import type { Tier, TierContext, TierProposal } from "./ladder.ts";
 import type { CandidatePairing } from "./monotonic.ts";
-import { locator, regular, streamOf } from "./test-fixtures.ts";
+import { indexStream } from "./monotonic.ts";
 import { createT2PatternTier } from "./t2-pattern.ts";
 import type {
 	EpisodeGroupOrdering,
@@ -14,21 +14,28 @@ import type {
 	T2Segment,
 	T2Side,
 } from "./t2-pattern.ts";
+import { locator, regular, streamOf } from "./test-fixtures.ts";
 
-const noOpTier = (id: Tier["id"]): Tier => ({ id, propose: () => ({ pairings: [] }) });
+const noOpTier = (id: Tier["id"]): Tier => ({
+	id,
+	propose: () => ({ kind: "proposed", links: [] }),
+});
 
-const placingTier = (
-	id: Tier["id"],
-	pairings: readonly CandidatePairing[],
-): Tier => ({ id, propose: () => ({ pairings }) });
+const proposedLinks = (proposal: TierProposal | undefined) => {
+	expect(proposal?.kind).toBe("proposed");
+	return proposal?.kind === "proposed" ? proposal.links : [];
+};
 
-const inst = (
-	raw: string,
-	airDate?: string,
-	title?: string,
-): T2Instalment => ({ airDate, locator: locator(raw), title });
+const inst = (raw: string, airDate?: string, title?: string): T2Instalment => ({
+	airDate,
+	locator: locator(raw),
+	title,
+});
 
-const seg = (number: number, instalments: readonly T2Instalment[]): T2Segment => ({
+const seg = (
+	number: number,
+	instalments: readonly T2Instalment[],
+): T2Segment => ({
 	instalments,
 	number,
 });
@@ -58,6 +65,10 @@ const contextFor = (
 ): TierContext => ({
 	budget,
 	left: streamFor(left),
+	order: {
+		left: indexStream(streamFor(left)),
+		right: indexStream(streamFor(right)),
+	},
 	placed,
 	right: streamFor(right),
 });
@@ -82,11 +93,15 @@ describe("createT2PatternTier", () => {
 			budget: createBudget(10),
 			left: streamFor(left),
 			right: streamFor(right),
-			tiers: { t1: noOpTier("t1-structure"), t2: tier, t3: noOpTier("t3-episode") },
+			tiers: {
+				t1: noOpTier("t1-structure"),
+				t2: tier,
+				t3: noOpTier("t3-episode"),
+			},
 		});
 
 		expect(result.contributions[1]).toMatchObject({ tier: "t2-pattern" });
-		expect(result.contributions[1]?.pairings).toHaveLength(4);
+		expect(proposedLinks(result.contributions[1]?.proposal)).toHaveLength(4);
 		expect(result.outcome.status).toBe("published");
 		if (result.outcome.status === "published") {
 			expect(result.outcome.alignment.pairs).toHaveLength(4);
@@ -110,7 +125,11 @@ describe("createT2PatternTier", () => {
 			budget: createBudget(10),
 			left: streamFor(left),
 			right: streamFor(right),
-			tiers: { t1: noOpTier("t1-structure"), t2: tier, t3: noOpTier("t3-episode") },
+			tiers: {
+				t1: noOpTier("t1-structure"),
+				t2: tier,
+				t3: noOpTier("t3-episode"),
+			},
 		});
 
 		expect(result.outcome.status).toBe("published");
@@ -120,16 +139,28 @@ describe("createT2PatternTier", () => {
 	});
 
 	it("falls back to title agreement where a pair's air dates are missing", () => {
-		const left = sideOf(seg(1, [inst("l#1", undefined, "The Beginning"), inst("l#2", "2024-02-01")]));
-		const right = sideOf(seg(1, [inst("r#1", undefined, "the beginning"), inst("r#2", "2024-02-01")]));
+		const left = sideOf(
+			seg(1, [
+				inst("l#1", undefined, "The Beginning"),
+				inst("l#2", "2024-02-01"),
+			]),
+		);
+		const right = sideOf(
+			seg(1, [
+				inst("r#1", undefined, "the beginning"),
+				inst("r#2", "2024-02-01"),
+			]),
+		);
 		const tier = createT2PatternTier({ left, right });
 
 		const context = contextFor(left, right, createBudget(10));
-		expect(tier.propose(context).pairings).toHaveLength(2);
+		expect(proposedLinks(tier.propose(context))).toHaveLength(2);
 	});
 
 	it("persists an unmatched group when a proposed pair's dates disagree", () => {
-		const left = sideOf(seg(1, [inst("l#1", "2024-01-01"), inst("l#2", "2024-01-08")]));
+		const left = sideOf(
+			seg(1, [inst("l#1", "2024-01-01"), inst("l#2", "2024-01-08")]),
+		);
 		const right = sideOf(
 			seg(1, [inst("r#1", "2024-01-01")]),
 			seg(2, [inst("r#2", "2024-09-01")]),
@@ -137,7 +168,7 @@ describe("createT2PatternTier", () => {
 		const tier = createT2PatternTier({ left, right });
 
 		const context = contextFor(left, right, createBudget(10));
-		expect(tier.propose(context).pairings).toStrictEqual([]);
+		expect(proposedLinks(tier.propose(context))).toStrictEqual([]);
 	});
 
 	it("refuses a whole-title fit with no comparable evidence at all", () => {
@@ -146,11 +177,17 @@ describe("createT2PatternTier", () => {
 		const tier = createT2PatternTier({ left, right });
 
 		const context = contextFor(left, right, createBudget(10));
-		expect(tier.propose(context).pairings).toStrictEqual([]);
+		expect(proposedLinks(tier.propose(context))).toStrictEqual([]);
 	});
 
 	it("persists an explicit unmatched group when only part of the title fits", () => {
-		const left = sideOf(seg(1, [inst("l#1", "2024-01-01"), inst("l#2", "2024-01-08"), inst("l#3", "2024-01-15")]));
+		const left = sideOf(
+			seg(1, [
+				inst("l#1", "2024-01-01"),
+				inst("l#2", "2024-01-08"),
+				inst("l#3", "2024-01-15"),
+			]),
+		);
 		const right = sideOf(
 			seg(1, [inst("r#1", "2024-01-01"), inst("r#2", "2024-01-08")]),
 			seg(2, [inst("r#3", "2024-01-15"), inst("r#4", "2024-01-22")]),
@@ -161,10 +198,14 @@ describe("createT2PatternTier", () => {
 			budget: createBudget(10),
 			left: streamFor(left),
 			right: streamFor(right),
-			tiers: { t1: noOpTier("t1-structure"), t2: tier, t3: noOpTier("t3-episode") },
+			tiers: {
+				t1: noOpTier("t1-structure"),
+				t2: tier,
+				t3: noOpTier("t3-episode"),
+			},
 		});
 
-		expect(result.contributions[1]?.pairings).toStrictEqual([]);
+		expect(proposedLinks(result.contributions[1]?.proposal)).toStrictEqual([]);
 		expect(result.outcome.status).toBe("published");
 		if (result.outcome.status === "published") {
 			expect(result.outcome.alignment.pairs).toStrictEqual([]);
@@ -180,10 +221,12 @@ describe("createT2PatternTier", () => {
 		const left = sideOf(seg(1, [inst("l#1", "2024-01-01")]));
 		const right = sideOf(seg(1, [inst("r#1", "2024-01-01")]));
 		const tier = createT2PatternTier({ left, right });
-		const placed: readonly CandidatePairing[] = [{ left: [locator("l#1")], right: [locator("r#1")] }];
+		const placed: readonly CandidatePairing[] = [
+			{ left: [locator("l#1")], right: [locator("r#1")] },
+		];
 
 		const context = contextFor(left, right, createBudget(10), placed);
-		expect(tier.propose(context).pairings).toStrictEqual([]);
+		expect(proposedLinks(tier.propose(context))).toStrictEqual([]);
 	});
 
 	describe("episode groups", () => {
@@ -218,7 +261,7 @@ describe("createT2PatternTier", () => {
 			],
 		};
 
-		it("stands down when the accepted ordering breaks stored order", () => {
+		it("selects an accepted ordering that differs from stored order", () => {
 			const fetched: string[] = [];
 			let listings = 0;
 			const budget = createBudget(10);
@@ -239,12 +282,12 @@ describe("createT2PatternTier", () => {
 				right,
 			});
 
-			// `aligned` corroborates against the right side, but its order inverts
-			// `scrambledLeft`'s stored positions, so proposing it would conflict the
-			// whole build. The tier spends the budget probing, then stands down.
 			const proposal = tier.propose(contextFor(scrambledLeft, right, budget));
 
-			expect(proposal.pairings).toStrictEqual([]);
+			expect(proposedLinks(proposal)).toHaveLength(4);
+			if (proposal.kind === "proposed") {
+				expect(proposal.order).toBeDefined();
+			}
 			expect(listings).toBe(1);
 			expect(fetched).toStrictEqual(["official"]);
 			expect(budget.snapshot().spent).toBe(2);
@@ -270,17 +313,21 @@ describe("createT2PatternTier", () => {
 				budget,
 				left: streamFor(aligned),
 				right: streamFor(right),
-				tiers: { t1: noOpTier("t1-structure"), t2: tier, t3: noOpTier("t3-episode") },
+				tiers: {
+					t1: noOpTier("t1-structure"),
+					t2: tier,
+					t3: noOpTier("t3-episode"),
+				},
 			});
 
-			expect(result.contributions[1]?.pairings).toHaveLength(4);
+			expect(proposedLinks(result.contributions[1]?.proposal)).toHaveLength(4);
 			expect(result.outcome.status).toBe("published");
 			if (result.outcome.status === "published") {
 				expect(result.outcome.alignment.pairs).toHaveLength(4);
 			}
 		});
 
-		it("standing down leaves earlier tiers' links to publish, not conflict", () => {
+		it("carries the selected ordering into final alignment", () => {
 			const budget = createBudget(10);
 			const tier = createT2PatternTier({
 				episodeGroups: {
@@ -292,14 +339,6 @@ describe("createT2PatternTier", () => {
 				left: scrambledLeft,
 				right,
 			});
-			const t3Link: CandidatePairing = {
-				left: [locator("l#1")],
-				right: [locator("r#1")],
-			};
-
-			// Were the tier to propose the order-breaking `aligned` pairs, they would
-			// cross the T3 link and conflict the whole outcome; standing down keeps
-			// T3's valid link publishable.
 			const result = runLadder({
 				budget,
 				left: streamFor(scrambledLeft),
@@ -307,16 +346,14 @@ describe("createT2PatternTier", () => {
 				tiers: {
 					t1: noOpTier("t1-structure"),
 					t2: tier,
-					t3: placingTier("t3-episode", [t3Link]),
+					t3: noOpTier("t3-episode"),
 				},
 			});
 
-			expect(result.contributions[1]?.pairings).toStrictEqual([]);
+			expect(proposedLinks(result.contributions[1]?.proposal)).toHaveLength(4);
 			expect(result.outcome.status).toBe("published");
 			if (result.outcome.status === "published") {
-				expect(result.outcome.alignment.pairs).toStrictEqual([
-					{ left: [locator("l#1")], right: [locator("r#1")] },
-				]);
+				expect(result.outcome.alignment.pairs).toHaveLength(4);
 			}
 		});
 
@@ -348,7 +385,7 @@ describe("createT2PatternTier", () => {
 
 			const proposal = tier.propose(contextFor(scrambledLeft, right, budget));
 
-			expect(proposal.pairings).toStrictEqual([]);
+			expect(proposedLinks(proposal)).toStrictEqual([]);
 			expect(fetched).toStrictEqual(["dvd", "absolute", "regional"]);
 			expect(budget.snapshot().spent).toBe(4);
 		});
@@ -372,7 +409,7 @@ describe("createT2PatternTier", () => {
 
 			const proposal = tier.propose(contextFor(aligned, right, budget));
 
-			expect(proposal.pairings).toHaveLength(4);
+			expect(proposedLinks(proposal)).toHaveLength(4);
 			expect(listings).toBe(0);
 			expect(budget.snapshot().spent).toBe(0);
 		});

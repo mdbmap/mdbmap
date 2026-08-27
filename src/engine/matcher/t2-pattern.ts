@@ -1,8 +1,9 @@
 import type { InstalmentLocator } from "@/db/schema";
 
+import type { TierLink } from "./framework.ts";
 import type { Tier, TierContext, TierProposal } from "./ladder.ts";
-import type { CandidatePairing } from "./monotonic.ts";
-import { checkMonotonic, indexStream } from "./monotonic.ts";
+import type { MatchingOrder, StreamIndex } from "./monotonic.ts";
+import { checkMonotonic } from "./monotonic.ts";
 import { normaliseTitle } from "./tier3-scoring.ts";
 
 // One regular instalment as T2 evidence. A whole-title transform proposes the
@@ -230,29 +231,45 @@ const freeTransforms = (
 	return undefined;
 };
 
-const toCandidatePairings = (
+const toTierLinks = (
 	pairs: readonly PairedInstalments[],
-): readonly CandidatePairing[] =>
+): readonly TierLink[] =>
 	pairs.map((pair) => ({
+		confidence: "high",
 		left: [pair.left.locator],
 		right: [pair.right.locator],
 	}));
 
-// A group ordering that differs from stored order pairs monotonically against
-// the alternate order but inverts against the stored positions `alignStreams`
-// validates over, conflicting the whole build (and discarding T3's links) where
-// standing down would publish. Until the order-aware seam lands (deferred
-// framework follow-up, ADR-0002), only accept a group whose pairs also hold
-// monotonic against stored order.
-const holdsAgainstStoredOrder = (
-	context: TierContext,
+const holdsUnder = (
+	order: MatchingOrder,
 	pairs: readonly PairedInstalments[],
-): boolean =>
-	checkMonotonic(
-		toCandidatePairings(pairs),
-		indexStream(context.left),
-		indexStream(context.right),
-	).ok;
+): boolean => checkMonotonic(toTierLinks(pairs), order.left, order.right).ok;
+
+const indexEpisodeGroup = (
+	context: TierContext,
+	ordering: EpisodeGroupOrdering,
+): StreamIndex => {
+	const position = new Map<InstalmentLocator, number>();
+	for (const instalment of flatten({ segments: ordering.segments })) {
+		if (
+			context.order.left.position.has(instalment.locator) &&
+			!position.has(instalment.locator)
+		) {
+			position.set(instalment.locator, position.size);
+		}
+	}
+	for (const instalment of context.left.instalments) {
+		if (!position.has(instalment.locator)) {
+			position.set(instalment.locator, position.size);
+		}
+	}
+	return { position, regular: context.order.left.regular };
+};
+
+interface EpisodeGroupMatch {
+	readonly order: MatchingOrder;
+	readonly pairs: readonly PairedInstalments[];
+}
 
 // Episode groups are the paid fallback: one listing, then at most three
 // group-detail requests, each an alternate ordering re-run through the free
@@ -261,7 +278,7 @@ const holdsAgainstStoredOrder = (
 const tryEpisodeGroups = (
 	context: TierContext,
 	input: T2Input,
-): readonly PairedInstalments[] | undefined => {
+): EpisodeGroupMatch | undefined => {
 	const provider = input.episodeGroups;
 	if (provider === undefined || !context.budget.spend(provider.listCost)) {
 		return undefined;
@@ -281,8 +298,12 @@ const tryEpisodeGroups = (
 		detailsUsed += 1;
 		const ordering = provider.fetchDetail(summary.id);
 		const pairs = freeTransforms({ segments: ordering.segments }, input.right);
-		if (pairs !== undefined && holdsAgainstStoredOrder(context, pairs)) {
-			return pairs;
+		const order = {
+			left: indexEpisodeGroup(context, ordering),
+			right: context.order.right,
+		};
+		if (pairs !== undefined && holdsUnder(order, pairs)) {
+			return { order, pairs };
 		}
 	}
 	return undefined;
@@ -297,11 +318,22 @@ const createT2PatternTier = (input: T2Input): Tier => ({
 	id: "t2-pattern",
 	propose: (context: TierContext): TierProposal => {
 		if (context.placed.length > 0) {
-			return { pairings: [] };
+			return { kind: "proposed", links: [] };
 		}
 		const free = freeTransforms(input.left, input.right);
-		const pairs = free ?? tryEpisodeGroups(context, input);
-		return { pairings: pairs === undefined ? [] : toCandidatePairings(pairs) };
+		if (free !== undefined) {
+			return { kind: "proposed", links: toTierLinks(free) };
+		}
+		const episodeGroup = tryEpisodeGroups(context, input);
+		if (episodeGroup === undefined) {
+			// An unavailable listing is absent evidence, not a refused ladder.
+			return { kind: "proposed", links: [] };
+		}
+		return {
+			kind: "proposed",
+			links: toTierLinks(episodeGroup.pairs),
+			order: episodeGroup.order,
+		};
 	},
 });
 

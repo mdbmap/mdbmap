@@ -1,12 +1,33 @@
+import type { AssertionConfidence } from "@/db/columns";
 import type { InstalmentLocator } from "@/db/schema";
 
 import type { InstalmentStream } from "./instalment.ts";
-import type { CandidatePairing, Crossing, StreamIndex } from "./monotonic.ts";
+import type {
+	CandidatePairing,
+	Crossing,
+	MatchingOrder,
+	NonEmptyArray,
+	StreamIndex,
+} from "./monotonic.ts";
 import { checkMonotonic, indexStream } from "./monotonic.ts";
 
 interface AlignedPair {
+	readonly confidence: AssertionConfidence;
 	readonly left: readonly InstalmentLocator[];
 	readonly right: readonly InstalmentLocator[];
+}
+
+interface TierLink {
+	readonly confidence: AssertionConfidence;
+	readonly left: NonEmptyArray<InstalmentLocator>;
+	readonly right: NonEmptyArray<InstalmentLocator>;
+}
+
+interface AlignInput {
+	readonly left: InstalmentStream;
+	readonly links: readonly TierLink[];
+	readonly order?: MatchingOrder;
+	readonly right: InstalmentStream;
 }
 
 // A tier-supplied locator that names no instalment in the stream it was proposed
@@ -41,6 +62,7 @@ interface PublishedAlignment {
 type AlignmentOutcome =
 	| { readonly alignment: PublishedAlignment; readonly status: "published" }
 	| { readonly crossings: readonly Crossing[]; readonly status: "conflict" }
+	| { readonly reason: "over-budget"; readonly status: "unmatched" }
 	| { readonly reason: "truncated-fetch"; readonly status: "unpublishable" }
 	| {
 			readonly reused: readonly ReusedLocator[];
@@ -128,35 +150,36 @@ const disposeSide = (
 // published alignment. A truncated fetch cannot publish at all; a crossing set
 // stays a conflict outside the graph; otherwise every unpaired instalment is
 // dispositioned by its own stream's boundary.
-const alignStreams = (
-	left: InstalmentStream,
-	right: InstalmentStream,
-	pairings: readonly CandidatePairing[],
-): AlignmentOutcome => {
+const alignStreams = (input: AlignInput): AlignmentOutcome => {
+	const { left, links, order, right } = input;
 	if (left.boundary === "truncated" || right.boundary === "truncated") {
 		return { reason: "truncated-fetch", status: "unpublishable" };
 	}
-	const leftIndex = indexStream(left);
-	const rightIndex = indexStream(right);
-	const strays = findStrays(pairings, leftIndex, rightIndex);
-	const reused = findReused(pairings);
+	const leftIndex = order?.left ?? indexStream(left);
+	const rightIndex = order?.right ?? indexStream(right);
+	const strays = findStrays(links, leftIndex, rightIndex);
+	const reused = findReused(links);
 	if (strays.length > 0 || reused.length > 0) {
 		return { reused, status: "invalid", strays };
 	}
-	const verdict = checkMonotonic(pairings, leftIndex, rightIndex);
+	const verdict = checkMonotonic(links, leftIndex, rightIndex);
 	if (!verdict.ok) {
 		return { crossings: verdict.crossings, status: "conflict" };
 	}
 	const leftPaired = new Set<InstalmentLocator>();
 	const rightPaired = new Set<InstalmentLocator>();
-	const pairs: AlignedPair[] = pairings.map((pairing) => {
-		for (const locator of pairing.left) {
+	const pairs: AlignedPair[] = links.map((link) => {
+		for (const locator of link.left) {
 			leftPaired.add(locator);
 		}
-		for (const locator of pairing.right) {
+		for (const locator of link.right) {
 			rightPaired.add(locator);
 		}
-		return { left: pairing.left, right: pairing.right };
+		return {
+			confidence: link.confidence,
+			left: link.left,
+			right: link.right,
+		};
 	});
 	return {
 		alignment: {
@@ -171,9 +194,11 @@ const alignStreams = (
 export { alignStreams };
 export type {
 	AlignedPair,
+	AlignInput,
 	AlignmentOutcome,
 	PublishedAlignment,
 	ReusedLocator,
 	SideDisposition,
 	StrayLocator,
+	TierLink,
 };
