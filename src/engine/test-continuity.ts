@@ -9,6 +9,11 @@ import {
 	titleGroups,
 } from "@/db/engine-schema";
 
+import {
+	persistWatchOrder,
+	regenerateReleaseOrder,
+} from "./continuity/orders.ts";
+
 // Seeds Spy × Family as the engine stores it: one title group, per-cour AniDB /
 // MAL / AniList spokes plus one TMDB spoke spanning every cour, each cour anchored
 // to its own content unit so segment membership resolves through the hub.
@@ -251,4 +256,250 @@ const seedCrossGroupContinuity = async (
 	};
 };
 
-export { seedCrossGroupContinuity, seedSpyXFamily, seedTmdbContinuity };
+interface FranchiseSpokes {
+	readonly anidb: string;
+	readonly anilist: string;
+	readonly mal: string;
+	readonly tmdb: string;
+}
+
+interface FranchiseSegmentBase extends FranchiseSpokes {
+	readonly group: string;
+}
+
+type FranchiseSegmentSpec =
+	| (FranchiseSegmentBase & { readonly kind: "atomic" })
+	| (FranchiseSegmentBase & {
+			readonly episodes: number;
+			readonly kind: "episodic";
+	  });
+
+interface FranchiseSpec {
+	readonly segments: readonly FranchiseSegmentSpec[];
+	readonly watch?: readonly number[];
+}
+
+interface SeededFranchise {
+	readonly continuityId: string;
+	readonly continuityRowId: number;
+	readonly groupIds: readonly number[];
+	readonly segmentIds: readonly number[];
+}
+
+const episodeCount = (segment: FranchiseSegmentSpec): number =>
+	segment.kind === "atomic" ? 1 : segment.episodes;
+
+const seedSpineTitle = async (
+	db: Db,
+	groupId: number,
+	segment: FranchiseSegmentSpec,
+	ordinal: number,
+): Promise<number> => {
+	const unitRows = await db.insert(contentUnits).values({}).returning().all();
+	const unitId = one(unitRows).id;
+	const anidbId = await insertTitle(
+		db,
+		groupId,
+		"anidb",
+		segment.anidb,
+		ordinal,
+	);
+	const spokeIds = await Promise.all(
+		Array.from({ length: episodeCount(segment) }, async (_ignored, offset) =>
+			insertSpoke(db, anidbId, `s1e${offset + 1}`),
+		),
+	);
+	const [firstSpoke] = spokeIds;
+	if (firstSpoke !== undefined) {
+		await coverUnit(db, firstSpoke, unitId);
+	}
+	await Promise.all([
+		anchorTitle(db, groupId, "mal", segment.mal, ordinal, unitId),
+		anchorTitle(db, groupId, "anilist", segment.anilist, ordinal, unitId),
+		anchorTitle(db, groupId, "tmdb", segment.tmdb, ordinal, unitId),
+	]);
+	return anidbId;
+};
+
+const insertNamedGroups = async (
+	db: Db,
+	keys: readonly string[],
+): Promise<{
+	readonly groupByKey: ReadonlyMap<string, number>;
+	readonly groupIds: readonly number[];
+}> => {
+	const rows = await Promise.all(
+		keys.map(async (key) => ({ groupId: await insertGroup(db), key })),
+	);
+	return {
+		groupByKey: new Map(rows.map((row) => [row.key, row.groupId])),
+		groupIds: rows.map((row) => row.groupId),
+	};
+};
+
+const persistFranchiseOrders = async (
+	db: Db,
+	continuityRowId: number,
+	segmentIds: readonly number[],
+	watch: readonly number[] | undefined,
+): Promise<void> => {
+	await regenerateReleaseOrder(db, continuityRowId);
+	if (watch === undefined) {
+		return;
+	}
+	await persistWatchOrder(db, {
+		continuityId: continuityRowId,
+		segmentIds: watch.flatMap((index) => {
+			const segmentId = segmentIds[index];
+			return segmentId === undefined ? [] : [segmentId];
+		}),
+	});
+};
+
+const seedFranchise = async (
+	db: Db,
+	spec: FranchiseSpec,
+): Promise<SeededFranchise> => {
+	const groupKeys = [...new Set(spec.segments.map((segment) => segment.group))];
+	const { groupByKey, groupIds } = await insertNamedGroups(db, groupKeys);
+	const titleIds = await Promise.all(
+		spec.segments.map(async (segment, ordinal) => {
+			const groupId = groupByKey.get(segment.group);
+			return seedSpineTitle(
+				db,
+				one(groupId === undefined ? [] : [groupId]),
+				segment,
+				ordinal,
+			);
+		}),
+	);
+	const continuityRows = await db
+		.insert(continuities)
+		.values({ source: "t1-structure" })
+		.returning()
+		.all();
+	const continuityRowId = one(continuityRows).id;
+	const segmentValues = spec.segments.flatMap((segment, releaseOrdinal) => {
+		const titleId = titleIds[releaseOrdinal];
+		return titleId === undefined
+			? []
+			: [
+					{
+						continuityId: continuityRowId,
+						kind: segment.kind,
+						releaseOrdinal,
+						titleId,
+					},
+				];
+	});
+	const segmentRows = await db
+		.insert(continuitySegments)
+		.values(segmentValues)
+		.returning()
+		.all();
+	const segmentIds = segmentRows.map((row) => row.id);
+	await persistFranchiseOrders(db, continuityRowId, segmentIds, spec.watch);
+	return {
+		continuityId: `continuity:${continuityRowId}`,
+		continuityRowId,
+		groupIds,
+		segmentIds,
+	};
+};
+
+const madeInAbyssSpec = [
+	{
+		anidb: "9001",
+		anilist: "9001",
+		episodes: 2,
+		group: "series",
+		kind: "episodic",
+		mal: "9001",
+		tmdb: "tv:9001",
+	},
+	{
+		anidb: "9002",
+		anilist: "9002",
+		group: "film",
+		kind: "atomic",
+		mal: "9002",
+		tmdb: "movie:9002",
+	},
+	{
+		anidb: "9003",
+		anilist: "9003",
+		episodes: 2,
+		group: "cour2",
+		kind: "episodic",
+		mal: "9003",
+		tmdb: "tv:9003",
+	},
+] as const satisfies readonly FranchiseSegmentSpec[];
+
+const madokaMagicaSpec = [
+	{
+		anidb: "9101",
+		anilist: "9101",
+		episodes: 2,
+		group: "series",
+		kind: "episodic",
+		mal: "9101",
+		tmdb: "tv:9101",
+	},
+	{
+		anidb: "9102",
+		anilist: "9102",
+		group: "film",
+		kind: "atomic",
+		mal: "9102",
+		tmdb: "movie:9102",
+	},
+] as const satisfies readonly FranchiseSegmentSpec[];
+
+const monogatariSpec = [
+	{
+		anidb: "9201",
+		anilist: "9201",
+		episodes: 2,
+		group: "bake",
+		kind: "episodic",
+		mal: "9201",
+		tmdb: "tv:9201",
+	},
+	{
+		anidb: "9202",
+		anilist: "9202",
+		episodes: 2,
+		group: "nise",
+		kind: "episodic",
+		mal: "9202",
+		tmdb: "tv:9202",
+	},
+	{
+		anidb: "9203",
+		anilist: "9203",
+		group: "kizu",
+		kind: "atomic",
+		mal: "9203",
+		tmdb: "movie:9203",
+	},
+] as const satisfies readonly FranchiseSegmentSpec[];
+
+const seedMadeInAbyss = async (db: Db): Promise<SeededFranchise> =>
+	seedFranchise(db, { segments: madeInAbyssSpec });
+
+const seedMadokaMagica = async (db: Db): Promise<SeededFranchise> =>
+	seedFranchise(db, { segments: madokaMagicaSpec });
+
+const seedMonogatari = async (db: Db): Promise<SeededFranchise> =>
+	seedFranchise(db, { segments: monogatariSpec, watch: [2, 0, 1] });
+
+export {
+	seedCrossGroupContinuity,
+	seedMadokaMagica,
+	seedMadeInAbyss,
+	seedMonogatari,
+	seedSpyXFamily,
+	seedTmdbContinuity,
+};
+export type { SeededFranchise };
