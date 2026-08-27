@@ -8,6 +8,7 @@ import {
 	relationAssertions,
 	serviceTitles,
 	titleAssertions,
+	titleGroupAliases,
 	titleGroups,
 } from "@/db/engine-schema";
 import { freshDb } from "@/db/test-helpers";
@@ -22,6 +23,7 @@ import {
 import {
 	ensureGroupContinuity,
 	retiredContinuityKeys,
+	trackingAliasKeys,
 	upsertRelationContinuity,
 } from "./persist.ts";
 
@@ -450,5 +452,88 @@ describe("persisted continuity", () => {
 		);
 		expect(await db.select().from(continuityAliases).all()).toEqual([]);
 		expect(fromTitle.id).not.toBe(toTitle.id);
+	});
+
+	it("absorbs continuities when two groups later merge", async () => {
+		const db = await freshDb();
+		const survivorGroup = one(
+			await db
+				.insert(titleGroups)
+				.values({ source: "t1-structure" })
+				.returning()
+				.all(),
+		);
+		const retiredGroup = one(
+			await db
+				.insert(titleGroups)
+				.values({ source: "t1-structure" })
+				.returning()
+				.all(),
+		);
+		const left = one(
+			await db
+				.insert(serviceTitles)
+				.values({
+					groupId: survivorGroup.id,
+					service: "tmdb",
+					serviceId: "tv:1",
+				})
+				.returning()
+				.all(),
+		);
+		const right = one(
+			await db
+				.insert(serviceTitles)
+				.values({
+					groupId: retiredGroup.id,
+					service: "tmdb",
+					serviceId: "tv:2",
+				})
+				.returning()
+				.all(),
+		);
+		const survivorContinuity = await ensureGroupContinuity(
+			db,
+			survivorGroup.id,
+		);
+		const retiredContinuity = await ensureGroupContinuity(db, retiredGroup.id);
+		await db
+			.update(serviceTitles)
+			.set({ groupId: survivorGroup.id })
+			.where(eq(serviceTitles.id, right.id))
+			.run();
+		await db
+			.insert(titleGroupAliases)
+			.values({
+				retiredGroupId: retiredGroup.id,
+				survivorGroupId: survivorGroup.id,
+			})
+			.run();
+
+		const joined = await ensureGroupContinuity(db, survivorGroup.id);
+		const segments = await db
+			.select()
+			.from(continuitySegments)
+			.orderBy(asc(continuitySegments.releaseOrdinal))
+			.all();
+
+		expect(joined).toBe(survivorContinuity);
+		expect(await db.select().from(continuities).all()).toEqual([
+			expect.objectContaining({ id: survivorContinuity }),
+		]);
+		expect(segments.map((segment) => segment.titleId)).toEqual([
+			left.id,
+			right.id,
+		]);
+		expect(await retiredContinuityKeys(db, survivorContinuity)).toEqual([
+			continuityKey(retiredContinuity),
+		]);
+		expect(await trackingAliasKeys(db, survivorContinuity)).toEqual(
+			expect.arrayContaining([
+				groupContinuityKey(survivorGroup.id),
+				groupContinuityKey(retiredGroup.id),
+				continuityKey(retiredContinuity),
+			]),
+		);
 	});
 });

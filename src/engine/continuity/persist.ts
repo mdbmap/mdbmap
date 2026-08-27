@@ -6,6 +6,7 @@ import {
 	continuityAliases,
 	continuitySegments,
 	serviceTitles,
+	titleGroupAliases,
 	titleGroups,
 } from "@/db/engine-schema";
 import type { ContinuitySegmentKind, GroupSource } from "@/db/engine-schema";
@@ -52,7 +53,21 @@ const groupKeysForContinuity = async (
 		.innerJoin(serviceTitles, eq(serviceTitles.id, continuitySegments.titleId))
 		.where(eq(continuitySegments.continuityId, survivorId))
 		.all();
-	return [...new Set(rows.map((row) => groupContinuityKey(row.groupId)))];
+	const groupIds = [...new Set(rows.map((row) => row.groupId))];
+	if (groupIds.length === 0) {
+		return [];
+	}
+	const retired = await db
+		.select({ retiredGroupId: titleGroupAliases.retiredGroupId })
+		.from(titleGroupAliases)
+		.where(inArray(titleGroupAliases.survivorGroupId, groupIds))
+		.all();
+	return [
+		...new Set([
+			...groupIds.map((groupId) => groupContinuityKey(groupId)),
+			...retired.map((row) => groupContinuityKey(row.retiredGroupId)),
+		]),
+	];
 };
 
 const trackingAliasKeys = async (
@@ -204,9 +219,9 @@ const rewriteSegments = async (
 	db: Db,
 	input: {
 		readonly continuityId: number;
-		readonly relationAssertionId: number;
+		readonly relationAssertionId?: number;
 		readonly segments: readonly SegmentDraft[];
-		readonly toTitleId: number;
+		readonly toTitleId?: number;
 	},
 ): Promise<void> => {
 	await db
@@ -223,7 +238,7 @@ const rewriteSegments = async (
 				continuityId: input.continuityId,
 				kind: segment.kind,
 				relationAssertionId:
-					segment.titleId === input.toTitleId
+					input.toTitleId !== undefined && segment.titleId === input.toTitleId
 						? input.relationAssertionId
 						: segment.relationAssertionId,
 				releaseOrdinal,
@@ -245,14 +260,39 @@ const createContinuity = async (
 	return one(rows).id;
 };
 
+const coalesceGroupContinuities = async (
+	db: Db,
+	existingIds: readonly number[],
+	groupId: number,
+): Promise<number> => {
+	const [continuityId] = existingIds;
+	if (continuityId === undefined) {
+		throw new Error(`engine: no continuity group:${groupId}`);
+	}
+	const foreignIds = existingIds.filter((id) => id !== continuityId);
+	if (foreignIds.length === 0) {
+		return continuityId;
+	}
+	const survivorSegments = await segmentsForContinuity(db, continuityId);
+	const merged = await mergeForeignSegments(db, {
+		foreignIds,
+		fromGroupId: groupId,
+		survivorSegments,
+		toGroupId: groupId,
+	});
+	await rewriteSegments(db, { continuityId, segments: merged });
+	await retireContinuities(db, { foreignIds, survivorId: continuityId });
+	return continuityId;
+};
+
 const ensureGroupContinuity = async (
 	db: Db,
 	requestedGroupId: number,
 ): Promise<number> => {
 	const groupId = await survivorGroupId(db, requestedGroupId);
-	const [existing] = await continuitiesForGroups(db, [groupId]);
-	if (existing !== undefined) {
-		return existing;
+	const existingIds = await continuitiesForGroups(db, [groupId]);
+	if (existingIds.length > 0) {
+		return coalesceGroupContinuities(db, existingIds, groupId);
 	}
 	const group = await db
 		.select()
