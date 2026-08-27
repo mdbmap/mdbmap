@@ -18,7 +18,11 @@ type Service = (typeof serviceOrder)[number];
 type TmdbNamespace = "movie" | "tv";
 
 type TitleIdentity =
-	| { readonly id: string; readonly namespace: TmdbNamespace; readonly service: "tmdb" }
+	| {
+			readonly id: string;
+			readonly namespace: TmdbNamespace;
+			readonly service: "tmdb";
+	  }
 	| { readonly id: string; readonly service: "anilist" }
 	| { readonly id: string; readonly service: "imdb" }
 	| { readonly id: string; readonly service: "kitsu" }
@@ -33,7 +37,11 @@ interface Locator {
 // An atomic lookup names the title itself; an episodic lookup adds a positional
 // locator inside it.
 type Identity =
-	| { readonly kind: "instalment"; readonly locator: Locator; readonly title: TitleIdentity }
+	| {
+			readonly kind: "instalment";
+			readonly locator: Locator;
+			readonly title: TitleIdentity;
+	  }
 	| { readonly kind: "title"; readonly title: TitleIdentity };
 
 type Profile = "anime" | "movie" | "series";
@@ -118,7 +126,10 @@ type Identified =
 const identify = (raw: string): Identified => {
 	const [head, ...rest] = raw.split(":");
 	if (head === undefined || head === "") {
-		return failure("unrecognised-service", "a service-prefixed id, e.g. tmdb:603 or tt0133093");
+		return failure(
+			"unrecognised-service",
+			"a service-prefixed id, e.g. tmdb:603 or tt0133093",
+		);
 	}
 	if (boundary.imdb.idPattern.test(head)) {
 		return { id: head, locatorSegments: rest, ok: true, service: "imdb" };
@@ -132,16 +143,24 @@ const identify = (raw: string): Identified => {
 	}
 	const [nativeId, ...locatorSegments] = rest;
 	if (nativeId === undefined || !boundary[service].idPattern.test(nativeId)) {
-		return failure("malformed-native-id", `a numeric ${service} id, e.g. ${service}:12345`);
+		return failure(
+			"malformed-native-id",
+			`a numeric ${service} id, e.g. ${service}:12345`,
+		);
 	}
 	return { id: nativeId, locatorSegments, ok: true, service };
 };
 
-type Located = Failure | { readonly locator: Locator | undefined; readonly ok: true };
+type Located =
+	| Failure
+	| { readonly locator: Locator | undefined; readonly ok: true };
 
 const flatLocator = (segments: readonly string[]): Located => {
 	if (segments.length > 2) {
-		return failure("extra-qualifier-segment", "at most an episode, optionally prefixed by season 1");
+		return failure(
+			"extra-qualifier-segment",
+			"at most an episode, optionally prefixed by season 1",
+		);
 	}
 	if (segments.length === 1) {
 		const episode = toCount(segments[0]);
@@ -155,14 +174,20 @@ const flatLocator = (segments: readonly string[]): Located => {
 		return failure("malformed-locator", "a numeric season and episode");
 	}
 	if (season !== 1) {
-		return failure("season-not-one", "season 1; flat catalogues have no other season");
+		return failure(
+			"season-not-one",
+			"season 1; flat catalogues have no other season",
+		);
 	}
 	return { locator: { episode, season: 1 }, ok: true };
 };
 
 const explicitLocator = (segments: readonly string[]): Located => {
 	if (segments.length > 2) {
-		return failure("extra-qualifier-segment", "exactly a season and an episode");
+		return failure(
+			"extra-qualifier-segment",
+			"exactly a season and an episode",
+		);
 	}
 	const season = toCount(segments[0]);
 	const episode = toCount(segments[1]);
@@ -180,7 +205,10 @@ const interpretLocator = (
 		return { locator: undefined, ok: true };
 	}
 	if (atomicOnly) {
-		return failure("positional-not-allowed", "an atomic id with no season or episode");
+		return failure(
+			"positional-not-allowed",
+			"an atomic id with no season or episode",
+		);
 	}
 	return boundary[service].seasonMode === "flat"
 		? flatLocator(segments)
@@ -189,15 +217,29 @@ const interpretLocator = (
 
 type Admission = Failure | { readonly ok: true; readonly title: TitleIdentity };
 
-const resolveTitle = (spec: ProfileSpec, service: Service, id: string): Admission => {
+const resolveTitle = (
+	spec: ProfileSpec,
+	service: Service,
+	id: string,
+): Admission => {
 	if (service === "tmdb") {
 		return spec.tmdbNamespace === undefined
-			? failure("tmdb-not-in-anime", "a non-TMDB anime id; TMDB resolves only under /movie or /series")
-			: { ok: true, title: { id, namespace: spec.tmdbNamespace, service: "tmdb" } };
+			? failure(
+					"tmdb-not-in-anime",
+					"a non-TMDB anime id; TMDB resolves only under /movie or /series",
+				)
+			: {
+					ok: true,
+					title: { id, namespace: spec.tmdbNamespace, service: "tmdb" },
+				};
 	}
 	if (!spec.admits.includes(service)) {
-		const allowed = spec.tmdbNamespace === undefined ? spec.admits : [...spec.admits, "tmdb"];
-		return failure("service-not-in-profile", `an id for one of: ${allowed.join(", ")}`);
+		const allowed =
+			spec.tmdbNamespace === undefined ? spec.admits : [...spec.admits, "tmdb"];
+		return failure(
+			"service-not-in-profile",
+			`an id for one of: ${allowed.join(", ")}`,
+		);
 	}
 	return { ok: true, title: { id, service } };
 };
@@ -212,13 +254,24 @@ const parseId = (profile: Profile, raw: string): ParseResult => {
 	if (!admission.ok) {
 		return admission;
 	}
-	const located = interpretLocator(identified.service, identified.locatorSegments, spec.atomicOnly);
+	const located = interpretLocator(
+		identified.service,
+		identified.locatorSegments,
+		spec.atomicOnly,
+	);
 	if (!located.ok) {
 		return located;
 	}
 	return located.locator === undefined
 		? { identity: { kind: "title", title: admission.title }, ok: true }
-		: { identity: { kind: "instalment", locator: located.locator, title: admission.title }, ok: true };
+		: {
+				identity: {
+					kind: "instalment",
+					locator: located.locator,
+					title: admission.title,
+				},
+				ok: true,
+			};
 };
 
 const formatTitle = (title: TitleIdentity): string =>
@@ -231,7 +284,9 @@ class FormatError extends Error {
 	public readonly reason = "flat-season-not-one";
 
 	public constructor(service: Service, season: number) {
-		super(`${service} is a flat catalogue with no season ${season}; only season 1 is representable`);
+		super(
+			`${service} is a flat catalogue with no season ${season}; only season 1 is representable`,
+		);
 		this.name = "FormatError";
 	}
 }
@@ -251,7 +306,7 @@ const formatId = (identity: Identity): string => {
 	return `${head}:${locator.season}:${locator.episode}`;
 };
 
-export { FormatError, formatId, parseId };
+export { FormatError, formatId, parseId, serviceOrder };
 export type {
 	Identity,
 	Locator,

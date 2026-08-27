@@ -5,13 +5,19 @@ import {
 	contentUnits,
 	instalmentAssertions,
 	pendingGroupCandidates,
+	serviceCoverages,
 	serviceInstalments,
 	serviceTitles,
 	titleGroupAliases,
 	titleGroups,
 } from "@/db/engine-schema";
 import type { GroupSource } from "@/db/engine-schema";
+import type { ContinuityKey } from "@/db/schema.ts";
 import { freshDb } from "@/db/test-helpers";
+import {
+	coverageStateFor,
+	seedPendingCoverage,
+} from "@/engine/overflow/coverage.ts";
 import { recomputeGroup } from "@/engine/recompute";
 
 import {
@@ -60,7 +66,9 @@ const seedSpoke = async (db: Db, titleId: number, locator: string) =>
 	).id;
 
 const curatedLink = async (db: Db, leftSpoke: number, rightSpoke: number) => {
-	const created = one(await db.insert(contentUnits).values({}).returning().all());
+	const created = one(
+		await db.insert(contentUnits).values({}).returning().all(),
+	);
 	await db
 		.insert(instalmentAssertions)
 		.values(
@@ -74,7 +82,10 @@ const curatedLink = async (db: Db, leftSpoke: number, rightSpoke: number) => {
 		.run();
 };
 
-const memberIdsOf = async (db: Db, groupId: number): Promise<readonly number[]> => {
+const memberIdsOf = async (
+	db: Db,
+	groupId: number,
+): Promise<readonly number[]> => {
 	const rows = await db
 		.select({ id: serviceTitles.id })
 		.from(serviceTitles)
@@ -126,18 +137,53 @@ describe("converge with stored groups", () => {
 			.from(serviceTitles)
 			.orderBy(serviceTitles.ordinal)
 			.all();
-		const ordinals = orderedTitles.map((row) => ({ ordinal: row.ordinal, titleId: row.id }));
+		const ordinals = orderedTitles.map((row) => ({
+			ordinal: row.ordinal,
+			titleId: row.id,
+		}));
 		expect(ordinals).toEqual([
 			{ ordinal: 0, titleId: titleA.id },
 			{ ordinal: 1, titleId: titleB.id },
 		]);
 		// The emptied loser survives and its id resolves one hop to the survivor.
 		expect(
-			await db.select().from(titleGroups).where(eq(titleGroups.id, loser.id)).all(),
+			await db
+				.select()
+				.from(titleGroups)
+				.where(eq(titleGroups.id, loser.id))
+				.all(),
 		).toHaveLength(1);
 		expect(await aliasOf(db, loser.id)).toEqual([
-			expect.objectContaining({ retiredGroupId: loser.id, survivorGroupId: survivor.id }),
+			expect.objectContaining({
+				retiredGroupId: loser.id,
+				survivorGroupId: survivor.id,
+			}),
 		]);
+	});
+
+	it("rebuilds service coverages under the survivor after a merge", async () => {
+		const survivor = await seedGroup(db);
+		const loser = await seedGroup(db);
+		await seedTitle(db, survivor.id, "tmdb", "1", 0);
+		await seedTitle(db, loser.id, "imdb", "tt2", 0);
+		const survivorKey: ContinuityKey = `group:${survivor.id}`;
+		const retiredKey: ContinuityKey = `group:${loser.id}`;
+		await seedPendingCoverage(db, survivorKey, 1, "tmdb");
+		await seedPendingCoverage(db, retiredKey, 1, "tmdb");
+
+		const outcome = await convergeGroups(db, {
+			members: [
+				{ ordinal: 0, service: "tmdb", serviceId: "1" },
+				{ ordinal: 1, service: "imdb", serviceId: "tt2" },
+			],
+		});
+
+		expect(outcome.kind).toBe("merged");
+		const coverageRows = await db.select().from(serviceCoverages).all();
+		expect(
+			coverageRows.filter((row) => row.baselineContinuity === retiredKey),
+		).toHaveLength(0);
+		expect(await coverageStateFor(db, survivorKey, 2, "tmdb")).toBe("pending");
 	});
 
 	it("flattens an existing alias chain onto the new survivor", async () => {
@@ -213,7 +259,9 @@ describe("converge with stored groups", () => {
 		expect(candidates).toHaveLength(1);
 		expect(candidates[0]?.kind).toBe("structural");
 		expect(candidates[0]?.evidence).toEqual({
-			competingGroupIds: [survivor.id, curated.id].toSorted((left, right) => left - right),
+			competingGroupIds: [survivor.id, curated.id].toSorted(
+				(left, right) => left - right,
+			),
 			kind: "structural",
 			proposedMembers: [
 				{ service: "imdb", serviceId: "tt2" },
@@ -240,8 +288,13 @@ describe("converge with stored groups", () => {
 
 		const first = await convergeGroups(db, input);
 		expect(first.kind).toBe("candidate");
-		expect(await convergeGroups(db, input)).toEqual({ candidateId: undefined, kind: "candidate" });
-		expect(await db.select().from(pendingGroupCandidates).all()).toHaveLength(1);
+		expect(await convergeGroups(db, input)).toEqual({
+			candidateId: undefined,
+			kind: "candidate",
+		});
+		expect(await db.select().from(pendingGroupCandidates).all()).toHaveLength(
+			1,
+		);
 	});
 
 	it("queues a candidate when a group holds a member the discovery never named", async () => {
@@ -260,7 +313,9 @@ describe("converge with stored groups", () => {
 		});
 
 		expect(outcome.kind).toBe("candidate");
-		expect(await db.select().from(pendingGroupCandidates).all()).toHaveLength(1);
+		expect(await db.select().from(pendingGroupCandidates).all()).toHaveLength(
+			1,
+		);
 		expect(await memberIdsOf(db, wider.id)).toHaveLength(2);
 	});
 
@@ -328,7 +383,11 @@ describe("converge with stored groups", () => {
 			groupId: group.id,
 			ladderComplete: true,
 			pairings: [
-				{ confidence: "high", source: "t3-episode", spokeIds: [spokeA, spokeB] },
+				{
+					confidence: "high",
+					source: "t3-episode",
+					spokeIds: [spokeA, spokeB],
+				},
 			],
 			triedSource: "t3-episode",
 		});
@@ -348,7 +407,11 @@ describe("converge with stored groups", () => {
 
 		const members = await readRevalidationMembers(db, group.id);
 		// A shared ordinal breaks the tie by id, but narrows nothing.
-		expect(members.map((member) => member.titleId).toSorted((left, right) => left - right)).toEqual(
+		expect(
+			members
+				.map((member) => member.titleId)
+				.toSorted((left, right) => left - right),
+		).toEqual(
 			[titleA.id, titleB.id, titleC.id].toSorted((left, right) => left - right),
 		);
 		expect(members).toHaveLength(3);

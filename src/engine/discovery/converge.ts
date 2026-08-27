@@ -19,6 +19,7 @@ import type {
 import { survivorGroupId } from "@/engine/gateway";
 import type { GatewayDb } from "@/engine/gateway";
 import { tierIds } from "@/engine/matcher";
+import { reconcileCoveragesAfterMerge } from "@/engine/overflow/coverage.ts";
 import { isCuratedSource } from "@/engine/recompute";
 
 // A member the discovery named, in the order the discovery placed it (live
@@ -456,13 +457,20 @@ const commitMerge = async (
 		);
 		return statements;
 	});
-	return acquired
-		? {
-				kind: "merged",
-				retiredIds: plan.retiredIds,
-				survivorId: plan.survivorId,
-			}
-		: { kind: "aborted" };
+	if (!acquired) {
+		return { kind: "aborted" };
+	}
+	if (plan.retiredIds.length > 0) {
+		await reconcileCoveragesAfterMerge(db, {
+			retiredGroupIds: plan.retiredIds,
+			survivorGroupId: plan.survivorId,
+		});
+	}
+	return {
+		kind: "merged",
+		retiredIds: plan.retiredIds,
+		survivorId: plan.survivorId,
+	};
 };
 
 // One stored member as a revalidation sees it: its title and the spokes it owns,
