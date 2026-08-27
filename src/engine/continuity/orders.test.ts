@@ -246,5 +246,22 @@ describe("persisted presentation orders", () => {
 		]);
 		const selected = await selectPresentationOrder(db, seriesContinuity);
 		expect(selected.slug).toBe("watch");
+		const segmentsAfter = await db
+			.select({
+				id: continuitySegments.id,
+				titleId: continuitySegments.titleId,
+			})
+			.from(continuitySegments)
+			.where(eq(continuitySegments.continuityId, seriesContinuity))
+			.orderBy(asc(continuitySegments.releaseOrdinal))
+			.all();
+		const idByTitle = new Map(
+			segmentsAfter.map((segment) => [segment.titleId, segment.id]),
+		);
+		expect(selected.segmentIds).toEqual([
+			idByTitle.get(film.id),
+			idByTitle.get(season.id),
+			idByTitle.get(extra.id),
+		]);
 	});
 });

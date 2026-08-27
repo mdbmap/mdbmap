@@ -43,6 +43,17 @@ const resolvePresentationSlug = (
 	return defaultPresentationSlug(slugs);
 };
 
+const withReleaseTail = (
+	curated: readonly number[],
+	release: readonly number[],
+): number[] => {
+	if (curated.length === 0) {
+		return [...release];
+	}
+	const covered = new Set(curated);
+	return [...curated, ...release.filter((id) => !covered.has(id))];
+};
+
 const reorderByIds = <Item>(
 	items: readonly Item[],
 	itemIds: readonly number[],
@@ -314,10 +325,13 @@ const selectPresentationOrder = async (
 		)
 		.orderBy(asc(presentationOrderItems.position))
 		.all();
-	const segmentIds = items.map((item) => item.segmentId);
+	const segmentIds = withReleaseTail(
+		items.map((item) => item.segmentId),
+		releaseIds,
+	);
 	return {
 		releaseSegmentIds: releaseIds,
-		segmentIds: segmentIds.length === 0 ? releaseIds : segmentIds,
+		segmentIds,
 		slug,
 	};
 };
