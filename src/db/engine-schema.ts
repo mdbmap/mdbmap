@@ -44,6 +44,9 @@ type CandidateStatus = (typeof candidateStatuses)[number];
 const continuitySegmentKinds = ["episodic", "atomic"] as const;
 type ContinuitySegmentKind = (typeof continuitySegmentKinds)[number];
 
+const presentationOrderSlugs = ["release", "watch"] as const;
+type PresentationOrderSlug = (typeof presentationOrderSlugs)[number];
+
 const atomicWriteGates = sqliteTable("atomic_write_gates", {
 	operationId: text("operation_id").primaryKey(),
 });
@@ -321,6 +324,7 @@ const continuitySegments = sqliteTable(
 		continuityId: integer("continuity_id")
 			.notNull()
 			.references(() => continuities.id, { onDelete: "cascade" }),
+		id: integer({ mode: "number" }).primaryKey({ autoIncrement: true }),
 		kind: text({ enum: continuitySegmentKinds }).notNull(),
 		relationAssertionId: integer("relation_assertion_id").references(
 			() => relationAssertions.id,
@@ -339,6 +343,59 @@ const continuitySegments = sqliteTable(
 		uniqueIndex("continuity_segments_continuity_title_idx").on(
 			table.continuityId,
 			table.titleId,
+		),
+	],
+);
+
+const presentationOrders = sqliteTable(
+	"presentation_orders",
+	{
+		continuityId: integer("continuity_id")
+			.notNull()
+			.references(() => continuities.id, { onDelete: "cascade" }),
+		createdAt: timestamp("created_at"),
+		id: integer({ mode: "number" }).primaryKey({ autoIncrement: true }),
+		isDefault: integer("is_default", { mode: "boolean" })
+			.notNull()
+			.default(false),
+		label: text().notNull(),
+		slug: text({ enum: presentationOrderSlugs }).notNull(),
+		updatedAt: timestamp("updated_at").$onUpdateFn(() => new Date()),
+	},
+	(table) => [
+		check(
+			"presentation_orders_slug",
+			sql`${table.slug} in ('release', 'watch')`,
+		),
+		uniqueIndex("presentation_orders_continuity_slug_idx").on(
+			table.continuityId,
+			table.slug,
+		),
+		uniqueIndex("presentation_orders_continuity_default_idx")
+			.on(table.continuityId)
+			.where(sql`${table.isDefault} = 1`),
+	],
+);
+
+const presentationOrderItems = sqliteTable(
+	"presentation_order_items",
+	{
+		orderId: integer("order_id")
+			.notNull()
+			.references(() => presentationOrders.id, { onDelete: "cascade" }),
+		position: integer().notNull(),
+		segmentId: integer("segment_id")
+			.notNull()
+			.references(() => continuitySegments.id, { onDelete: "cascade" }),
+	},
+	(table) => [
+		uniqueIndex("presentation_order_items_order_position_idx").on(
+			table.orderId,
+			table.position,
+		),
+		uniqueIndex("presentation_order_items_order_segment_idx").on(
+			table.orderId,
+			table.segmentId,
 		),
 	],
 );
@@ -470,6 +527,9 @@ export {
 	instalmentLocatorKinds,
 	pendingCandidateKinds,
 	pendingGroupCandidates,
+	presentationOrderItems,
+	presentationOrderSlugs,
+	presentationOrders,
 	relationAssertions,
 	serviceCoverages,
 	serviceInstalments,
@@ -488,6 +548,7 @@ export type {
 	GroupSource,
 	InstalmentLocatorKind,
 	PendingCandidateKind,
+	PresentationOrderSlug,
 	Service,
 };
 export type { AssertionConfidence, AssertionSource } from "./columns.ts";
