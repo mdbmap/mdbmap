@@ -1,5 +1,6 @@
 import { z } from "zod";
 
+import { presentationOrderSlugs } from "@/db/engine-schema";
 import type { ApiKeyPlan, RateableUnitKind, WatchStatus } from "@/db/schema";
 import { apiKeyPlans, researchTimings, watchStatuses } from "@/db/schema";
 import type { MediaKind } from "@/engine";
@@ -22,7 +23,10 @@ const RateableUnitInput = z.discriminatedUnion("kind", [
 	z.object({ key: z.string().min(1), kind: z.literal("movie") }),
 ]);
 
-const WorkGetInput = z.object({ continuityId: z.string().min(1) });
+const WorkGetInput = z.object({
+	continuityId: z.string().min(1),
+	order: z.enum(presentationOrderSlugs).optional(),
+});
 
 const SetStatusInput = z.object({
 	continuityId: z.string().min(1),

@@ -12,6 +12,8 @@ const wipeOrder = [
 	"absence_assertions",
 	"instalment_assertions",
 	"title_assertions",
+	"presentation_order_items",
+	"presentation_orders",
 	"continuity_segments",
 	"continuity_aliases",
 	"relation_assertions",

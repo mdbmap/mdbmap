@@ -5,6 +5,10 @@ import { episodeProgress, personalRating, watchStatus } from "@/db/schema";
 import type { ResolveResult } from "@/engine";
 import { metadataProviderFor } from "@/engine";
 import { parseContinuityKey } from "@/engine/continuity/keys";
+import {
+	reorderByIds,
+	selectPresentationOrder,
+} from "@/engine/continuity/orders";
 import { trackingAliasKeys } from "@/engine/continuity/persist";
 import { pub } from "@/orpc/base";
 import type { Db } from "@/orpc/context";
@@ -230,7 +234,7 @@ const get = pub
 			};
 		}
 
-		const parts = await buildParts(
+		const built = await buildParts(
 			resolved,
 			meta,
 			context.providers,
@@ -239,6 +243,19 @@ const get = pub
 			aliasKeys,
 			viewerState,
 		);
+		const selected =
+			parsedCanonical?.type === "continuity"
+				? await selectPresentationOrder(
+						context.db,
+						parsedCanonical.id,
+						input.order,
+					)
+				: undefined;
+		const ordered =
+			selected === undefined
+				? built
+				: reorderByIds(built, selected.releaseSegmentIds, selected.segmentIds);
+		const parts = ordered.length > 0 ? ordered : built;
 
 		return {
 			cast: [...meta.cast],

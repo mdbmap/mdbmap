@@ -1,11 +1,14 @@
-import { eq } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
 import { beforeEach, describe, expect, it } from "vitest";
 
 import {
 	candidateSubjectKey,
 	contentUnits,
+	continuities,
+	continuitySegments,
 	instalmentAssertions,
 	pendingGroupCandidates,
+	presentationOrders,
 	relationAssertions,
 	serviceInstalments,
 	serviceTitles,
@@ -478,6 +481,99 @@ describe("title group aliases", () => {
 					.insert(titleGroupAliases)
 					.values({ retiredGroupId: group.id, survivorGroupId: group.id })
 					.run(),
+			),
+		).toMatch(/constraint/iu);
+	});
+});
+
+describe("presentation orders", () => {
+	let db: Db;
+
+	beforeEach(async () => {
+		db = await freshDb();
+	});
+
+	it("rejects a second default order on the same continuity", async () => {
+		const group = await seedGroup(db);
+		const title = one(
+			await db
+				.insert(serviceTitles)
+				.values({ groupId: group.id, service: "tmdb", serviceId: "tv:1" })
+				.returning()
+				.all(),
+		);
+		const continuity = one(
+			await db
+				.insert(continuities)
+				.values({ source: "t1-structure" })
+				.returning()
+				.all(),
+		);
+		await db
+			.insert(continuitySegments)
+			.values({
+				continuityId: continuity.id,
+				kind: "episodic",
+				releaseOrdinal: 0,
+				titleId: title.id,
+			})
+			.run();
+		await db
+			.insert(presentationOrders)
+			.values({
+				continuityId: continuity.id,
+				isDefault: true,
+				label: "Release",
+				slug: "release",
+			})
+			.run();
+
+		expect(
+			await rejectionText(
+				db
+					.insert(presentationOrders)
+					.values({
+						continuityId: continuity.id,
+						isDefault: true,
+						label: "Watch",
+						slug: "watch",
+					})
+					.run(),
+			),
+		).toMatch(/unique/iu);
+	});
+
+	it("rejects a matching-order slug", async () => {
+		const group = await seedGroup(db);
+		const title = one(
+			await db
+				.insert(serviceTitles)
+				.values({ groupId: group.id, service: "tmdb", serviceId: "tv:1" })
+				.returning()
+				.all(),
+		);
+		const continuity = one(
+			await db
+				.insert(continuities)
+				.values({ source: "t1-structure" })
+				.returning()
+				.all(),
+		);
+		await db
+			.insert(continuitySegments)
+			.values({
+				continuityId: continuity.id,
+				kind: "episodic",
+				releaseOrdinal: 0,
+				titleId: title.id,
+			})
+			.run();
+
+		expect(
+			await rejectionText(
+				db.run(
+					sql`insert into presentation_orders (continuity_id, is_default, label, slug) values (${continuity.id}, 1, 'Matching', 't1-structure')`,
+				),
 			),
 		).toMatch(/constraint/iu);
 	});

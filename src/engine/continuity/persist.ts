@@ -14,6 +14,11 @@ import { one } from "@/db/one";
 import { survivorGroupId } from "@/engine/gateway";
 
 import { continuityKey, groupContinuityKey } from "./keys.ts";
+import {
+	afterSegmentRewrite,
+	regenerateReleaseOrder,
+	snapshotWatchOrder,
+} from "./orders.ts";
 
 type TitleRow = typeof serviceTitles.$inferSelect;
 
@@ -238,28 +243,29 @@ const rewriteSegments = async (
 		readonly toTitleId?: number;
 	},
 ): Promise<void> => {
+	const watch = await snapshotWatchOrder(db, input.continuityId);
 	await db
 		.delete(continuitySegments)
 		.where(eq(continuitySegments.continuityId, input.continuityId))
 		.run();
-	if (input.segments.length === 0) {
-		return;
+	if (input.segments.length > 0) {
+		await db
+			.insert(continuitySegments)
+			.values(
+				input.segments.map((segment, releaseOrdinal) => ({
+					continuityId: input.continuityId,
+					kind: segment.kind,
+					relationAssertionId:
+						input.toTitleId !== undefined && segment.titleId === input.toTitleId
+							? input.relationAssertionId
+							: segment.relationAssertionId,
+					releaseOrdinal,
+					titleId: segment.titleId,
+				})),
+			)
+			.run();
 	}
-	await db
-		.insert(continuitySegments)
-		.values(
-			input.segments.map((segment, releaseOrdinal) => ({
-				continuityId: input.continuityId,
-				kind: segment.kind,
-				relationAssertionId:
-					input.toTitleId !== undefined && segment.titleId === input.toTitleId
-						? input.relationAssertionId
-						: segment.relationAssertionId,
-				releaseOrdinal,
-				titleId: segment.titleId,
-			})),
-		)
-		.run();
+	await afterSegmentRewrite(db, input.continuityId, watch);
 };
 
 const createContinuity = async (
@@ -339,6 +345,7 @@ const ensureGroupContinuity = async (
 			})),
 		)
 		.run();
+	await regenerateReleaseOrder(db, continuityId);
 	return continuityId;
 };
 
