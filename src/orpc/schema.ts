@@ -165,18 +165,46 @@ interface EpisodeView {
 	watched: boolean;
 }
 
+interface MovieRateableUnit {
+	key: string;
+	kind: "movie";
+}
+
 interface PartView {
+	airDate?: string | undefined;
 	airedFrom: string | undefined;
 	airedTo: string | undefined;
 	communityScore: CommunityScore;
 	episodeCount: number;
 	episodes: EpisodeView[];
+	instalmentLocator?: string;
+	kind?: "film" | "part";
 	label: string;
 	personalRating: number | undefined;
 	rateableUnit: RateableUnit;
 	serviceRatings: ServiceRating[];
+	watched?: boolean;
 	year: number | undefined;
 }
+
+interface FilmView {
+	airDate: string | undefined;
+	airedFrom: string | undefined;
+	airedTo: string | undefined;
+	communityScore: CommunityScore;
+	episodeCount: number;
+	episodes: EpisodeView[];
+	instalmentLocator: string;
+	kind: "film";
+	label: string;
+	personalRating: number | undefined;
+	rateableUnit: MovieRateableUnit;
+	serviceRatings: ServiceRating[];
+	watched: boolean;
+	year: number | undefined;
+}
+
+type WorkBlock = FilmView | PartView;
 
 interface ViewerTracking {
 	personalRating: number | undefined;
@@ -239,7 +267,9 @@ export type {
 	Credit,
 	EpisodeView,
 	EpisodeWatchedResult,
+	FilmView,
 	MintedApiKey,
+	MovieRateableUnit,
 	PartView,
 	ProviderRow,
 	RateableUnit,
@@ -248,6 +278,7 @@ export type {
 	Similar,
 	TrackingSummary,
 	ViewerTracking,
+	WorkBlock,
 	WorkView,
 };
 export type { ResearchTiming } from "@/db/schema";

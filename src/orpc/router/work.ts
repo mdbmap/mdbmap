@@ -2,7 +2,7 @@ import { and, eq, inArray } from "drizzle-orm";
 
 import type { WatchStatus } from "@/db/schema";
 import { episodeProgress, personalRating, watchStatus } from "@/db/schema";
-import type { ResolveResult } from "@/engine";
+import type { ResolveResult, Segment } from "@/engine";
 import { metadataProviderFor } from "@/engine";
 import { parseContinuityKey } from "@/engine/continuity/keys";
 import {
@@ -16,9 +16,11 @@ import { instalmentsOf } from "@/orpc/instalments";
 import type { Providers, WorkMetadata } from "@/orpc/providers";
 import type {
 	EpisodeView,
+	FilmView,
 	PartView,
 	RateableUnit,
 	ViewerTracking,
+	WorkBlock,
 	WorkView,
 } from "@/orpc/schema";
 import { WorkGetInput } from "@/orpc/schema";
@@ -125,7 +127,108 @@ const loadViewerState = async (
 	return { personalByUnit, statusRow, watchedSet };
 };
 
-const buildParts = async (
+const buildEpisodes = async (
+	segment: Segment,
+	segMeta: WorkMetadata["segments"][number] | undefined,
+	providers: Providers,
+	db: Db,
+	viewer: ViewerState | undefined,
+): Promise<EpisodeView[]> =>
+	Promise.all(
+		segment.instalments.map(async (locator, position) => {
+			const epMeta = segMeta?.episodes[position];
+			const episodeUnit: RateableUnit = { key: locator, kind: "episode" };
+			const communityScore = await providers.community.scoreFor(
+				episodeUnit,
+				db,
+			);
+			return {
+				airDate: epMeta?.airDate,
+				communityScore,
+				instalmentLocator: locator,
+				number: epMeta?.number ?? position + 1,
+				personalRating: viewer?.personalByUnit.get(unitId(episodeUnit)),
+				rateableUnit: episodeUnit,
+				title: epMeta?.title ?? `Episode ${position + 1}`,
+				watched: viewer?.watchedSet.has(locator) ?? false,
+			};
+		}),
+	);
+
+const buildPartBlock = async (
+	segment: Segment,
+	index: number,
+	segMeta: WorkMetadata["segments"][number] | undefined,
+	providers: Providers,
+	db: Db,
+	continuityId: string,
+	aliasKeys: readonly string[],
+	viewer: ViewerState | undefined,
+): Promise<PartView> => {
+	const partUnit: RateableUnit = {
+		key: partKeyFor(continuityId, index),
+		kind: "part",
+	};
+	const aliases = aliasKeys.map((key) => ({
+		key: partKeyFor(key, index),
+		kind: "part" as const,
+	}));
+	const [episodes, communityScore, ratings] = await Promise.all([
+		buildEpisodes(segment, segMeta, providers, db, viewer),
+		providers.community.scoreFor(partUnit, db, aliases),
+		providers.serviceRatings.ratingsFor(partUnit, segment.members),
+	]);
+	return {
+		airedFrom: segMeta?.airedFrom,
+		airedTo: segMeta?.airedTo,
+		communityScore,
+		episodeCount: segment.instalments.length,
+		episodes,
+		kind: "part",
+		label: segMeta?.label ?? `Part ${index + 1}`,
+		personalRating: viewer?.personalByUnit.get(unitId(partUnit)),
+		rateableUnit: partUnit,
+		serviceRatings: [...ratings],
+		year: segMeta?.year,
+	};
+};
+
+const buildFilmBlock = async (
+	segment: Segment,
+	segMeta: WorkMetadata["segments"][number] | undefined,
+	providers: Providers,
+	db: Db,
+	viewer: ViewerState | undefined,
+): Promise<FilmView> => {
+	const [locator] = segment.instalments;
+	if (locator === undefined) {
+		throw new Error("engine: atomic segment has no instalment");
+	}
+	const movieUnit = { key: locator, kind: "movie" } as const;
+	const airDate = segMeta?.airedFrom ?? segMeta?.episodes[0]?.airDate;
+	const [communityScore, ratings] = await Promise.all([
+		providers.community.scoreFor(movieUnit, db),
+		providers.serviceRatings.ratingsFor(movieUnit, segment.members),
+	]);
+	return {
+		airDate,
+		airedFrom: airDate,
+		airedTo: airDate,
+		communityScore,
+		episodeCount: 0,
+		episodes: [],
+		instalmentLocator: locator,
+		kind: "film",
+		label: segMeta?.label ?? "Film",
+		personalRating: viewer?.personalByUnit.get(unitId(movieUnit)),
+		rateableUnit: movieUnit,
+		serviceRatings: [...ratings],
+		watched: viewer?.watchedSet.has(locator) ?? false,
+		year: segMeta?.year,
+	};
+};
+
+const buildBlocks = async (
 	resolved: ResolveResult,
 	meta: WorkMetadata,
 	providers: Providers,
@@ -133,59 +236,23 @@ const buildParts = async (
 	continuityId: string,
 	aliasKeys: readonly string[],
 	viewer: ViewerState | undefined,
-): Promise<PartView[]> =>
+): Promise<WorkBlock[]> =>
 	Promise.all(
 		resolved.segments.map(async (segment, index) => {
 			const segMeta = meta.segments[index];
-			const partUnit: RateableUnit = {
-				key: partKeyFor(continuityId, index),
-				kind: "part",
-			};
-			const episodes: EpisodeView[] = await Promise.all(
-				segment.instalments.map(async (locator, position) => {
-					const epMeta = segMeta?.episodes[position];
-					const episodeUnit: RateableUnit = { key: locator, kind: "episode" };
-					const communityScore = await providers.community.scoreFor(
-						episodeUnit,
-						db,
-					);
-					return {
-						airDate: epMeta?.airDate,
-						communityScore,
-						instalmentLocator: locator,
-						number: epMeta?.number ?? position + 1,
-						personalRating: viewer?.personalByUnit.get(unitId(episodeUnit)),
-						rateableUnit: episodeUnit,
-						title: epMeta?.title ?? `Episode ${position + 1}`,
-						watched: viewer?.watchedSet.has(locator) ?? false,
-					};
-				}),
-			);
-			const aliases = aliasKeys.map((key) => ({
-				key: partKeyFor(key, index),
-				kind: "part" as const,
-			}));
-			const communityScore = await providers.community.scoreFor(
-				partUnit,
+			if (segment.kind === "atomic") {
+				return buildFilmBlock(segment, segMeta, providers, db, viewer);
+			}
+			return buildPartBlock(
+				segment,
+				index,
+				segMeta,
+				providers,
 				db,
-				aliases,
+				continuityId,
+				aliasKeys,
+				viewer,
 			);
-			const ratings = await providers.serviceRatings.ratingsFor(
-				partUnit,
-				segment.members,
-			);
-			return {
-				airedFrom: segMeta?.airedFrom,
-				airedTo: segMeta?.airedTo,
-				communityScore,
-				episodeCount: segment.instalments.length,
-				episodes,
-				label: segMeta?.label ?? `Part ${index + 1}`,
-				personalRating: viewer?.personalByUnit.get(unitId(partUnit)),
-				rateableUnit: partUnit,
-				serviceRatings: [...ratings],
-				year: segMeta?.year,
-			};
 		}),
 	);
 
@@ -234,7 +301,7 @@ const get = pub
 			};
 		}
 
-		const built = await buildParts(
+		const built = await buildBlocks(
 			resolved,
 			meta,
 			context.providers,
