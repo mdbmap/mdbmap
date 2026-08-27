@@ -1,46 +1,62 @@
 import { Section } from "@/components/ui/section";
 import { SectionHead } from "@/components/ui/section-head";
 import { useSelectedPart } from "@/components/work/part-state";
-import type { PartView } from "@/orpc/schema";
+import { instalmentCount, watchedCount } from "@/components/work/parts";
+import type { PresentationOrderSlug } from "@/db/engine-schema";
+import type { WorkBlock } from "@/orpc/schema";
 
 import { EpisodeList } from "./episode-list";
+import { FilmRow } from "./film-row";
 import { PartSelector } from "./part-selector";
 import { useEpisodeWatched } from "./use-episode-watched";
 
 const HEADING = "Episodes";
 const NO_PARTS = "No parts";
 
-const watchedInPart = (part: PartView) =>
-	part.episodes.reduce((count, episode) => count + (episode.watched ? 1 : 0), 0);
-
 interface EpisodesProps {
 	continuityId: string;
-	parts: PartView[];
+	onSelectOrder?: ((order: PresentationOrderSlug) => void) | undefined;
+	order?: PresentationOrderSlug | undefined;
+	orders?: readonly PresentationOrderSlug[] | undefined;
+	parts: WorkBlock[];
 }
 
-function Episodes({ continuityId, parts }: EpisodesProps) {
+function Episodes({
+	continuityId,
+	onSelectOrder,
+	order,
+	orders,
+	parts,
+}: EpisodesProps) {
 	const { selectPart, selectedIndex, selectedPart } = useSelectedPart(parts);
-	const { toggle } = useEpisodeWatched(continuityId);
+	const { toggle } = useEpisodeWatched(continuityId, order);
 
 	return (
 		<Section>
 			<SectionHead>{HEADING}</SectionHead>
 			{selectedPart === undefined ? (
-				<p className="mt-2 font-mono text-[11px] text-ink/40">{NO_PARTS}</p>
+				<p className="text-ink/40 mt-2 font-mono text-[11px]">{NO_PARTS}</p>
 			) : (
 				<>
 					<PartSelector
-						episodeCount={selectedPart.episodeCount}
+						episodeCount={instalmentCount(selectedPart)}
 						onSelect={selectPart}
+						onSelectOrder={onSelectOrder}
+						order={order}
+						orders={orders}
 						parts={parts}
 						selectedIndex={selectedIndex}
-						watchedCount={watchedInPart(selectedPart)}
+						watchedCount={watchedCount(selectedPart)}
 					/>
-					<EpisodeList
-						key={selectedPart.rateableUnit.key}
-						episodes={selectedPart.episodes}
-						onToggle={toggle}
-					/>
+					{selectedPart.kind === "film" ? (
+						<FilmRow film={selectedPart} onToggle={toggle} />
+					) : (
+						<EpisodeList
+							key={selectedPart.rateableUnit.key}
+							episodes={selectedPart.episodes}
+							onToggle={toggle}
+						/>
+					)}
 				</>
 			)}
 		</Section>

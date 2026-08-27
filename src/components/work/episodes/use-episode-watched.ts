@@ -1,6 +1,8 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useCallback } from "react";
 
+import { workGetInput } from "@/components/work/part-state";
+import type { PresentationOrderSlug } from "@/db/engine-schema";
 import { orpc } from "@/orpc/client";
 import type { WorkView } from "@/orpc/schema";
 
@@ -19,9 +21,14 @@ interface EpisodeToggle {
 // single read seam, so the toggle mutates its cached WorkView; the You block and
 // the checkbox both read from it. The mutation returns the derived whole-series
 // status, which reconciles the optimistic guess before the invalidation refetch.
-function useEpisodeWatched(continuityId: string): EpisodeToggle {
+function useEpisodeWatched(
+	continuityId: string,
+	order?: PresentationOrderSlug,
+): EpisodeToggle {
 	const queryClient = useQueryClient();
-	const queryKey = orpc.work.get.queryKey({ input: { continuityId } });
+	const queryKey = orpc.work.get.queryKey({
+		input: workGetInput(continuityId, order),
+	});
 
 	const mutation = useMutation(
 		orpc.tracking.setEpisodeWatched.mutationOptions({
@@ -36,7 +43,11 @@ function useEpisodeWatched(continuityId: string): EpisodeToggle {
 				if (previous) {
 					queryClient.setQueryData(
 						queryKey,
-						applyEpisodeWatched(previous, variables.instalmentLocator, variables.watched),
+						applyEpisodeWatched(
+							previous,
+							variables.instalmentLocator,
+							variables.watched,
+						),
 					);
 				}
 				return { previous };
@@ -47,7 +58,10 @@ function useEpisodeWatched(continuityId: string): EpisodeToggle {
 			onSuccess: (result) => {
 				const current = queryClient.getQueryData<WorkView>(queryKey);
 				if (current) {
-					queryClient.setQueryData(queryKey, applyDerivedTracking(current, result));
+					queryClient.setQueryData(
+						queryKey,
+						applyDerivedTracking(current, result),
+					);
 				}
 			},
 		}),

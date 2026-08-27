@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { resolveSelectedIndex } from "./part-state";
+import { resolveSelectedIndex, workGetInput } from "./part-state";
 
 describe("resolveSelectedIndex", () => {
 	it("defaults an untouched selection to the last part", () => {
@@ -17,5 +17,20 @@ describe("resolveSelectedIndex", () => {
 
 	it("stays at zero when there are no parts", () => {
 		expect(resolveSelectedIndex(undefined, 0)).toBe(0);
+	});
+});
+
+describe("workGetInput", () => {
+	it("omits order when the viewer has not chosen one", () => {
+		expect(workGetInput("continuity:x")).toEqual({
+			continuityId: "continuity:x",
+		});
+	});
+
+	it("includes the selected presentation order", () => {
+		expect(workGetInput("continuity:x", "watch")).toEqual({
+			continuityId: "continuity:x",
+			order: "watch",
+		});
 	});
 });

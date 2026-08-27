@@ -2,7 +2,8 @@ import { useCallback, useMemo } from "react";
 
 import { Label } from "@/components/ui/label";
 import { totalEpisodes } from "@/components/work/parts";
-import type { PartView, RateableUnit, ViewerTracking } from "@/orpc/schema";
+import type { PresentationOrderSlug } from "@/db/engine-schema";
+import type { RateableUnit, ViewerTracking, WorkBlock } from "@/orpc/schema";
 
 import { ScoreSelect } from "./score-select";
 import { StatusSelect } from "./status-select";
@@ -16,8 +17,8 @@ const PLUS = "+";
 function ProgressBar({ percent }: { percent: number }) {
 	const style = useMemo(() => ({ width: `${percent}%` }), [percent]);
 	return (
-		<div className="mt-2.5 h-[3px] overflow-hidden bg-ink/15">
-			<span className="block h-full bg-accent" style={style} />
+		<div className="bg-ink/15 mt-2.5 h-[3px] overflow-hidden">
+			<span className="bg-accent block h-full" style={style} />
 		</div>
 	);
 }
@@ -35,11 +36,11 @@ function RewatchStepper({ count, onChange }: RewatchStepperProps) {
 		onChange(count + 1);
 	}, [count, onChange]);
 	return (
-		<div className="mt-1.5 flex items-center gap-2 font-mono text-[11px] text-ink/50">
+		<div className="text-ink/50 mt-1.5 flex items-center gap-2 font-mono text-[11px]">
 			<span>{`rewatch ×${count}`}</span>
 			<button
 				aria-label="Decrease rewatch count"
-				className="cursor-pointer text-ink/60 hover:text-accent"
+				className="text-ink/60 hover:text-accent cursor-pointer"
 				onClick={decrease}
 				type="button"
 			>
@@ -47,7 +48,7 @@ function RewatchStepper({ count, onChange }: RewatchStepperProps) {
 			</button>
 			<button
 				aria-label="Increase rewatch count"
-				className="cursor-pointer text-ink/60 hover:text-accent"
+				className="text-ink/60 hover:text-accent cursor-pointer"
 				onClick={increase}
 				type="button"
 			>
@@ -59,12 +60,16 @@ function RewatchStepper({ count, onChange }: RewatchStepperProps) {
 
 interface YouBlockProps {
 	continuityId: string;
-	parts: PartView[];
+	order?: PresentationOrderSlug | undefined;
+	parts: WorkBlock[];
 	viewer: ViewerTracking | undefined;
 }
 
-function YouBlock({ continuityId, parts, viewer }: YouBlockProps) {
-	const { setRating, setRewatch, setStatus } = useWorkTracking(continuityId);
+function YouBlock({ continuityId, order, parts, viewer }: YouBlockProps) {
+	const { setRating, setRewatch, setStatus } = useWorkTracking(
+		continuityId,
+		order,
+	);
 	const workUnit = useMemo<RateableUnit>(
 		() => ({ key: continuityId, kind: "work" }),
 		[continuityId],
@@ -90,11 +95,11 @@ function YouBlock({ continuityId, parts, viewer }: YouBlockProps) {
 					size="display"
 					value={viewer?.personalRating}
 				/>
-				<span className="font-mono text-[13px] text-ink/40">{OUT_OF_TEN}</span>
+				<span className="text-ink/40 font-mono text-[13px]">{OUT_OF_TEN}</span>
 			</div>
 			<StatusSelect onChange={setStatus} value={viewer?.status} />
 			<ProgressBar percent={percent} />
-			<div className="mt-1.5 font-mono text-[11px] text-ink/50">
+			<div className="text-ink/50 mt-1.5 font-mono text-[11px]">
 				{`${watched} / ${total} across ${parts.length} parts`}
 			</div>
 			<RewatchStepper count={viewer?.rewatchCount ?? 0} onChange={setRewatch} />

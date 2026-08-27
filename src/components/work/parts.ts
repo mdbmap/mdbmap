@@ -1,4 +1,19 @@
-import type { PartView } from "@/orpc/schema";
+import type { WorkBlock } from "@/orpc/schema";
 
-export const totalEpisodes = (parts: PartView[]) =>
-	parts.reduce((sum, part) => sum + part.episodeCount, 0);
+const instalmentCount = (block: WorkBlock) =>
+	block.kind === "film" ? 1 : block.episodeCount;
+
+const watchedCount = (block: WorkBlock) => {
+	if (block.kind === "film") {
+		return block.watched ? 1 : 0;
+	}
+	return block.episodes.reduce(
+		(count, episode) => count + (episode.watched ? 1 : 0),
+		0,
+	);
+};
+
+const totalEpisodes = (parts: WorkBlock[]) =>
+	parts.reduce((sum, part) => sum + instalmentCount(part), 0);
+
+export { instalmentCount, totalEpisodes, watchedCount };

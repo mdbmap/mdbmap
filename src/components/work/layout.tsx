@@ -1,3 +1,4 @@
+import type { PresentationOrderSlug } from "@/db/engine-schema";
 import type { WorkView } from "@/orpc/schema";
 
 import { Episodes } from "./episodes";
@@ -6,17 +7,30 @@ import { PartPanel, YouBlock } from "./sidebar";
 
 function Synopsis({ text }: { text: string }) {
 	return (
-		<p className="max-w-[70ch] text-[15px] leading-relaxed text-pretty text-ink/80">
+		<p className="text-ink/80 max-w-[70ch] text-[15px] leading-relaxed text-pretty">
 			{text}
 		</p>
 	);
 }
 
-function MainColumn({ work }: { work: WorkView }) {
+interface WorkLayoutProps {
+	onSelectOrder?: ((order: PresentationOrderSlug) => void) | undefined;
+	order?: PresentationOrderSlug | undefined;
+	orders?: readonly PresentationOrderSlug[] | undefined;
+	work: WorkView;
+}
+
+function MainColumn({ onSelectOrder, order, orders, work }: WorkLayoutProps) {
 	return (
-		<div className="flex min-w-0 flex-col gap-6 px-8 pt-6 md:border-r md:border-line">
+		<div className="md:border-line flex min-w-0 flex-col gap-6 px-8 pt-6 md:border-r">
 			<Synopsis text={work.header.synopsis} />
-			<Episodes continuityId={work.continuityId} parts={work.parts} />
+			<Episodes
+				continuityId={work.continuityId}
+				onSelectOrder={onSelectOrder}
+				order={order}
+				orders={orders}
+				parts={work.parts}
+			/>
 			<Metadata
 				cast={work.cast}
 				ifYouLiked={work.ifYouLiked}
@@ -27,24 +41,39 @@ function MainColumn({ work }: { work: WorkView }) {
 	);
 }
 
-function Sidebar({ work }: { work: WorkView }) {
+function Sidebar({ order, work }: WorkLayoutProps) {
 	return (
 		<div className="flex flex-col gap-6 px-8 pt-6">
 			<YouBlock
 				continuityId={work.continuityId}
+				order={order}
 				parts={work.parts}
 				viewer={work.viewer}
 			/>
-			<PartPanel continuityId={work.continuityId} parts={work.parts} />
+			<PartPanel
+				continuityId={work.continuityId}
+				order={order}
+				parts={work.parts}
+			/>
 		</div>
 	);
 }
 
-export function WorkLayout({ work }: { work: WorkView }) {
+export function WorkLayout({
+	onSelectOrder,
+	order,
+	orders,
+	work,
+}: WorkLayoutProps) {
 	return (
 		<div className="grid grid-cols-1 md:grid-cols-[1fr_300px]">
-			<MainColumn work={work} />
-			<Sidebar work={work} />
+			<MainColumn
+				onSelectOrder={onSelectOrder}
+				order={order}
+				orders={orders}
+				work={work}
+			/>
+			<Sidebar order={order} work={work} />
 		</div>
 	);
 }

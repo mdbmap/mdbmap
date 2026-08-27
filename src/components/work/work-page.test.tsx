@@ -2,18 +2,24 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 
+import type { PresentationOrderSlug } from "@/db/engine-schema";
 import type { WorkView } from "@/orpc/schema";
 
 import { WorkPage } from "./work-page";
 
 const emptyScore = { count: 0, mean: undefined };
 
-const part = (label: string, year: number, episodeCount: number): WorkView["parts"][number] => ({
+const part = (
+	label: string,
+	year: number,
+	episodeCount: number,
+): WorkView["parts"][number] => ({
 	airedFrom: undefined,
 	airedTo: undefined,
 	communityScore: emptyScore,
 	episodeCount,
 	episodes: [],
+	kind: "part",
 	label,
 	personalRating: undefined,
 	rateableUnit: { key: `part:${label}`, kind: "part" },
@@ -40,6 +46,29 @@ const work: WorkView = {
 	viewer: undefined,
 };
 
+const dawn: WorkView["parts"][number] = {
+	airDate: "2020-01-17",
+	airedFrom: "2020-01-17",
+	airedTo: "2020-01-17",
+	communityScore: emptyScore,
+	episodeCount: 0,
+	episodes: [],
+	instalmentLocator: "anidb:film#1",
+	kind: "film",
+	label: "Dawn of the Deep Soul",
+	personalRating: undefined,
+	rateableUnit: { key: "anidb:film#1", kind: "movie" },
+	serviceRatings: [],
+	watched: false,
+	year: 2020,
+};
+
+const filmWork: WorkView = { ...work, parts: [...work.parts, dawn] };
+const bothOrders = ["release", "watch"] as const;
+function ignoreOrder(_order: PresentationOrderSlug) {
+	return;
+}
+
 describe("WorkPage shell", () => {
 	const html = renderToStaticMarkup(
 		<QueryClientProvider client={new QueryClient()}>
@@ -62,5 +91,30 @@ describe("WorkPage shell", () => {
 		expect(html).toContain("Cast");
 		expect(html).toContain("You");
 		expect(html).toContain("this part");
+	});
+});
+
+describe("WorkPage film parts", () => {
+	const html = renderToStaticMarkup(
+		<QueryClientProvider client={new QueryClient()}>
+			<WorkPage
+				onSelectOrder={ignoreOrder}
+				order="release"
+				orders={bothOrders}
+				work={filmWork}
+			/>
+		</QueryClientProvider>,
+	);
+
+	it("counts the film in the banner and shows it in the selector", () => {
+		expect(html).toContain("3 parts");
+		expect(html).toContain("25 ep");
+		expect(html).toContain("Dawn of the Deep Soul");
+		expect(html).toContain('aria-label="Mark Dawn of the Deep Soul watched"');
+	});
+
+	it("shows a release/watch control when both orders exist", () => {
+		expect(html).toContain("Release");
+		expect(html).toContain("Watch");
 	});
 });

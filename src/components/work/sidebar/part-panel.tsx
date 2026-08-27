@@ -3,7 +3,8 @@ import { useCallback } from "react";
 import { Label } from "@/components/ui/label";
 import { Section } from "@/components/ui/section";
 import { useSelectedPart } from "@/components/work/part-state";
-import type { PartView, ServiceRating } from "@/orpc/schema";
+import type { PresentationOrderSlug } from "@/db/engine-schema";
+import type { ServiceRating, WorkBlock } from "@/orpc/schema";
 
 import { ScoreSelect } from "./score-select";
 import { useWorkTracking } from "./use-work-tracking";
@@ -19,13 +20,21 @@ const compact = new Intl.NumberFormat("en", {
 	notation: "compact",
 });
 
-const airedRange = (part: PartView) =>
-	[part.airedFrom, part.airedTo].filter((edge) => edge !== undefined).join(" – ");
+const airedRange = (part: WorkBlock) =>
+	[part.airedFrom, part.airedTo]
+		.filter((edge) => edge !== undefined)
+		.join(" – ");
 
-function CommunityRow({ count, mean }: { count: number; mean: number | undefined }) {
+function CommunityRow({
+	count,
+	mean,
+}: {
+	count: number;
+	mean: number | undefined;
+}) {
 	return (
-		<div className="mt-2.5 flex items-baseline gap-1.5 border-b border-line pb-2.5 font-mono text-xs">
-			<span className="mr-auto text-accent">{COMMUNITY_LABEL}</span>
+		<div className="border-line mt-2.5 flex items-baseline gap-1.5 border-b pb-2.5 font-mono text-xs">
+			<span className="text-accent mr-auto">{COMMUNITY_LABEL}</span>
 			<span>{mean ?? EM_DASH}</span>
 			<span className="text-ink/35">{compact.format(count)}</span>
 		</div>
@@ -35,7 +44,7 @@ function CommunityRow({ count, mean }: { count: number; mean: number | undefined
 function ServiceRow({ rating }: { rating: ServiceRating }) {
 	return (
 		<div className="flex items-baseline gap-1.5">
-			<span className="mr-auto text-ink/75">{rating.service}</span>
+			<span className="text-ink/75 mr-auto">{rating.service}</span>
 			<span>{rating.score}</span>
 			<span className="text-ink/35">{`/${rating.scale}`}</span>
 			<span className="text-ink/35">{compact.format(rating.votes)}</span>
@@ -62,31 +71,39 @@ function Fact({ label, value }: { label: string; value: string }) {
 	);
 }
 
-function PartFacts({ aired, episodeCount }: { aired: string; episodeCount: number }) {
+function PartFacts({ aired, part }: { aired: string; part: WorkBlock }) {
 	return (
-		<div className="mt-3 flex flex-col gap-1.5 font-mono text-[11.5px] leading-normal text-ink/60">
+		<div className="text-ink/60 mt-3 flex flex-col gap-1.5 font-mono text-[11.5px] leading-normal">
 			{aired !== "" && <Fact label="aired " value={aired} />}
-			<Fact label="episodes " value={String(episodeCount)} />
+			{part.kind === "part" && (
+				<Fact label="episodes " value={String(part.episodeCount)} />
+			)}
 		</div>
 	);
 }
 
 interface PartPanelProps {
 	continuityId: string;
-	parts: PartView[];
+	order?: PresentationOrderSlug | undefined;
+	parts: WorkBlock[];
 }
 
 interface PartDetailsProps {
 	onRate: (score: number | undefined) => void;
-	part: PartView;
+	part: WorkBlock;
 }
 
 function PartDetails({ onRate, part }: PartDetailsProps) {
 	return (
 		<Section>
 			<Label>{`${part.label} · this part`}</Label>
-			<CommunityRow count={part.communityScore.count} mean={part.communityScore.mean} />
-			{part.serviceRatings.length > 0 && <ServiceList ratings={part.serviceRatings} />}
+			<CommunityRow
+				count={part.communityScore.count}
+				mean={part.communityScore.mean}
+			/>
+			{part.serviceRatings.length > 0 && (
+				<ServiceList ratings={part.serviceRatings} />
+			)}
 			<div className="mt-3 flex items-baseline justify-between font-mono text-[11.5px]">
 				<span className="text-ink/35">{YOUR_SCORE}</span>
 				<ScoreSelect
@@ -96,14 +113,14 @@ function PartDetails({ onRate, part }: PartDetailsProps) {
 					value={part.personalRating}
 				/>
 			</div>
-			<PartFacts aired={airedRange(part)} episodeCount={part.episodeCount} />
+			<PartFacts aired={airedRange(part)} part={part} />
 		</Section>
 	);
 }
 
-function PartPanel({ continuityId, parts }: PartPanelProps) {
+function PartPanel({ continuityId, order, parts }: PartPanelProps) {
 	const { selectedPart } = useSelectedPart(parts);
-	const { setRating } = useWorkTracking(continuityId);
+	const { setRating } = useWorkTracking(continuityId, order);
 	const ratePart = useCallback(
 		(score: number | undefined) => {
 			if (selectedPart) {
@@ -117,7 +134,7 @@ function PartPanel({ continuityId, parts }: PartPanelProps) {
 		return (
 			<Section>
 				<Label>{THIS_PART}</Label>
-				<p className="mt-2 font-mono text-[11px] text-ink/40">{NO_PARTS}</p>
+				<p className="text-ink/40 mt-2 font-mono text-[11px]">{NO_PARTS}</p>
 			</Section>
 		);
 	}

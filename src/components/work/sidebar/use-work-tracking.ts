@@ -1,6 +1,8 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useCallback } from "react";
 
+import { workGetInput } from "@/components/work/part-state";
+import type { PresentationOrderSlug } from "@/db/engine-schema";
 import type { WatchStatus } from "@/db/schema";
 import { orpc } from "@/orpc/client";
 import type { RateableUnit, WorkView } from "@/orpc/schema";
@@ -21,9 +23,14 @@ interface WorkTracking {
 // `work.get`. Mirrors #11's `useEpisodeWatched`: patch on mutate, roll back on
 // error, refetch on settle. The server echoes the input, so no success
 // reconcile is needed beyond the refetch.
-function useWorkTracking(continuityId: string): WorkTracking {
+function useWorkTracking(
+	continuityId: string,
+	order?: PresentationOrderSlug,
+): WorkTracking {
 	const queryClient = useQueryClient();
-	const queryKey = orpc.work.get.queryKey({ input: { continuityId } });
+	const queryKey = orpc.work.get.queryKey({
+		input: workGetInput(continuityId, order),
+	});
 
 	const patch = async (
 		transform: (work: WorkView) => WorkView,
@@ -49,7 +56,8 @@ function useWorkTracking(continuityId: string): WorkTracking {
 			onError: (_error, _variables, context: CacheContext | undefined) => {
 				rollback(context);
 			},
-			onMutate: async (variables) => patch((work) => applyStatus(work, variables.status)),
+			onMutate: async (variables) =>
+				patch((work) => applyStatus(work, variables.status)),
 			onSettled: settle,
 		}),
 	);
@@ -58,7 +66,8 @@ function useWorkTracking(continuityId: string): WorkTracking {
 			onError: (_error, _variables, context: CacheContext | undefined) => {
 				rollback(context);
 			},
-			onMutate: async (variables) => patch((work) => applyRewatch(work, variables.count)),
+			onMutate: async (variables) =>
+				patch((work) => applyRewatch(work, variables.count)),
 			onSettled: settle,
 		}),
 	);

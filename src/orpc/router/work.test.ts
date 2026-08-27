@@ -12,7 +12,7 @@ import {
 	seedSpyXFamily,
 } from "@/engine/test-continuity";
 import type { ORPCContext, SessionUser } from "@/orpc/context";
-import type { PartView } from "@/orpc/schema";
+import type { WorkBlock } from "@/orpc/schema";
 import { WorkGetInput } from "@/orpc/schema";
 
 import { router } from "./index.ts";
@@ -28,17 +28,17 @@ const clientFor = (
 		} satisfies ORPCContext,
 	});
 
-const locatorsOf = (parts: PartView[]) =>
+const locatorsOf = (parts: WorkBlock[]) =>
 	parts.flatMap((part) =>
-		part.instalmentLocator === undefined
-			? part.episodes.map((episode) => episode.instalmentLocator)
-			: [part.instalmentLocator],
+		part.kind === "film"
+			? [part.instalmentLocator]
+			: part.episodes.map((episode) => episode.instalmentLocator),
 	);
 
-const partKeyByLocator = (parts: PartView[]) =>
+const partKeyByLocator = (parts: WorkBlock[]) =>
 	Object.fromEntries(
 		parts.flatMap((part) => {
-			if (part.instalmentLocator !== undefined) {
+			if (part.kind === "film") {
 				return [[part.instalmentLocator, part.rateableUnit.key]];
 			}
 			return part.episodes.map((episode) => [
@@ -48,8 +48,10 @@ const partKeyByLocator = (parts: PartView[]) =>
 		}),
 	);
 
-const firstLocator = (part: PartView) =>
-	part.instalmentLocator ?? part.episodes[0]?.instalmentLocator;
+const firstLocator = (part: WorkBlock) =>
+	part.kind === "film"
+		? part.instalmentLocator
+		: part.episodes[0]?.instalmentLocator;
 
 describe("work.get presentation orders", () => {
 	it("rejects matching-order slugs at the input boundary", () => {
@@ -138,7 +140,9 @@ describe("work.get film blocks", () => {
 				watched: false,
 			}),
 		);
-		expect(film?.instalmentLocator).not.toMatch(/s\d+e\d+/iu);
+		expect(film?.kind === "film" ? film.instalmentLocator : "").not.toMatch(
+			/s\d+e\d+/iu,
+		);
 		expect(locatorsOf(view.parts)).toEqual([
 			"anidb:1001#1",
 			"anidb:1001#2",

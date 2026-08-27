@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import type { EpisodeView, WorkView } from "@/orpc/schema";
+import type { EpisodeView, FilmView, WorkView } from "@/orpc/schema";
 
 import { applyDerivedTracking, applyEpisodeWatched } from "./optimistic";
 
@@ -37,6 +37,7 @@ const work = (): WorkView => ({
 			communityScore: emptyScore,
 			episodeCount: 2,
 			episodes: [episode(1, false), episode(2, false)],
+			kind: "part",
 			label: "Part 1",
 			personalRating: undefined,
 			rateableUnit: { key: "part:1", kind: "part" },
@@ -48,6 +49,28 @@ const work = (): WorkView => ({
 	studios: [],
 	viewer: undefined,
 });
+
+const dawn = (): FilmView => ({
+	airDate: "2020-01-17",
+	airedFrom: "2020-01-17",
+	airedTo: "2020-01-17",
+	communityScore: emptyScore,
+	episodeCount: 0,
+	episodes: [],
+	instalmentLocator: "anidb:film#1",
+	kind: "film",
+	label: "Dawn of the Deep Soul",
+	personalRating: undefined,
+	rateableUnit: { key: "anidb:film#1", kind: "movie" },
+	serviceRatings: [],
+	watched: false,
+	year: 2020,
+});
+
+const workWithFilm = (): WorkView => {
+	const base = work();
+	return { ...base, parts: [...base.parts, dawn()] };
+};
 
 describe("applyEpisodeWatched", () => {
 	it("flips the row and adds the locator to the viewer's watched set", () => {
@@ -72,6 +95,16 @@ describe("applyEpisodeWatched", () => {
 		expect(input.parts[0]?.episodes[0]?.watched).toBe(false);
 		expect(input.viewer).toBeUndefined();
 	});
+
+	it("flips film.watched on the matching film block", () => {
+		const next = applyEpisodeWatched(workWithFilm(), "anidb:film#1", true);
+		const film = next.parts.find((part) => part.kind === "film");
+		expect(film?.kind === "film" && film.watched).toBe(true);
+		expect(next.viewer?.watched).toContain("anidb:film#1");
+		expect(
+			next.parts[0]?.kind === "part" && next.parts[0].episodes[0]?.watched,
+		).toBe(false);
+	});
 });
 
 describe("applyDerivedTracking", () => {
@@ -82,5 +115,17 @@ describe("applyDerivedTracking", () => {
 		});
 		expect(next.viewer?.status).toBe("completed");
 		expect(next.parts[0]?.episodes.every((item) => item.watched)).toBe(true);
+	});
+
+	it("mirrors film.watched from the server's watched set", () => {
+		const next = applyDerivedTracking(workWithFilm(), {
+			status: "watching",
+			watched: ["anidb:film#1"],
+		});
+		const film = next.parts.find((part) => part.kind === "film");
+		expect(film?.kind === "film" && film.watched).toBe(true);
+		expect(
+			next.parts[0]?.kind === "part" && next.parts[0].episodes[0]?.watched,
+		).toBe(false);
 	});
 });

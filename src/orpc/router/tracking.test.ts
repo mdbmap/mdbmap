@@ -93,8 +93,7 @@ describe("tracking film locators and movie units", () => {
 
 		const view = await client.work.get({ continuityId });
 		const film = view.parts.find((part) => part.kind === "film");
-		expect(film?.kind).toBe("film");
-		expect(film?.watched).toBe(true);
+		expect(film?.kind === "film" && film.watched).toBe(true);
 		expect(view.viewer?.status).toBe("completed");
 
 		const cleared = await client.tracking.setEpisodeWatched({
@@ -104,8 +103,7 @@ describe("tracking film locators and movie units", () => {
 		});
 		expect(cleared.status).toBe("watching");
 		const after = await client.work.get({ continuityId });
-		expect(after.parts.find((part) => part.kind === "film")?.watched).toBe(
-			false,
-		);
+		const afterFilm = after.parts.find((part) => part.kind === "film");
+		expect(afterFilm?.kind === "film" && afterFilm.watched).toBe(false);
 	});
 });

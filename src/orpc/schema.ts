@@ -171,19 +171,16 @@ interface MovieRateableUnit {
 }
 
 interface PartView {
-	airDate?: string | undefined;
 	airedFrom: string | undefined;
 	airedTo: string | undefined;
 	communityScore: CommunityScore;
 	episodeCount: number;
 	episodes: EpisodeView[];
-	instalmentLocator?: string;
-	kind?: "film" | "part";
+	kind: "part";
 	label: string;
 	personalRating: number | undefined;
 	rateableUnit: RateableUnit;
 	serviceRatings: ServiceRating[];
-	watched?: boolean;
 	year: number | undefined;
 }
 
@@ -219,7 +216,7 @@ interface WorkView {
 	header: WorkHeader;
 	ifYouLiked: Similar[];
 	mediaKind: MediaKind;
-	parts: PartView[];
+	parts: WorkBlock[];
 	staff: Credit[];
 	studios: string[];
 	viewer: ViewerTracking | undefined;
