@@ -2,17 +2,12 @@ import { z } from "zod";
 
 import type { ApiKeyPlan, RateableUnitKind, WatchStatus } from "@/db/schema";
 import { apiKeyPlans, researchTimings, watchStatuses } from "@/db/schema";
+import type { MediaKind } from "@/engine";
 import type { ProviderListItem } from "@/lib/provider-config/store.ts";
 import {
 	ProviderConfigSchema,
 	UpdateProviderConfigSchema,
 } from "@/lib/provider-config/types.ts";
-import type { MediaKind } from "@/engine";
-
-const TodoSchema = z.object({
-	id: z.number().int().min(1),
-	name: z.string(),
-});
 
 const WatchStatusSchema = z.enum(watchStatuses);
 
@@ -230,7 +225,6 @@ export {
 	SetRewatchInput,
 	SetStatusInput,
 	SettleConflictInput,
-	TodoSchema,
 	UpdateProviderInput,
 	WatchStatusSchema,
 	WorkGetInput,
@@ -253,4 +247,3 @@ export type {
 	WorkView,
 };
 export type { ResearchTiming } from "@/db/schema";
-

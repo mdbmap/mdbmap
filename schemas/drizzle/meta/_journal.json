@@ -1,76 +1,83 @@
 {
-  "version": "7",
-  "dialect": "sqlite",
-  "entries": [
-    {
-      "idx": 0,
-      "version": "6",
-      "when": 1787631229566,
-      "tag": "0000_concerned_ultimo",
-      "breakpoints": true
-    },
-    {
-      "idx": 1,
-      "version": "6",
-      "when": 1787651999586,
-      "tag": "0001_dry_valeria_richards",
-      "breakpoints": true
-    },
-    {
-      "idx": 2,
-      "version": "6",
-      "when": 1787656630771,
-      "tag": "0002_brown_junta",
-      "breakpoints": true
-    },
-    {
-      "idx": 3,
-      "version": "6",
-      "when": 1787664185725,
-      "tag": "0003_omniscient_killer_shrike",
-      "breakpoints": true
-    },
-    {
-      "idx": 4,
-      "version": "6",
-      "when": 1787693904781,
-      "tag": "0004_spooky_hairball",
-      "breakpoints": true
-    },
-    {
-      "idx": 5,
-      "version": "6",
-      "when": 1787701951696,
-      "tag": "0005_redundant_sebastian_shaw",
-      "breakpoints": true
-    },
-    {
-      "idx": 6,
-      "version": "6",
-      "when": 1787702238443,
-      "tag": "0006_free_toxin",
-      "breakpoints": true
-    },
-    {
-      "idx": 7,
-      "version": "6",
-      "when": 1787740403496,
-      "tag": "0007_flimsy_thaddeus_ross",
-      "breakpoints": true
-    },
-    {
-      "idx": 8,
-      "version": "6",
-      "when": 1787743847226,
-      "tag": "0008_modern_princess_powerful",
-      "breakpoints": true
-    },
-    {
-      "idx": 9,
-      "version": "6",
-      "when": 1787748813637,
-      "tag": "0009_curvy_lizard",
-      "breakpoints": true
-    }
-  ]
+	"version": "7",
+	"dialect": "sqlite",
+	"entries": [
+		{
+			"idx": 0,
+			"version": "6",
+			"when": 1787631229566,
+			"tag": "0000_concerned_ultimo",
+			"breakpoints": true
+		},
+		{
+			"idx": 1,
+			"version": "6",
+			"when": 1787651999586,
+			"tag": "0001_dry_valeria_richards",
+			"breakpoints": true
+		},
+		{
+			"idx": 2,
+			"version": "6",
+			"when": 1787656630771,
+			"tag": "0002_brown_junta",
+			"breakpoints": true
+		},
+		{
+			"idx": 3,
+			"version": "6",
+			"when": 1787664185725,
+			"tag": "0003_omniscient_killer_shrike",
+			"breakpoints": true
+		},
+		{
+			"idx": 4,
+			"version": "6",
+			"when": 1787693904781,
+			"tag": "0004_spooky_hairball",
+			"breakpoints": true
+		},
+		{
+			"idx": 5,
+			"version": "6",
+			"when": 1787701951696,
+			"tag": "0005_redundant_sebastian_shaw",
+			"breakpoints": true
+		},
+		{
+			"idx": 6,
+			"version": "6",
+			"when": 1787702238443,
+			"tag": "0006_free_toxin",
+			"breakpoints": true
+		},
+		{
+			"idx": 7,
+			"version": "6",
+			"when": 1787740403496,
+			"tag": "0007_flimsy_thaddeus_ross",
+			"breakpoints": true
+		},
+		{
+			"idx": 8,
+			"version": "6",
+			"when": 1787743847226,
+			"tag": "0008_modern_princess_powerful",
+			"breakpoints": true
+		},
+		{
+			"idx": 9,
+			"version": "6",
+			"when": 1787748813637,
+			"tag": "0009_curvy_lizard",
+			"breakpoints": true
+		},
+		{
+			"idx": 10,
+			"version": "6",
+			"when": 1787813713686,
+			"tag": "0010_typical_leper_queen",
+			"breakpoints": true
+		}
+	]
 }
