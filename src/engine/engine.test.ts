@@ -168,8 +168,8 @@ describe("createEngine.resolveContinuity", () => {
 		expect(courOne?.members.anidb).toBe("9001");
 		expect(film?.members.anidb).toBe("9002");
 		expect(courTwo?.members.anidb).toBe("9003");
-		expect(seeded.groupIds).toHaveLength(2);
-		expect(new Set(seeded.groupIds).size).toBe(2);
+		expect(seeded.groupIds).toHaveLength(3);
+		expect(new Set(seeded.groupIds).size).toBe(3);
 		expect(await db.select().from(titleAssertions).all()).toHaveLength(0);
 		await assertGroupAliases(db, result.continuityId, seeded.groupIds);
 	});

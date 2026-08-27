@@ -429,7 +429,7 @@ const madeInAbyssSpec = [
 		anidb: "9003",
 		anilist: "9003",
 		episodes: 2,
-		group: "series",
+		group: "cour2",
 		kind: "episodic",
 		mal: "9003",
 		tmdb: "tv:9003",
