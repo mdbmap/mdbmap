@@ -1,3 +1,4 @@
+import { asc, eq } from "drizzle-orm";
 import { describe, expect, it } from "vitest";
 
 import {
@@ -17,6 +18,7 @@ import {
 	groupContinuityKey,
 	parseContinuityKey,
 } from "./keys.ts";
+import { ensureGroupContinuity, upsertRelationContinuity } from "./persist.ts";
 
 const one = <Row>(rows: readonly Row[]): Row => {
 	const [row] = rows;
@@ -128,5 +130,220 @@ describe("persisted continuity", () => {
 		expect(await db.select().from(titleGroups).all()).toHaveLength(2);
 		expect(await db.select().from(continuities).all()).toHaveLength(1);
 		expect(await db.select().from(continuitySegments).all()).toHaveLength(2);
+	});
+
+	it("types a TMDB movie as atomic on the legacy group path", async () => {
+		const db = await freshDb();
+		const group = one(
+			await db
+				.insert(titleGroups)
+				.values({ source: "t1-structure" })
+				.returning()
+				.all(),
+		);
+		const film = one(
+			await db
+				.insert(serviceTitles)
+				.values({
+					groupId: group.id,
+					service: "tmdb",
+					serviceId: "movie:43",
+				})
+				.returning()
+				.all(),
+		);
+
+		const continuityId = await ensureGroupContinuity(db, group.id);
+		const segments = await db
+			.select()
+			.from(continuitySegments)
+			.where(eq(continuitySegments.continuityId, continuityId))
+			.all();
+
+		expect(segments).toEqual([
+			expect.objectContaining({
+				kind: "atomic",
+				titleId: film.id,
+			}),
+		]);
+	});
+
+	it("absorbs and retires a lazily ensured foreign continuity on join", async () => {
+		const db = await freshDb();
+		const seriesGroup = one(
+			await db
+				.insert(titleGroups)
+				.values({ source: "t1-structure" })
+				.returning()
+				.all(),
+		);
+		const filmGroup = one(
+			await db
+				.insert(titleGroups)
+				.values({ source: "t1-structure" })
+				.returning()
+				.all(),
+		);
+		const seasonOne = one(
+			await db
+				.insert(serviceTitles)
+				.values({
+					groupId: seriesGroup.id,
+					ordinal: 0,
+					service: "tmdb",
+					serviceId: "tv:42",
+				})
+				.returning()
+				.all(),
+		);
+		const seasonTwo = one(
+			await db
+				.insert(serviceTitles)
+				.values({
+					groupId: seriesGroup.id,
+					ordinal: 1,
+					service: "tmdb",
+					serviceId: "tv:43",
+				})
+				.returning()
+				.all(),
+		);
+		const film = one(
+			await db
+				.insert(serviceTitles)
+				.values({
+					groupId: filmGroup.id,
+					service: "tmdb",
+					serviceId: "movie:44",
+				})
+				.returning()
+				.all(),
+		);
+		const seriesContinuity = await ensureGroupContinuity(db, seriesGroup.id);
+		const filmContinuity = await ensureGroupContinuity(db, filmGroup.id);
+		expect(filmContinuity).not.toBe(seriesContinuity);
+		const assertion = one(
+			await db
+				.insert(relationAssertions)
+				.values({
+					confidence: "high",
+					fromTitleId: seasonTwo.id,
+					source: "t1-structure",
+					toTitleId: film.id,
+				})
+				.returning()
+				.all(),
+		);
+
+		const joined = await upsertRelationContinuity(db, {
+			fromTitleId: seasonTwo.id,
+			relationAssertionId: assertion.id,
+			source: "t1-structure",
+			toTitleId: film.id,
+		});
+		const remaining = await db.select().from(continuities).all();
+		const segments = await db
+			.select()
+			.from(continuitySegments)
+			.orderBy(asc(continuitySegments.releaseOrdinal))
+			.all();
+
+		expect(joined).toBe(seriesContinuity);
+		expect(remaining.map((row) => row.id)).toEqual([seriesContinuity]);
+		expect(segments.map((segment) => segment.titleId)).toEqual([
+			seasonOne.id,
+			seasonTwo.id,
+			film.id,
+		]);
+		expect(segments.map((segment) => segment.kind)).toEqual([
+			"episodic",
+			"episodic",
+			"atomic",
+		]);
+		expect(
+			await createEngine(db).resolveContinuity(`group:${filmGroup.id}`),
+		).toMatchObject({
+			continuityId: `continuity:${seriesContinuity}`,
+		});
+	});
+
+	it("prepends the series chain when the film continuity is older", async () => {
+		const db = await freshDb();
+		const seriesGroup = one(
+			await db
+				.insert(titleGroups)
+				.values({ source: "t1-structure" })
+				.returning()
+				.all(),
+		);
+		const filmGroup = one(
+			await db
+				.insert(titleGroups)
+				.values({ source: "t1-structure" })
+				.returning()
+				.all(),
+		);
+		const season = one(
+			await db
+				.insert(serviceTitles)
+				.values({
+					groupId: seriesGroup.id,
+					service: "tmdb",
+					serviceId: "tv:42",
+				})
+				.returning()
+				.all(),
+		);
+		const film = one(
+			await db
+				.insert(serviceTitles)
+				.values({
+					groupId: filmGroup.id,
+					service: "tmdb",
+					serviceId: "movie:44",
+				})
+				.returning()
+				.all(),
+		);
+		const filmContinuity = await ensureGroupContinuity(db, filmGroup.id);
+		const seriesContinuity = await ensureGroupContinuity(db, seriesGroup.id);
+		expect(filmContinuity).toBeLessThan(seriesContinuity);
+		const assertion = one(
+			await db
+				.insert(relationAssertions)
+				.values({
+					confidence: "high",
+					fromTitleId: season.id,
+					source: "t1-structure",
+					toTitleId: film.id,
+				})
+				.returning()
+				.all(),
+		);
+
+		const joined = await upsertRelationContinuity(db, {
+			fromTitleId: season.id,
+			relationAssertionId: assertion.id,
+			source: "t1-structure",
+			toTitleId: film.id,
+		});
+		const remaining = await db.select().from(continuities).all();
+		const segments = await db
+			.select()
+			.from(continuitySegments)
+			.orderBy(asc(continuitySegments.releaseOrdinal))
+			.all();
+
+		expect(joined).toBe(filmContinuity);
+		expect(remaining.map((row) => row.id)).toEqual([filmContinuity]);
+		expect(segments.map((segment) => segment.titleId)).toEqual([
+			season.id,
+			film.id,
+		]);
+		expect(
+			await createEngine(db).resolveContinuity(`group:${seriesGroup.id}`),
+		).toMatchObject({
+			continuityId: `continuity:${filmContinuity}`,
+		});
 	});
 });

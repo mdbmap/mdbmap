@@ -31,12 +31,18 @@ const spineTitles = (titles: readonly TitleRow[]): readonly TitleRow[] => {
 		);
 };
 
-const continuityForGroups = async (
+interface SegmentDraft {
+	readonly kind: ContinuitySegmentKind;
+	readonly relationAssertionId?: number | null;
+	readonly titleId: number;
+}
+
+const continuitiesForGroups = async (
 	db: Db,
 	groupIds: readonly number[],
-): Promise<number | undefined> => {
+): Promise<readonly number[]> => {
 	if (groupIds.length === 0) {
-		return undefined;
+		return [];
 	}
 	const rows = await db
 		.select({ continuityId: continuitySegments.continuityId })
@@ -45,7 +51,104 @@ const continuityForGroups = async (
 		.where(inArray(serviceTitles.groupId, groupIds))
 		.orderBy(asc(continuitySegments.continuityId))
 		.all();
-	return rows[0]?.continuityId;
+	return [...new Set(rows.map((row) => row.continuityId))];
+};
+
+const segmentsForContinuity = async (
+	db: Db,
+	continuityId: number,
+): Promise<readonly SegmentDraft[]> =>
+	db
+		.select({
+			kind: continuitySegments.kind,
+			relationAssertionId: continuitySegments.relationAssertionId,
+			titleId: continuitySegments.titleId,
+		})
+		.from(continuitySegments)
+		.where(eq(continuitySegments.continuityId, continuityId))
+		.orderBy(asc(continuitySegments.releaseOrdinal))
+		.all();
+
+const groupsForTitles = async (
+	db: Db,
+	titleIds: readonly number[],
+): Promise<ReadonlySet<number>> => {
+	if (titleIds.length === 0) {
+		return new Set();
+	}
+	const rows = await db
+		.select({ groupId: serviceTitles.groupId })
+		.from(serviceTitles)
+		.where(inArray(serviceTitles.id, titleIds))
+		.all();
+	return new Set(rows.map((row) => row.groupId));
+};
+
+const mergeForeignSegments = async (
+	db: Db,
+	input: {
+		readonly foreignIds: readonly number[];
+		readonly fromGroupId: number;
+		readonly survivorSegments: readonly SegmentDraft[];
+		readonly toGroupId: number;
+	},
+): Promise<readonly SegmentDraft[]> => {
+	const representedTitleIds = new Set(
+		input.survivorSegments.map((segment) => segment.titleId),
+	);
+	const foreignRows = await Promise.all(
+		input.foreignIds.map(async (id) => segmentsForContinuity(db, id)),
+	);
+	const foreignSegments = foreignRows
+		.flat()
+		.filter((segment) => !representedTitleIds.has(segment.titleId));
+	if (foreignSegments.length === 0) {
+		return input.survivorSegments;
+	}
+	const survivorGroups = await groupsForTitles(
+		db,
+		input.survivorSegments.map((segment) => segment.titleId),
+	);
+	if (
+		survivorGroups.has(input.toGroupId) &&
+		!survivorGroups.has(input.fromGroupId)
+	) {
+		return [...foreignSegments, ...input.survivorSegments];
+	}
+	return [...input.survivorSegments, ...foreignSegments];
+};
+
+const rewriteSegments = async (
+	db: Db,
+	input: {
+		readonly continuityId: number;
+		readonly relationAssertionId: number;
+		readonly segments: readonly SegmentDraft[];
+		readonly toTitleId: number;
+	},
+): Promise<void> => {
+	await db
+		.delete(continuitySegments)
+		.where(eq(continuitySegments.continuityId, input.continuityId))
+		.run();
+	if (input.segments.length === 0) {
+		return;
+	}
+	await db
+		.insert(continuitySegments)
+		.values(
+			input.segments.map((segment, releaseOrdinal) => ({
+				continuityId: input.continuityId,
+				kind: segment.kind,
+				relationAssertionId:
+					segment.titleId === input.toTitleId
+						? input.relationAssertionId
+						: segment.relationAssertionId,
+				releaseOrdinal,
+				titleId: segment.titleId,
+			})),
+		)
+		.run();
 };
 
 const createContinuity = async (
@@ -65,7 +168,7 @@ const ensureGroupContinuity = async (
 	requestedGroupId: number,
 ): Promise<number> => {
 	const groupId = await survivorGroupId(db, requestedGroupId);
-	const existing = await continuityForGroups(db, [groupId]);
+	const [existing] = await continuitiesForGroups(db, [groupId]);
 	if (existing !== undefined) {
 		return existing;
 	}
@@ -94,7 +197,7 @@ const ensureGroupContinuity = async (
 		.values(
 			spine.map((title, releaseOrdinal) => ({
 				continuityId,
-				kind: "episodic" as const,
+				kind: kindForTitle(title),
 				releaseOrdinal,
 				titleId: title.id,
 			})),
@@ -124,26 +227,24 @@ const upsertRelationContinuity = async (
 	if (from === undefined || to === undefined || from.groupId === to.groupId) {
 		return undefined;
 	}
-	const existingId = await continuityForGroups(db, [from.groupId, to.groupId]);
-	const continuityId = existingId ?? (await createContinuity(db, input.source));
-	const existingSegments = await db
-		.select({
-			kind: continuitySegments.kind,
-			relationAssertionId: continuitySegments.relationAssertionId,
-			releaseOrdinal: continuitySegments.releaseOrdinal,
-			titleId: continuitySegments.titleId,
-		})
-		.from(continuitySegments)
-		.where(eq(continuitySegments.continuityId, continuityId))
-		.orderBy(asc(continuitySegments.releaseOrdinal))
-		.all();
-	const represented = await db
-		.select({ groupId: serviceTitles.groupId })
-		.from(continuitySegments)
-		.innerJoin(serviceTitles, eq(serviceTitles.id, continuitySegments.titleId))
-		.where(eq(continuitySegments.continuityId, continuityId))
-		.all();
-	const representedGroups = new Set(represented.map((row) => row.groupId));
+	const existingIds = await continuitiesForGroups(db, [
+		from.groupId,
+		to.groupId,
+	]);
+	const continuityId =
+		existingIds[0] ?? (await createContinuity(db, input.source));
+	const foreignIds = existingIds.filter((id) => id !== continuityId);
+	const survivorSegments = await segmentsForContinuity(db, continuityId);
+	const merged = await mergeForeignSegments(db, {
+		foreignIds,
+		fromGroupId: from.groupId,
+		survivorSegments,
+		toGroupId: to.groupId,
+	});
+	const representedGroups = await groupsForTitles(
+		db,
+		merged.map((segment) => segment.titleId),
+	);
 	const additions: TitleRow[] = [];
 	if (!representedGroups.has(from.groupId)) {
 		additions.push(from);
@@ -151,46 +252,29 @@ const upsertRelationContinuity = async (
 	if (!representedGroups.has(to.groupId)) {
 		additions.push(to);
 	}
-	if (additions.length === 0) {
+	if (additions.length === 0 && foreignIds.length === 0) {
 		return continuityId;
 	}
+	const additionDrafts: SegmentDraft[] = additions.map((title) => ({
+		kind: kindForTitle(title),
+		titleId: title.id,
+	}));
 	const ordered =
-		additions[0]?.id === from.id && representedGroups.has(to.groupId)
-			? [
-					...additions.map((title) => ({
-						kind: kindForTitle(title),
-						relationAssertionId: undefined,
-						titleId: title.id,
-					})),
-					...existingSegments,
-				]
-			: [
-					...existingSegments,
-					...additions.map((title) => ({
-						kind: kindForTitle(title),
-						relationAssertionId: undefined,
-						titleId: title.id,
-					})),
-				];
-	await db
-		.delete(continuitySegments)
-		.where(eq(continuitySegments.continuityId, continuityId))
-		.run();
-	await db
-		.insert(continuitySegments)
-		.values(
-			ordered.map((segment, releaseOrdinal) => ({
-				continuityId,
-				kind: segment.kind,
-				relationAssertionId:
-					segment.titleId === input.toTitleId
-						? input.relationAssertionId
-						: segment.relationAssertionId,
-				releaseOrdinal,
-				titleId: segment.titleId,
-			})),
-		)
-		.run();
+		additionDrafts[0]?.titleId === from.id && representedGroups.has(to.groupId)
+			? [...additionDrafts, ...merged]
+			: [...merged, ...additionDrafts];
+	await rewriteSegments(db, {
+		continuityId,
+		relationAssertionId: input.relationAssertionId,
+		segments: ordered,
+		toTitleId: input.toTitleId,
+	});
+	if (foreignIds.length > 0) {
+		await db
+			.delete(continuities)
+			.where(inArray(continuities.id, foreignIds))
+			.run();
+	}
 	return continuityId;
 };
 
