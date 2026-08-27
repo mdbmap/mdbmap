@@ -7,6 +7,9 @@ import { createEngine } from "./engine.ts";
 import { metadataProviderFor } from "./seam.ts";
 import {
 	seedCrossGroupContinuity,
+	seedMadokaMagica,
+	seedMadeInAbyss,
+	seedMonogatari,
 	seedSpyXFamily,
 	seedTmdbContinuity,
 } from "./test-continuity.ts";
@@ -15,6 +18,22 @@ const seededEngine = async () => {
 	const db = await freshDb();
 	const { continuityId } = await seedSpyXFamily(db);
 	return { continuityId, read: createEngine(db) };
+};
+
+const assertGroupAliases = async (
+	db: Awaited<ReturnType<typeof freshDb>>,
+	continuityId: string,
+	groupIds: readonly number[],
+) => {
+	const engine = createEngine(db);
+	const aliases = await Promise.all(
+		groupIds.map(async (groupId) =>
+			engine.resolveContinuity(`group:${groupId}`),
+		),
+	);
+	expect(aliases.map((via) => via.continuityId)).toEqual(
+		groupIds.map(() => continuityId),
+	);
 };
 
 describe("createEngine.resolveContinuity", () => {
@@ -127,6 +146,86 @@ describe("createEngine.resolveContinuity", () => {
 		);
 		expect(viaSeries.continuityId).toBe(result.continuityId);
 		expect(viaFilm.continuityId).toBe(result.continuityId);
+	});
+
+	it("Made in Abyss release order is cour, Dawn of the Deep Soul, then cour", async () => {
+		const db = await freshDb();
+		const seeded = await seedMadeInAbyss(db);
+		const result = await createEngine(db).resolveContinuity(
+			seeded.continuityId,
+		);
+		const [courOne, film, courTwo] = result.segments;
+
+		expect(result.segments).toHaveLength(3);
+		expect(result.segments.map((segment) => segment.kind)).toEqual([
+			"episodic",
+			"atomic",
+			"episodic",
+		]);
+		expect(courOne?.instalments).toEqual(["anidb:9001#1", "anidb:9001#2"]);
+		expect(film?.instalments).toEqual(["anidb:9002#1"]);
+		expect(courTwo?.instalments).toEqual(["anidb:9003#1", "anidb:9003#2"]);
+		expect(courOne?.members.anidb).toBe("9001");
+		expect(film?.members.anidb).toBe("9002");
+		expect(courTwo?.members.anidb).toBe("9003");
+		expect(seeded.groupIds).toHaveLength(2);
+		expect(new Set(seeded.groupIds).size).toBe(2);
+		expect(await db.select().from(titleAssertions).all()).toHaveLength(0);
+		await assertGroupAliases(db, result.continuityId, seeded.groupIds);
+	});
+
+	it("Madoka Magica keeps Rebellion atomic and outside the TV group", async () => {
+		const db = await freshDb();
+		const seeded = await seedMadokaMagica(db);
+		const result = await createEngine(db).resolveContinuity(
+			seeded.continuityId,
+		);
+		const [series, rebellion] = result.segments;
+
+		expect(result.segments.map((segment) => segment.kind)).toEqual([
+			"episodic",
+			"atomic",
+		]);
+		expect(series?.instalments).toEqual(["anidb:9101#1", "anidb:9101#2"]);
+		expect(rebellion?.instalments).toEqual(["anidb:9102#1"]);
+		expect(series?.members.anidb).toBe("9101");
+		expect(rebellion?.members.anidb).toBe("9102");
+		expect(seeded.groupIds).toHaveLength(2);
+		expect(new Set(seeded.groupIds).size).toBe(2);
+		expect(await db.select().from(titleAssertions).all()).toHaveLength(0);
+		await assertGroupAliases(db, result.continuityId, seeded.groupIds);
+	});
+
+	it("Monogatari resolve stays Bake, Nise, Kizu in release order", async () => {
+		const db = await freshDb();
+		const seeded = await seedMonogatari(db);
+		const result = await createEngine(db).resolveContinuity(
+			seeded.continuityId,
+		);
+
+		expect(result.segments.map((segment) => segment.kind)).toEqual([
+			"episodic",
+			"episodic",
+			"atomic",
+		]);
+		expect(result.segments.map((segment) => segment.members.anidb)).toEqual([
+			"9201",
+			"9202",
+			"9203",
+		]);
+		expect(result.segments[0]?.instalments).toEqual([
+			"anidb:9201#1",
+			"anidb:9201#2",
+		]);
+		expect(result.segments[1]?.instalments).toEqual([
+			"anidb:9202#1",
+			"anidb:9202#2",
+		]);
+		expect(result.segments[2]?.instalments).toEqual(["anidb:9203#1"]);
+		expect(seeded.groupIds).toHaveLength(3);
+		expect(new Set(seeded.groupIds).size).toBe(3);
+		expect(await db.select().from(titleAssertions).all()).toHaveLength(0);
+		await assertGroupAliases(db, result.continuityId, seeded.groupIds);
 	});
 
 	it("throws for a continuity with no group", async () => {

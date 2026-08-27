@@ -10,6 +10,7 @@ import {
 	titleGroups,
 } from "@/db/engine-schema";
 import { freshDb } from "@/db/test-helpers";
+import { seedMonogatari } from "@/engine/test-continuity";
 
 import {
 	defaultPresentationSlug,
@@ -262,6 +263,38 @@ describe("persisted presentation orders", () => {
 			idByTitle.get(film.id),
 			idByTitle.get(season.id),
 			idByTitle.get(extra.id),
+		]);
+	});
+
+	it("Monogatari watch order is Kizu, Bake, Nise and differs from release", async () => {
+		const db = await freshDb();
+		const seeded = await seedMonogatari(db);
+		const selected = await selectPresentationOrder(
+			db,
+			seeded.continuityRowId,
+			"watch",
+		);
+		const release = await selectPresentationOrder(
+			db,
+			seeded.continuityRowId,
+			"release",
+		);
+
+		expect(release.segmentIds).toEqual(seeded.segmentIds);
+		expect(selected.segmentIds).toEqual([
+			seeded.segmentIds[2],
+			seeded.segmentIds[0],
+			seeded.segmentIds[1],
+		]);
+		expect(selected.segmentIds).not.toEqual(release.segmentIds);
+		const watchItems = await itemsFor(db, seeded.continuityRowId, "watch");
+		const releaseItems = await itemsFor(db, seeded.continuityRowId, "release");
+		const watchTitles = watchItems.map((item) => item.titleId);
+		const releaseTitles = releaseItems.map((item) => item.titleId);
+		expect(watchTitles).toEqual([
+			releaseTitles[2],
+			releaseTitles[0],
+			releaseTitles[1],
 		]);
 	});
 });
