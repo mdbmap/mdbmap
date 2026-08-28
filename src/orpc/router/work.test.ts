@@ -75,17 +75,17 @@ describe("work.get presentation orders", () => {
 		const client = clientFor(db);
 		const resolved = await createEngine(db).resolveContinuity(continuityId);
 		const parsed = parseContinuityKey(resolved.continuityId);
-		if (parsed?.type !== "continuity") {
+		if (parsed === undefined) {
 			throw new Error("expected a canonical continuity");
 		}
 		const segments = await db
 			.select()
 			.from(continuitySegments)
-			.where(eq(continuitySegments.continuityId, parsed.id))
+			.where(eq(continuitySegments.continuityId, parsed))
 			.orderBy(asc(continuitySegments.releaseOrdinal))
 			.all();
 		await persistWatchOrder(db, {
-			continuityId: parsed.id,
+			continuityId: parsed,
 			segmentIds: segments.toReversed().map((segment) => segment.id),
 		});
 
@@ -156,17 +156,17 @@ describe("work.get film blocks", () => {
 		const client = clientFor(db);
 		const resolved = await createEngine(db).resolveContinuity(continuityId);
 		const parsed = parseContinuityKey(resolved.continuityId);
-		if (parsed?.type !== "continuity") {
+		if (parsed === undefined) {
 			throw new Error("expected a canonical continuity");
 		}
 		const segments = await db
 			.select()
 			.from(continuitySegments)
-			.where(eq(continuitySegments.continuityId, parsed.id))
+			.where(eq(continuitySegments.continuityId, parsed))
 			.orderBy(asc(continuitySegments.releaseOrdinal))
 			.all();
 		await persistWatchOrder(db, {
-			continuityId: parsed.id,
+			continuityId: parsed,
 			segmentIds: segments.toReversed().map((segment) => segment.id),
 		});
 

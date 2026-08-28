@@ -20,22 +20,6 @@ const seededEngine = async () => {
 	return { continuityId, read: createEngine(db) };
 };
 
-const assertGroupAliases = async (
-	db: Awaited<ReturnType<typeof freshDb>>,
-	continuityId: string,
-	groupIds: readonly number[],
-) => {
-	const engine = createEngine(db);
-	const aliases = await Promise.all(
-		groupIds.map(async (groupId) =>
-			engine.resolveContinuity(`group:${groupId}`),
-		),
-	);
-	expect(aliases.map((via) => via.continuityId)).toEqual(
-		groupIds.map(() => continuityId),
-	);
-};
-
 describe("createEngine.resolveContinuity", () => {
 	it("routes the anime continuity to AniDB per media kind", async () => {
 		const { continuityId, read } = await seededEngine();
@@ -115,8 +99,7 @@ describe("createEngine.resolveContinuity", () => {
 
 	it("walks a multi-group continuity as episodic then one atomic film locator", async () => {
 		const db = await freshDb();
-		const { continuityId, filmGroupId, seriesGroupId } =
-			await seedCrossGroupContinuity(db);
+		const { continuityId } = await seedCrossGroupContinuity(db);
 		const result = await createEngine(db).resolveContinuity(continuityId);
 		const [series, film] = result.segments;
 
@@ -138,14 +121,6 @@ describe("createEngine.resolveContinuity", () => {
 		});
 		expect(await db.select().from(titleGroups).all()).toHaveLength(2);
 		expect(await db.select().from(titleAssertions).all()).toHaveLength(0);
-		const viaSeries = await createEngine(db).resolveContinuity(
-			`group:${seriesGroupId}`,
-		);
-		const viaFilm = await createEngine(db).resolveContinuity(
-			`group:${filmGroupId}`,
-		);
-		expect(viaSeries.continuityId).toBe(result.continuityId);
-		expect(viaFilm.continuityId).toBe(result.continuityId);
 	});
 
 	it("Made in Abyss release order is cour, Dawn of the Deep Soul, then cour", async () => {
@@ -171,7 +146,6 @@ describe("createEngine.resolveContinuity", () => {
 		expect(seeded.groupIds).toHaveLength(3);
 		expect(new Set(seeded.groupIds).size).toBe(3);
 		expect(await db.select().from(titleAssertions).all()).toHaveLength(0);
-		await assertGroupAliases(db, result.continuityId, seeded.groupIds);
 	});
 
 	it("Madoka Magica keeps Rebellion atomic and outside the TV group", async () => {
@@ -193,7 +167,6 @@ describe("createEngine.resolveContinuity", () => {
 		expect(seeded.groupIds).toHaveLength(2);
 		expect(new Set(seeded.groupIds).size).toBe(2);
 		expect(await db.select().from(titleAssertions).all()).toHaveLength(0);
-		await assertGroupAliases(db, result.continuityId, seeded.groupIds);
 	});
 
 	it("Monogatari resolve stays Bake, Nise, Kizu in release order", async () => {
@@ -225,14 +198,13 @@ describe("createEngine.resolveContinuity", () => {
 		expect(seeded.groupIds).toHaveLength(3);
 		expect(new Set(seeded.groupIds).size).toBe(3);
 		expect(await db.select().from(titleAssertions).all()).toHaveLength(0);
-		await assertGroupAliases(db, result.continuityId, seeded.groupIds);
 	});
 
-	it("throws for a continuity with no group", async () => {
+	it("throws for a group-prefixed key", async () => {
 		const read = createEngine(await freshDb());
 
 		await expect(read.resolveContinuity("group:999")).rejects.toThrow(
-			/no continuity/iu,
+			/malformed/iu,
 		);
 	});
 

@@ -9,10 +9,12 @@ import {
 	titleGroups,
 } from "@/db/engine-schema";
 
+import { continuityKey } from "./continuity/keys.ts";
 import {
 	persistWatchOrder,
 	regenerateReleaseOrder,
 } from "./continuity/orders.ts";
+import { ensureGroupContinuity } from "./continuity/persist.ts";
 
 // Seeds Spy × Family as the engine stores it: one title group, per-cour AniDB /
 // MAL / AniList spokes plus one TMDB spoke spanning every cour, each cour anchored
@@ -139,7 +141,9 @@ const seedSpyXFamily = async (
 			await coverUnit(db, spokeId, unitId);
 		}),
 	);
-	return { continuityId: `group:${groupId}` };
+	return {
+		continuityId: continuityKey(await ensureGroupContinuity(db, groupId)),
+	};
 };
 
 // A minimal TMDB-only continuity: one namespaced spoke over one content unit, so
@@ -171,7 +175,9 @@ const seedTmdbContinuity = async (
 			await coverUnit(db, spokeId, unitId);
 		}),
 	);
-	return { continuityId: `group:${groupId}` };
+	return {
+		continuityId: continuityKey(await ensureGroupContinuity(db, groupId)),
+	};
 };
 
 const insertGroup = async (db: Db): Promise<number> => {

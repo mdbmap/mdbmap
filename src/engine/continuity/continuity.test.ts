@@ -15,15 +15,10 @@ import { freshDb } from "@/db/test-helpers";
 import { createEngine } from "@/engine";
 import { publishResearchProposals } from "@/engine/research";
 
-import {
-	continuityKey,
-	groupContinuityKey,
-	parseContinuityKey,
-} from "./keys.ts";
+import { continuityKey, parseContinuityKey } from "./keys.ts";
 import {
 	ensureGroupContinuity,
 	retiredContinuityKeys,
-	trackingAliasKeys,
 	upsertRelationContinuity,
 } from "./persist.ts";
 
@@ -36,14 +31,10 @@ const one = <Row>(rows: readonly Row[]): Row => {
 };
 
 describe("continuity keys", () => {
-	it("constructs and parses canonical and legacy keys", () => {
+	it("constructs and parses canonical keys", () => {
 		expect(continuityKey(12)).toBe("continuity:12");
-		expect(groupContinuityKey(7)).toBe("group:7");
-		expect(parseContinuityKey("continuity:12")).toEqual({
-			id: 12,
-			type: "continuity",
-		});
-		expect(parseContinuityKey("group:7")).toEqual({ id: 7, type: "group" });
+		expect(parseContinuityKey("continuity:12")).toBe(12);
+		expect(parseContinuityKey("group:7")).toBeUndefined();
 		expect(parseContinuityKey("continuity:nope")).toBeUndefined();
 	});
 });
@@ -321,11 +312,6 @@ describe("persisted continuity", () => {
 			continuityKey(filmContinuity),
 		]);
 		expect(
-			await createEngine(db).resolveContinuity(`group:${filmGroup.id}`),
-		).toMatchObject({
-			continuityId: continuityKey(seriesContinuity),
-		});
-		expect(
 			await createEngine(db).resolveContinuity(continuityKey(filmContinuity)),
 		).toMatchObject({
 			continuityId: continuityKey(seriesContinuity),
@@ -405,11 +391,6 @@ describe("persisted continuity", () => {
 			season.id,
 			film.id,
 		]);
-		expect(
-			await createEngine(db).resolveContinuity(`group:${seriesGroup.id}`),
-		).toMatchObject({
-			continuityId: continuityKey(filmContinuity),
-		});
 		expect(
 			await createEngine(db).resolveContinuity(continuityKey(seriesContinuity)),
 		).toMatchObject({
@@ -572,12 +553,5 @@ describe("persisted continuity", () => {
 		expect(await retiredContinuityKeys(db, survivorContinuity)).toEqual([
 			continuityKey(retiredContinuity),
 		]);
-		expect(await trackingAliasKeys(db, survivorContinuity)).toEqual(
-			expect.arrayContaining([
-				groupContinuityKey(survivorGroup.id),
-				groupContinuityKey(retiredGroup.id),
-				continuityKey(retiredContinuity),
-			]),
-		);
 	});
 });

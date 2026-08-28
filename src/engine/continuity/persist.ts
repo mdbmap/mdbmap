@@ -6,14 +6,13 @@ import {
 	continuityAliases,
 	continuitySegments,
 	serviceTitles,
-	titleGroupAliases,
 	titleGroups,
 } from "@/db/engine-schema";
 import type { ContinuitySegmentKind, GroupSource } from "@/db/engine-schema";
 import { one } from "@/db/one";
 import { survivorGroupId } from "@/engine/gateway";
 
-import { continuityKey, groupContinuityKey } from "./keys.ts";
+import { continuityKey } from "./keys.ts";
 import {
 	afterSegmentRewrite,
 	regenerateReleaseOrder,
@@ -47,43 +46,6 @@ const retiredContinuityKeys = async (
 		.all();
 	return rows.map((row) => continuityKey(row.retiredContinuityId));
 };
-
-const groupKeysForContinuity = async (
-	db: Db,
-	survivorId: number,
-): Promise<readonly `group:${number}`[]> => {
-	const rows = await db
-		.select({ groupId: serviceTitles.groupId })
-		.from(continuitySegments)
-		.innerJoin(serviceTitles, eq(serviceTitles.id, continuitySegments.titleId))
-		.where(eq(continuitySegments.continuityId, survivorId))
-		.all();
-	const groupIds = [...new Set(rows.map((row) => row.groupId))];
-	if (groupIds.length === 0) {
-		return [];
-	}
-	const retired = await db
-		.select({ retiredGroupId: titleGroupAliases.retiredGroupId })
-		.from(titleGroupAliases)
-		.where(inArray(titleGroupAliases.survivorGroupId, groupIds))
-		.all();
-	return [
-		...new Set([
-			...groupIds.map((groupId) => groupContinuityKey(groupId)),
-			...retired.map((row) => groupContinuityKey(row.retiredGroupId)),
-		]),
-	];
-};
-
-const trackingAliasKeys = async (
-	db: Db,
-	survivorId: number,
-): Promise<readonly string[]> => [
-	...new Set([
-		...(await retiredContinuityKeys(db, survivorId)),
-		...(await groupKeysForContinuity(db, survivorId)),
-	]),
-];
 
 const retireContinuities = async (
 	db: Db,
@@ -437,7 +399,6 @@ export {
 	ensureGroupContinuity,
 	retiredContinuityKeys,
 	survivorContinuityId,
-	trackingAliasKeys,
 	upsertRelationContinuity,
 };
 export type { RelationContinuityInput };
