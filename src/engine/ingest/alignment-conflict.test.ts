@@ -32,7 +32,7 @@ describe("queueStructuralAlignmentConflict", () => {
 		const rows = await db.select().from(pendingGroupCandidates).all();
 		expect(rows).toHaveLength(1);
 		expect(rows[0]).toMatchObject({
-			evidenceHash: "test-alignment-conflict:42:1",
+			evidenceHash: "test-alignment-conflict:42:1:anilist:140960,mal:50265",
 			kind: "structural",
 		});
 	});

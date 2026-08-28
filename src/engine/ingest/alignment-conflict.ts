@@ -36,7 +36,11 @@ const queueStructuralAlignmentConflict = async (
 		kind: "structural" as const,
 		proposedMembers,
 	};
-	const evidenceHash = `${input.evidenceHashPrefix}:${input.groupId}:${input.anchorTitleId}`;
+	const membersDigest = proposedMembers
+		.map((member) => `${member.service}:${member.serviceId}`)
+		.toSorted()
+		.join(",");
+	const evidenceHash = `${input.evidenceHashPrefix}:${input.groupId}:${input.anchorTitleId}:${membersDigest}`;
 	await db
 		.insert(pendingGroupCandidates)
 		.values({

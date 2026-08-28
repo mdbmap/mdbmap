@@ -17,6 +17,13 @@ jobs:
       - uses: actions/github-script@v7
         with:
           script: |
+            const conclusion = context.payload.workflow_run.conclusion;
+            if (conclusion !== 'success') {
+              core.setFailed(
+                `OpenCode review workflow finished with ${conclusion}; merge blocked until review succeeds.`,
+              );
+              return;
+            }
             const pullRequests = context.payload.workflow_run.pull_requests;
             if (!pullRequests?.length) {
               core.info('No pull request linked to workflow run');
@@ -24,7 +31,7 @@ jobs:
             }
             const pullNumber = pullRequests[0].number;
             const headSha = context.payload.workflow_run.head_sha;
-            const { data: reviews } = await github.rest.pulls.listReviews({
+            const reviews = await github.paginate(github.rest.pulls.listReviews, {
               owner: context.repo.owner,
               repo: context.repo.repo,
               pull_number: pullNumber,

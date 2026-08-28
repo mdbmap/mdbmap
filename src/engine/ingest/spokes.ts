@@ -97,7 +97,12 @@ const ensureSpokes = async (
 					locatorKind: locatorKindFor(instalment.locator),
 					titleId,
 				})
-				.onConflictDoNothing()
+				.onConflictDoUpdate({
+					set: {
+						locatorKind: locatorKindFor(instalment.locator),
+					},
+					target: [serviceInstalments.titleId, serviceInstalments.locator],
+				})
 				.run();
 		}),
 	);

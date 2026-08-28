@@ -156,21 +156,21 @@ const commitPublish = async (
 		input.alignment,
 		input.triedSource,
 	);
-	if (pairings.length > 0) {
-		const pairingSpokeIds = pairings.flatMap((pairing) => pairing.spokeIds);
-		const recompute = await recomputeGroup(db, {
-			groupId: input.groupId,
-			ladderComplete: ladderCompleteFor(input.alignment),
-			pairings,
-			triedSource: input.triedSource,
-		});
-		if (recompute.kind === "aborted") {
-			return endPublishAttempt(db, input, {
-				kind: "refused",
-				reason: "unpublishable",
-			});
-		}
+	const pairingSpokeIds = pairings.flatMap((pairing) => pairing.spokeIds);
+	if (pairingSpokeIds.length > 0) {
 		await retireBootstrapScaffolding(db, pairingSpokeIds);
+	}
+	const recompute = await recomputeGroup(db, {
+		groupId: input.groupId,
+		ladderComplete: ladderCompleteFor(input.alignment),
+		pairings,
+		triedSource: input.triedSource,
+	});
+	if (recompute.kind === "aborted") {
+		return endPublishAttempt(db, input, {
+			kind: "refused",
+			reason: "unpublishable",
+		});
 	}
 
 	return finishPublish(db, {

@@ -201,6 +201,8 @@ const createTvdbVerificationClient = (
 		};
 	};
 
+	const MAX_EPISODE_PAGES = 100;
+
 	const fetchEpisodeCount = async (
 		bearer: string,
 		serviceId: string,
@@ -216,6 +218,7 @@ const createTvdbVerificationClient = (
 			const nextTotal = total + pageResult.rows;
 			if (
 				pageResult.rows === 0 ||
+				page + 1 >= MAX_EPISODE_PAGES ||
 				pageResult.next === undefined ||
 				pageResult.next === null ||
 				pageResult.next === 0
@@ -254,6 +257,10 @@ const createTvdbVerificationClient = (
 	};
 };
 
+const defaultAnidbRateLimiter = createRateLimiter({
+	intervalMs: ANIDB_FLOOD_INTERVAL_MS,
+});
+
 const createAnidbVerificationClient = (
 	deps: AnidbVerificationClientDeps,
 ): CatalogueClient => {
@@ -262,7 +269,7 @@ const createAnidbVerificationClient = (
 		client,
 		clientVer,
 		fetchFn = fetch,
-		rateLimiter = createRateLimiter({ intervalMs: ANIDB_FLOOD_INTERVAL_MS }),
+		rateLimiter = defaultAnidbRateLimiter,
 	} = deps;
 
 	return {

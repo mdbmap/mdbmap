@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { freshDb } from "@/db/test-helpers";
 import type {
@@ -18,6 +18,10 @@ import { runOverflowBuild } from "./build.ts";
 import type { DurableStep } from "./build.ts";
 import { createBuildDeps } from "./deps.ts";
 import type { BuildPayload } from "./work.ts";
+
+afterEach(() => {
+	vi.restoreAllMocks();
+});
 
 const knownMal = { id: "50265", service: "mal" as const };
 const knownIdentity = { kind: "title" as const, title: knownMal };
