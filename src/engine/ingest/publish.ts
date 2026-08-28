@@ -1,7 +1,4 @@
-import { eq } from "drizzle-orm";
-
 import type { Db } from "@/db";
-import { serviceInstalments } from "@/db/engine-schema";
 import { ensureGroupContinuity } from "@/engine/continuity/persist.ts";
 import { convergeGroups } from "@/engine/discovery/converge.ts";
 import type {
@@ -22,7 +19,7 @@ import type { FreshPairing } from "@/engine/recompute/recompute.ts";
 
 import { queueAlignmentCrossingConflicts } from "./alignment-conflict.ts";
 import type { BootstrappedGroup } from "./bootstrap.ts";
-import { retireBootstrapScaffolding } from "./bootstrap.ts";
+import { retireBootstrapScaffoldingForGroup } from "./bootstrap.ts";
 import {
 	alignmentFromMappedPairs,
 	alignTarget,
@@ -159,13 +156,6 @@ const commitPublish = async (
 		input.alignment,
 		input.triedSource,
 	);
-	const anchorSpokes = await db
-		.select({ id: serviceInstalments.id })
-		.from(serviceInstalments)
-		.where(eq(serviceInstalments.titleId, input.anchorTitleId))
-		.all();
-	const anchorSpokeIds = anchorSpokes.map((row) => row.id);
-	await retireBootstrapScaffolding(db, anchorSpokeIds);
 	const recompute = await recomputeGroup(db, {
 		groupId: input.groupId,
 		ladderComplete: ladderCompleteFor(input.alignment),
@@ -178,6 +168,7 @@ const commitPublish = async (
 			reason: "unpublishable",
 		});
 	}
+	await retireBootstrapScaffoldingForGroup(db, input.groupId);
 
 	return finishPublish(db, {
 		continuity: input.continuity,

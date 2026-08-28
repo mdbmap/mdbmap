@@ -61,9 +61,9 @@ const createIngestEnv = (input: CreateIngestEnvInput): IngestEnv => {
 				: createWorkflowDispatcher(bindings.OVERFLOW_BUILD),
 		structuralDiscovery:
 			overrides?.structuralDiscovery ??
-			(built.simkl === undefined
-				? undefined
-				: buildStructuralDiscoveryClients({ simkl: built.simkl })),
+			buildStructuralDiscoveryClients(
+				built.simkl === undefined ? {} : { simkl: built.simkl },
+			),
 	};
 };
 

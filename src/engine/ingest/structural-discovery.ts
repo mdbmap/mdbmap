@@ -18,7 +18,7 @@ import { instalmentEnumerableServices } from "./enumerable-services.ts";
 
 interface StructuralDiscoveryDeps {
 	readonly fetchFn?: typeof fetch;
-	readonly simkl: SimklClient;
+	readonly simkl?: SimklClient;
 }
 
 const anilistStartDateSchema = z.object({
@@ -46,6 +46,17 @@ const anilistMediaSchema = z.object({
 	title: z.object({ romaji: z.string().nullable().optional() }).optional(),
 });
 
+const anilistDescriptorMediaSchema = z.object({
+	idMal: z.number().nullable().optional(),
+	startDate: anilistStartDateSchema.optional(),
+});
+
+const anilistDescriptorSchema = z.object({
+	data: z.object({
+		Media: anilistDescriptorMediaSchema.nullable().optional(),
+	}),
+});
+
 const anilistResponseSchema = z.object({
 	data: z.object({ Media: anilistMediaSchema.nullable().optional() }),
 });
@@ -60,12 +71,23 @@ const jikanEpisodesSchema = z.object({
 	pagination: z.object({ has_next_page: z.boolean().optional() }).optional(),
 });
 
+const jikanExternalEntrySchema = z.object({
+	name: z.string().optional(),
+	url: z.string().optional(),
+});
+
+const jikanAiredSchema = z.object({ from: z.string().optional() });
+
+const jikanAnimeDataSchema = z.object({
+	aired: jikanAiredSchema.optional(),
+	airing: z.boolean().optional(),
+	episodes: z.number().nullable().optional(),
+	external: z.array(jikanExternalEntrySchema).optional(),
+	status: z.string().optional(),
+});
+
 const jikanAnimeSchema = z.object({
-	data: z.object({
-		airing: z.boolean().optional(),
-		episodes: z.number().nullable().optional(),
-		status: z.string().optional(),
-	}),
+	data: jikanAnimeDataSchema,
 });
 
 const instalmentLocator = (raw: string): InstalmentLocator => raw;
@@ -93,7 +115,7 @@ const factsOf = (
 
 const skippedEnumerated = (): EnumeratedTitle => ({
 	facts: factsOf([]),
-	stream: instalmentStream([], "airing"),
+	stream: instalmentStream([], "truncated"),
 });
 
 const optionalAirDate = (
@@ -295,9 +317,17 @@ const enumerateMal = async (
 	fetchFn: typeof fetch,
 ): Promise<EnumeratedTitle> => {
 	const meta = await fetchMalAnimeMeta(serviceId, fetchFn);
-	const boundary = malBoundaryFromMeta(meta);
+	let boundary = malBoundaryFromMeta(meta);
 	const entries: (readonly [InstalmentLocator, InstalmentFacts])[] = [];
 	await paginateMalEpisodes(serviceId, 1, entries, fetchFn);
+	if (
+		meta?.episodes !== undefined &&
+		meta.episodes !== null &&
+		entries.length < meta.episodes &&
+		boundary === "complete"
+	) {
+		boundary = "truncated";
+	}
 	const locators = entries.map(([locator]) => locator);
 	return {
 		facts: factsOf(entries),
@@ -327,6 +357,110 @@ const enumerateTitle = async (
 	}
 };
 
+const anilistIdFromExternalUrl = (
+	url: string | undefined,
+): string | undefined => {
+	if (url === undefined) {
+		return undefined;
+	}
+	const match = /anilist\.co\/anime\/(?<id>\d+)/u.exec(url);
+	return match?.groups?.["id"];
+};
+
+const startDateFromAnilist = (
+	startDate: z.infer<typeof anilistStartDateSchema> | undefined,
+): string | undefined => {
+	if (startDate?.year === undefined || startDate.year === null) {
+		return undefined;
+	}
+	const month = startDate.month ?? 1;
+	const day = startDate.day ?? 1;
+	return `${startDate.year}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
+};
+
+const fetchAnilistDescriptor = async (
+	serviceId: string,
+	fetchFn: typeof fetch,
+): Promise<{ externalIds: ServiceRef[]; firstAirDate: string | undefined }> => {
+	const response = await fetchFn("https://graphql.anilist.co", {
+		body: JSON.stringify({
+			query:
+				"query ($id: Int) { Media(id: $id, type: ANIME) { idMal startDate { year month day } } }",
+			variables: { id: Number(serviceId) },
+		}),
+		headers: { "Content-Type": "application/json" },
+		method: "POST",
+	});
+	if (!response.ok) {
+		throw new Error(`anilist: ${response.status} for descriptor ${serviceId}`);
+	}
+	const payload = await response.json();
+	const parsed = anilistDescriptorSchema.safeParse(payload);
+	if (!parsed.success) {
+		throw new Error(`anilist: malformed descriptor payload for ${serviceId}`);
+	}
+	const media = parsed.data.data.Media;
+	const externalIds =
+		media?.idMal === undefined || media.idMal === null
+			? []
+			: [{ service: "mal", serviceId: String(media.idMal) }];
+	return {
+		externalIds,
+		firstAirDate: startDateFromAnilist(media?.startDate),
+	};
+};
+
+const malRefsFromMeta = (
+	meta: z.infer<typeof jikanAnimeSchema>["data"] | undefined,
+): ServiceRef[] => {
+	if (meta === undefined) {
+		return [];
+	}
+	const refs: ServiceRef[] = [];
+	for (const entry of meta.external ?? []) {
+		const anilistId = anilistIdFromExternalUrl(entry.url);
+		if (anilistId !== undefined) {
+			refs.push({ service: "anilist", serviceId: anilistId });
+		}
+	}
+	return refs;
+};
+
+const directDescribe = async (
+	title: ServiceRef,
+	fetchFn: typeof fetch,
+): Promise<{
+	externalIds: readonly ServiceRef[];
+	firstAirDate: string | undefined;
+}> => {
+	if (title.service === "mal") {
+		const meta = await fetchMalAnimeMeta(title.serviceId, fetchFn);
+		return {
+			externalIds: malRefsFromMeta(meta),
+			firstAirDate: meta?.aired?.from?.slice(0, 10),
+		};
+	}
+	if (title.service === "anilist") {
+		return fetchAnilistDescriptor(title.serviceId, fetchFn);
+	}
+	return { externalIds: [], firstAirDate: undefined };
+};
+
+const directFind = async (
+	shared: ServiceRef,
+	fetchFn: typeof fetch,
+): Promise<readonly ServiceRef[]> => {
+	if (shared.service === "mal") {
+		const meta = await fetchMalAnimeMeta(shared.serviceId, fetchFn);
+		return malRefsFromMeta(meta);
+	}
+	if (shared.service === "anilist") {
+		const descriptor = await fetchAnilistDescriptor(shared.serviceId, fetchFn);
+		return [...descriptor.externalIds];
+	}
+	return [];
+};
+
 const simklRefsOf = (
 	entry: NonNullable<Awaited<ReturnType<SimklClient["findByExternalId"]>>>,
 	excludeService?: string,
@@ -343,32 +477,34 @@ const buildStructuralDiscoveryClients = (
 	return {
 		externalIds: {
 			describe: async (title) => {
-				if (!isSimklService(title.service)) {
-					return { externalIds: [], firstAirDate: undefined };
+				if (simkl !== undefined && isSimklService(title.service)) {
+					const entry = await simkl.findByExternalId(
+						title.service,
+						title.serviceId,
+					);
+					if (entry === undefined) {
+						return directDescribe(title, fetchFn);
+					}
+					return {
+						externalIds: simklRefsOf(entry),
+						firstAirDate: entry.firstAirDate,
+					};
 				}
-				const entry = await simkl.findByExternalId(
-					title.service,
-					title.serviceId,
-				);
-				if (entry === undefined) {
-					return { externalIds: [], firstAirDate: undefined };
-				}
-				return {
-					externalIds: simklRefsOf(entry),
-					firstAirDate: entry.firstAirDate,
-				};
+				return directDescribe(title, fetchFn);
 			},
 		},
 		find: {
 			find: async (shared) => {
-				if (!isSimklService(shared.service)) {
-					return [];
+				if (simkl !== undefined && isSimklService(shared.service)) {
+					const entry = await simkl.findByExternalId(
+						shared.service,
+						shared.serviceId,
+					);
+					if (entry !== undefined) {
+						return simklRefsOf(entry, shared.service);
+					}
 				}
-				const entry = await simkl.findByExternalId(
-					shared.service,
-					shared.serviceId,
-				);
-				return entry === undefined ? [] : simklRefsOf(entry, shared.service);
+				return directFind(shared, fetchFn);
 			},
 		},
 		instalments: {

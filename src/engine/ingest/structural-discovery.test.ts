@@ -150,6 +150,32 @@ describe("buildStructuralDiscoveryClients", () => {
 		});
 
 		expect(enumerated.stream.instalments).toHaveLength(0);
-		expect(enumerated.stream.boundary).toBe("airing");
+		expect(enumerated.stream.boundary).toBe("truncated");
+	});
+	it("downgrades complete boundary when mal episodes fall short of meta count", async () => {
+		const fetchFn = vi.fn(
+			async (input: RequestInfo | URL): Promise<Response> => {
+				await Promise.resolve();
+				const url = urlOf(input);
+				if (url.includes("/episodes")) {
+					return Response.json({
+						data: [{ episode: 1, title: "One" }],
+						pagination: { has_next_page: false },
+					});
+				}
+				return Response.json({
+					data: { airing: false, episodes: 12, status: "Finished Airing" },
+				});
+			},
+		);
+		const clients = buildStructuralDiscoveryClients({
+			fetchFn,
+			simkl: emptySimkl,
+		});
+		const enumerated = await clients.instalments.enumerate({
+			service: "mal",
+			serviceId: "77",
+		});
+		expect(enumerated.stream.boundary).toBe("truncated");
 	});
 });

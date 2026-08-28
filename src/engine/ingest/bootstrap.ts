@@ -229,5 +229,25 @@ const retireBootstrapScaffolding = async (
 	await db.delete(contentUnits).where(inArray(contentUnits.id, unitIds)).run();
 };
 
-export { bootstrapFromIdentity, retireBootstrapScaffolding };
+const retireBootstrapScaffoldingForGroup = async (
+	db: Db,
+	groupId: number,
+): Promise<void> => {
+	const spokes = await db
+		.select({ id: serviceInstalments.id })
+		.from(serviceInstalments)
+		.innerJoin(serviceTitles, eq(serviceInstalments.titleId, serviceTitles.id))
+		.where(eq(serviceTitles.groupId, groupId))
+		.all();
+	await retireBootstrapScaffolding(
+		db,
+		spokes.map((row) => row.id),
+	);
+};
+
+export {
+	bootstrapFromIdentity,
+	retireBootstrapScaffolding,
+	retireBootstrapScaffoldingForGroup,
+};
 export type { BootstrappedGroup, BootstrapRefusalReason, BootstrapResult };
