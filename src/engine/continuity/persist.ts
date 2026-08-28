@@ -99,11 +99,17 @@ const kindForTitle = (
 };
 
 const spineTitles = (titles: readonly TitleRow[]): readonly TitleRow[] => {
-	const provider = titles.some((title) => animeServices.has(title.service))
-		? "anidb"
-		: "tmdb";
+	const anime = titles
+		.filter((title) => animeServices.has(title.service))
+		.toSorted(
+			(left, right) => left.ordinal - right.ordinal || left.id - right.id,
+		);
+	if (anime.length > 0) {
+		const anidb = anime.filter((title) => title.service === "anidb");
+		return anidb.length > 0 ? anidb : anime;
+	}
 	return titles
-		.filter((title) => title.service === provider)
+		.filter((title) => title.service === "tmdb")
 		.toSorted(
 			(left, right) => left.ordinal - right.ordinal || left.id - right.id,
 		);
