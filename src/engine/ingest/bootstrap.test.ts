@@ -73,6 +73,64 @@ describe("probeUpstream", () => {
 		expect(await db.select().from(titleGroups).all()).toEqual(groupsBefore);
 	});
 
+	it("queries SIMKL with namespace:id for TMDB titles", async () => {
+		const tmdbMovie = {
+			id: "123",
+			namespace: "movie" as const,
+			service: "tmdb" as const,
+		};
+		let lookupId: string | undefined;
+		const simkl: SimklClient = {
+			fetchEntry: async () => {
+				await Promise.resolve();
+				return;
+			},
+			findByExternalId: async (_service, serviceId) => {
+				await Promise.resolve();
+				lookupId = serviceId;
+				return {
+					externalIds: { tmdb: "movie:123" },
+					id: "simkl-1",
+					relations: [],
+					title: "Fixture Film",
+					type: "movie",
+				};
+			},
+		};
+
+		const result = await probeUpstream(tmdbMovie, { simkl });
+
+		expect(lookupId).toBe("movie:123");
+		expect(result).toEqual({ kind: "confirmed" });
+	});
+
+	it("refuses TMDB when SIMKL entry type mismatches namespace", async () => {
+		const tmdbShow = {
+			id: "456",
+			namespace: "tv" as const,
+			service: "tmdb" as const,
+		};
+		const simkl: SimklClient = {
+			fetchEntry: async () => {
+				await Promise.resolve();
+				return;
+			},
+			findByExternalId: async () => {
+				await Promise.resolve();
+				return {
+					externalIds: { tmdb: "tv:456" },
+					id: "simkl-2",
+					relations: [],
+					title: "Fixture Anime",
+					type: "anime",
+				};
+			},
+		};
+
+		const result = await probeUpstream(tmdbShow, { simkl });
+
+		expect(result).toEqual({ kind: "refused", reason: "no-record" });
+	});
 	it("confirms a non-SIMKL identity through the catalogue client", async () => {
 		const result = await probeUpstream(
 			{ id: "42", service: "kitsu" },
@@ -119,6 +177,10 @@ describe("bootstrapFromIdentity", () => {
 
 		const assertions = await db.select().from(instalmentAssertions).all();
 		expect(assertions).toHaveLength(1);
+		expect(assertions[0]).toMatchObject({
+			confidence: "low",
+			source: "manual",
+		});
 
 		const segments = await db
 			.select()

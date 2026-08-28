@@ -11,6 +11,7 @@ import type { PublishedAlignment } from "@/engine/matcher";
 import {
 	completeCoverage,
 	groupCoverageKey,
+	markCoverageConflict,
 	seedPendingCoverage,
 } from "@/engine/overflow/coverage.ts";
 import { recomputeGroup } from "@/engine/recompute/recompute.ts";
@@ -72,6 +73,28 @@ interface CommitPublishInput {
 	readonly triedSource: FreshPairing["source"];
 }
 
+const endPublishAttempt = async (
+	db: Db,
+	input: {
+		readonly continuity: ReturnType<typeof groupCoverageKey>;
+		readonly groupId: number;
+		readonly revision: number;
+		readonly targetService: Service;
+	},
+	result: PublishResult,
+): Promise<PublishResult> => {
+	if (result.kind === "published") {
+		return result;
+	}
+	await markCoverageConflict(
+		db,
+		input.continuity,
+		input.revision,
+		input.targetService,
+	);
+	return result;
+};
+
 const ladderCompleteFor = (alignment: PublishedAlignment): boolean =>
 	alignment.left.pending.length === 0 &&
 	alignment.left.noCounterpart.length === 0 &&
@@ -113,10 +136,16 @@ const commitPublish = async (
 		members: convergeMembersOf(input.discovered),
 	});
 	if (converge.kind === "candidate") {
-		return { kind: "conflict", reason: "converge-candidate" };
+		return endPublishAttempt(db, input, {
+			kind: "conflict",
+			reason: "converge-candidate",
+		});
 	}
 	if (converge.kind === "aborted") {
-		return { kind: "refused", reason: "unpublishable" };
+		return endPublishAttempt(db, input, {
+			kind: "refused",
+			reason: "unpublishable",
+		});
 	}
 
 	const pairings = await pairingsFromAlignment(
@@ -126,14 +155,19 @@ const commitPublish = async (
 		input.alignment,
 		input.triedSource,
 	);
-	const recompute = await recomputeGroup(db, {
-		groupId: input.groupId,
-		ladderComplete: ladderCompleteFor(input.alignment),
-		pairings,
-		triedSource: input.triedSource,
-	});
-	if (recompute.kind === "aborted") {
-		return { kind: "refused", reason: "unpublishable" };
+	if (pairings.length > 0) {
+		const recompute = await recomputeGroup(db, {
+			groupId: input.groupId,
+			ladderComplete: ladderCompleteFor(input.alignment),
+			pairings,
+			triedSource: input.triedSource,
+		});
+		if (recompute.kind === "aborted") {
+			return endPublishAttempt(db, input, {
+				kind: "refused",
+				reason: "unpublishable",
+			});
+		}
 	}
 
 	return finishPublish(db, {
@@ -163,7 +197,10 @@ const publishAlignedTarget = async (
 		target: input.mapping.member,
 	});
 	if (fetched.kind === "unavailable") {
-		return { kind: "refused", reason: "unavailable-target" };
+		return endPublishAttempt(db, input, {
+			kind: "refused",
+			reason: "unavailable-target",
+		});
 	}
 
 	const anchorStream = await anchorStreamFromDb(db, input.anchorTitleId);
@@ -173,14 +210,23 @@ const publishAlignedTarget = async (
 		target: fetched.enumerated,
 	});
 	if (aligned.kind === "over-budget") {
-		return { kind: "refused", reason: "over-budget" };
+		return endPublishAttempt(db, input, {
+			kind: "refused",
+			reason: "over-budget",
+		});
 	}
 	const { alignment } = aligned;
 	if (alignment === undefined || alignment.status !== "published") {
 		if (alignment?.status === "conflict") {
-			return { kind: "conflict", reason: "alignment-conflict" };
+			return endPublishAttempt(db, input, {
+				kind: "conflict",
+				reason: "alignment-conflict",
+			});
 		}
-		return { kind: "refused", reason: "unpublishable" };
+		return endPublishAttempt(db, input, {
+			kind: "refused",
+			reason: "unpublishable",
+		});
 	}
 
 	return commitPublish(db, {
@@ -214,7 +260,16 @@ const runSingleTargetPublish = async (
 		clients: input.clients.discovery,
 	});
 	if (discovered.kind === "refused") {
-		return { kind: "refused", reason: discovered.reason };
+		return endPublishAttempt(
+			db,
+			{
+				continuity,
+				groupId: input.group.groupId,
+				revision,
+				targetService: input.targetService,
+			},
+			{ kind: "refused", reason: discovered.reason },
+		);
 	}
 	if (discovered.kind === "no-group") {
 		return finishPublish(db, {

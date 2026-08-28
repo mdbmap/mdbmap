@@ -57,41 +57,40 @@ const bootstrapped = async (
 	};
 };
 
-const insertHubSpokes = async (
+const insertHubSpokesForTitle = async (
 	db: Db,
-	groupId: number,
-	title: TitleIdentity,
-): Promise<number> => {
-	const member = toGraphMember(title);
+	titleId: number,
+): Promise<void> => {
 	const unitRows = await db.insert(contentUnits).values({}).returning().all();
 	const unitId = one(unitRows).id;
-	const titleRows = await db
-		.insert(serviceTitles)
-		.values({
-			groupId,
-			ordinal: 0,
-			service: member.service,
-			serviceId: member.serviceId,
-		})
-		.returning()
-		.all();
-	const titleId = one(titleRows).id;
-	const spokeRows = await db
+	await db
 		.insert(serviceInstalments)
 		.values({ locator: "s1e1", locatorKind: "position", titleId })
-		.returning()
-		.all();
-	const spokeId = one(spokeRows).id;
+		.onConflictDoNothing()
+		.run();
+	const spoke = await db
+		.select({ id: serviceInstalments.id })
+		.from(serviceInstalments)
+		.where(
+			and(
+				eq(serviceInstalments.titleId, titleId),
+				eq(serviceInstalments.locator, "s1e1"),
+			),
+		)
+		.get();
+	if (spoke === undefined) {
+		throw new Error("bootstrap: hub spoke missing after insert");
+	}
 	await db
 		.insert(instalmentAssertions)
 		.values({
-			confidence: "high",
-			instalmentId: spokeId,
-			source: "t3-episode",
+			confidence: "low",
+			instalmentId: spoke.id,
+			source: "manual",
 			unitId,
 		})
+		.onConflictDoNothing()
 		.run();
-	return titleId;
 };
 
 const claimGroup = async (
@@ -116,15 +115,37 @@ const claimGroup = async (
 	const groupId = one(groupRows).id;
 
 	try {
-		const titleId = await insertHubSpokes(db, groupId, title);
-		return await bootstrapped(db, groupId, titleId);
-	} catch {
-		await db.delete(titleGroups).where(eq(titleGroups.id, groupId)).run();
-		const raced = await findExistingTitle(db, member.service, member.serviceId);
-		if (raced === undefined) {
-			throw new Error("bootstrap: claim raced without a winning service_title");
+		const titleRows = await db
+			.insert(serviceTitles)
+			.values({
+				groupId,
+				ordinal: 0,
+				service: member.service,
+				serviceId: member.serviceId,
+			})
+			.onConflictDoNothing()
+			.returning()
+			.all();
+		const [insertedTitle] = titleRows;
+		if (insertedTitle === undefined) {
+			const raced = await findExistingTitle(
+				db,
+				member.service,
+				member.serviceId,
+			);
+			if (raced === undefined) {
+				throw new Error(
+					"bootstrap: service_title claim raced without a winning row",
+				);
+			}
+			await db.delete(titleGroups).where(eq(titleGroups.id, groupId)).run();
+			return await bootstrapped(db, raced.groupId, raced.id);
 		}
-		return bootstrapped(db, raced.groupId, raced.id);
+		await insertHubSpokesForTitle(db, insertedTitle.id);
+		return await bootstrapped(db, groupId, insertedTitle.id);
+	} catch (error) {
+		await db.delete(titleGroups).where(eq(titleGroups.id, groupId)).run();
+		throw error;
 	}
 };
 

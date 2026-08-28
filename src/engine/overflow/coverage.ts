@@ -72,6 +72,31 @@ const completeCoverage = async (
 		.run();
 };
 
+const markCoverageConflict = async (
+	db: CoverageDb,
+	continuity: GroupCoverageKey,
+	revision: number,
+	service: Service,
+): Promise<void> => {
+	await db
+		.insert(serviceCoverages)
+		.values({
+			baselineContinuity: continuity,
+			revision,
+			state: "conflict",
+			targetService: service,
+		})
+		.onConflictDoUpdate({
+			set: { state: "conflict" },
+			target: [
+				serviceCoverages.baselineContinuity,
+				serviceCoverages.targetService,
+				serviceCoverages.revision,
+			],
+		})
+		.run();
+};
+
 const coverageStateFor = async (
 	db: CoverageDb,
 	continuity: GroupCoverageKey,
@@ -163,6 +188,7 @@ const reconcileCoveragesAfterMerge = async (
 
 export {
 	completeCoverage,
+	markCoverageConflict,
 	coverageStateFor,
 	coverageStatesFor,
 	groupCoverageKey,

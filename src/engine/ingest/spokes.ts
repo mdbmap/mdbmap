@@ -1,6 +1,7 @@
 import { and, eq } from "drizzle-orm";
 
 import type { Db } from "@/db";
+import type { InstalmentLocatorKind } from "@/db/engine-schema";
 import { serviceInstalments, serviceTitles } from "@/db/engine-schema";
 import type { InstalmentLocator } from "@/db/schema";
 import type {
@@ -9,6 +10,9 @@ import type {
 } from "@/engine/discovery/structural.ts";
 import type { PublishedAlignment } from "@/engine/matcher";
 import type { FreshPairing } from "@/engine/recompute/recompute.ts";
+
+const locatorKindFor = (locator: InstalmentLocator): InstalmentLocatorKind =>
+	/^s\d+e\d+/u.test(locator) ? "position" : "service-id";
 
 const findTitleId = async (
 	db: Db,
@@ -90,7 +94,7 @@ const ensureSpokes = async (
 				.insert(serviceInstalments)
 				.values({
 					locator: instalment.locator,
-					locatorKind: "position",
+					locatorKind: locatorKindFor(instalment.locator),
 					titleId,
 				})
 				.onConflictDoNothing()
