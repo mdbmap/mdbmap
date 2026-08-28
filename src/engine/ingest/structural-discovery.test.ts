@@ -1,5 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 
+import type { SimklClient, SimklEntry } from "@/engine/discovery/simkl.ts";
+
 import { buildStructuralDiscoveryClients } from "./structural-discovery.ts";
 
 const urlOf = (input: RequestInfo | URL): string => {
@@ -9,19 +11,35 @@ const urlOf = (input: RequestInfo | URL): string => {
 	return input instanceof URL ? input.href : input.url;
 };
 
+const emptyEntries = new Map<string, SimklEntry>();
+
+const emptySimkl: SimklClient = {
+	fetchEntry: async (simklId) => {
+		await Promise.resolve();
+		return emptyEntries.get(simklId);
+	},
+	findByExternalId: async (service, serviceId) => {
+		await Promise.resolve();
+		return emptyEntries.get(`${service}:${serviceId}`);
+	},
+};
+
 describe("buildStructuralDiscoveryClients", () => {
 	it("returns SIMKL first_aired from describe", async () => {
 		const clients = buildStructuralDiscoveryClients({
 			simkl: {
-				fetchEntry: async () => {},
-				findByExternalId: () => ({
-					externalIds: { mal: "42" },
-					firstAirDate: "2022-04-09",
-					id: "1",
-					relations: [],
-					title: "Fixture",
-					type: "anime" as const,
-				}),
+				fetchEntry: emptySimkl.fetchEntry,
+				findByExternalId: async () => {
+					await Promise.resolve();
+					return {
+						externalIds: { mal: "42" },
+						firstAirDate: "2022-04-09",
+						id: "1",
+						relations: [],
+						title: "Fixture",
+						type: "anime" as const,
+					};
+				},
 			},
 		});
 
@@ -64,10 +82,7 @@ describe("buildStructuralDiscoveryClients", () => {
 
 		const clients = buildStructuralDiscoveryClients({
 			fetchFn,
-			simkl: {
-				fetchEntry: async () => {},
-				findByExternalId: async () => {},
-			},
+			simkl: emptySimkl,
 		});
 
 		const enumerated = await clients.instalments.enumerate({
@@ -83,12 +98,7 @@ describe("buildStructuralDiscoveryClients", () => {
 	});
 
 	it("skips unsupported enumeration services without throwing", async () => {
-		const clients = buildStructuralDiscoveryClients({
-			simkl: {
-				fetchEntry: async () => {},
-				findByExternalId: async () => {},
-			},
-		});
+		const clients = buildStructuralDiscoveryClients({ simkl: emptySimkl });
 
 		const enumerated = await clients.instalments.enumerate({
 			service: "tmdb",
