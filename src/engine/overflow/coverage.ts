@@ -47,22 +47,23 @@ const seedPendingCoverage = async (
 // coverage flips to `complete` in a single row write. One service completing
 // never waits on another, so an outage elsewhere in the fan-out cannot hide this
 // service's verified mappings.
-const completeCoverage = async (
+const writeCoverageState = async (
 	db: CoverageDb,
 	continuity: GroupCoverageKey,
 	revision: number,
 	service: Service,
+	state: CoverageState,
 ): Promise<void> => {
 	await db
 		.insert(serviceCoverages)
 		.values({
 			baselineContinuity: continuity,
 			revision,
-			state: "complete",
+			state,
 			targetService: service,
 		})
 		.onConflictDoUpdate({
-			set: { state: "complete" },
+			set: { state },
 			target: [
 				serviceCoverages.baselineContinuity,
 				serviceCoverages.targetService,
@@ -72,29 +73,22 @@ const completeCoverage = async (
 		.run();
 };
 
+const completeCoverage = async (
+	db: CoverageDb,
+	continuity: GroupCoverageKey,
+	revision: number,
+	service: Service,
+): Promise<void> => {
+	await writeCoverageState(db, continuity, revision, service, "complete");
+};
+
 const markCoverageConflict = async (
 	db: CoverageDb,
 	continuity: GroupCoverageKey,
 	revision: number,
 	service: Service,
 ): Promise<void> => {
-	await db
-		.insert(serviceCoverages)
-		.values({
-			baselineContinuity: continuity,
-			revision,
-			state: "conflict",
-			targetService: service,
-		})
-		.onConflictDoUpdate({
-			set: { state: "conflict" },
-			target: [
-				serviceCoverages.baselineContinuity,
-				serviceCoverages.targetService,
-				serviceCoverages.revision,
-			],
-		})
-		.run();
+	await writeCoverageState(db, continuity, revision, service, "conflict");
 };
 
 const coverageStateFor = async (

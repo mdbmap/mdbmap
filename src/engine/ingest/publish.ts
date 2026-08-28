@@ -83,15 +83,14 @@ const endPublishAttempt = async (
 	},
 	result: PublishResult,
 ): Promise<PublishResult> => {
-	if (result.kind === "published") {
-		return result;
+	if (result.kind === "conflict") {
+		await markCoverageConflict(
+			db,
+			input.continuity,
+			input.revision,
+			input.targetService,
+		);
 	}
-	await markCoverageConflict(
-		db,
-		input.continuity,
-		input.revision,
-		input.targetService,
-	);
 	return result;
 };
 
