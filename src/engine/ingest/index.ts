@@ -1,13 +1,9 @@
-<<<<<<< HEAD
 export { bootstrapFromIdentity } from "./bootstrap.ts";
 export type {
 	BootstrappedGroup,
 	BootstrapRefusalReason,
 	BootstrapResult,
 } from "./bootstrap.ts";
-export { probeUpstream } from "./probe.ts";
-export type { ProbeDeps, ProbeRefusalReason, ProbeResult } from "./probe.ts";
-=======
 export {
 	buildCatalogueClients,
 	createAnidbVerificationClient,
@@ -40,4 +36,13 @@ export type {
 	IngestEnv,
 	IngestEnvOverrides,
 } from "./env.ts";
->>>>>>> 742c6a9 (feat(ingest): add production platform bindings skeleton (#122))
+export { probeUpstream } from "./probe.ts";
+export type { ProbeDeps, ProbeRefusalReason, ProbeResult } from "./probe.ts";
+export { runSingleTargetPublish } from "./publish.ts";
+export type {
+	PublishClients,
+	PublishConflictReason,
+	PublishRefusalReason,
+	PublishResult,
+	SingleTargetPublishInput,
+} from "./publish.ts";
