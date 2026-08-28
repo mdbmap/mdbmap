@@ -9,7 +9,7 @@ import {
 	reorderByIds,
 	selectPresentationOrder,
 } from "@/engine/continuity/orders";
-import { trackingAliasKeys } from "@/engine/continuity/persist";
+import { retiredContinuityKeys } from "@/engine/continuity/persist";
 import { pub } from "@/orpc/base";
 import type { Db } from "@/orpc/context";
 import { instalmentsOf } from "@/orpc/instalments";
@@ -270,9 +270,9 @@ const get = pub
 		const parsedCanonical = parseContinuityKey(continuityId);
 		const aliasKeys = [
 			...new Set([
-				...(parsedCanonical?.type === "continuity"
-					? await trackingAliasKeys(context.db, parsedCanonical.id)
-					: []),
+				...(parsedCanonical === undefined
+					? []
+					: await retiredContinuityKeys(context.db, parsedCanonical)),
 				...(requestedId === continuityId ? [] : [requestedId]),
 			]),
 		].filter((key) => key !== continuityId);
@@ -311,13 +311,13 @@ const get = pub
 			viewerState,
 		);
 		const selected =
-			parsedCanonical?.type === "continuity"
-				? await selectPresentationOrder(
+			parsedCanonical === undefined
+				? undefined
+				: await selectPresentationOrder(
 						context.db,
-						parsedCanonical.id,
+						parsedCanonical,
 						input.order,
-					)
-				: undefined;
+					);
 		const ordered =
 			selected === undefined
 				? built

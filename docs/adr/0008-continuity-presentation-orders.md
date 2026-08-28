@@ -1,6 +1,7 @@
 # ADR-0008: Continuity presentation orders for franchise films
 
-Status: accepted (2026-08-26)
+Status: accepted (2026-08-26), amended (2026-08-28) to drop the `group:{id}`
+work-page key
 
 ## Context
 
@@ -44,8 +45,10 @@ Anime continuity discovery may accept movie-shaped mainline candidates as
 segments. Side stories, spin-offs, recaps and non-mainline OVAs stay out of the
 default chain unless a presentation order explicitly includes them.
 
-Existing `group:{id}` continuity keys remain resolvable through an alias or
-migration path so stored watch status is not orphaned.
+Public continuity keys are `continuity:{id}` only. `group:{id}` is not a work
+or watch-status key. Title groups remain the mapping identity; matching
+coverage may still store `group:{id}` as a baseline. Watch-status aliases
+exist only for retired `continuity:{id}` keys after a merge.
 
 ### Presentation orders
 
@@ -103,7 +106,8 @@ scope for v1.
 ## Consequences
 
 - Tracker and engine contracts stop treating "continuity" as a synonym for
-  title group. `resolveContinuity` walks continuity segments across groups.
+  title group. `resolveContinuity` walks continuity segments across groups and
+  accepts only `continuity:{id}`.
 - Franchise films show in the season/episode UI without merging titles in D1.
 - Monogatari-style dual orders become data, not hard-coded UI forks.
 - `rateableUnit.kind: "movie"` gains a real producer on the work page.

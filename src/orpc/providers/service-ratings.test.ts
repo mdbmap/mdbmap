@@ -13,7 +13,7 @@ const members: MemberTitles = {
 	tmdb: "120089",
 };
 
-const part: RateableUnit = { key: "part:group:1:0", kind: "part" };
+const part: RateableUnit = { key: "part:continuity:1:0", kind: "part" };
 
 describe("service ratings list", () => {
 	it("returns a per-service list, each in its native scale, never merged", async () => {
@@ -64,9 +64,11 @@ describe("service ratings list", () => {
 
 	it("yields no ratings for units that are not parts", async () => {
 		const episode: RateableUnit = { key: "anidb:16947#1", kind: "episode" };
-		const work: RateableUnit = { key: "group:1", kind: "work" };
+		const work: RateableUnit = { key: "continuity:1", kind: "work" };
 
-		expect(await serviceRatingsProvider.ratingsFor(episode, members)).toEqual([]);
+		expect(await serviceRatingsProvider.ratingsFor(episode, members)).toEqual(
+			[],
+		);
 		expect(await serviceRatingsProvider.ratingsFor(work, members)).toEqual([]);
 	});
 });

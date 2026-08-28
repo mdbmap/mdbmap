@@ -1,27 +1,18 @@
-type ParsedContinuityKey =
-	| { id: number; type: "continuity" }
-	| { id: number; type: "group" };
-
-function parseContinuityKey(key: string): ParsedContinuityKey | undefined {
+function parseContinuityKey(key: string): number | undefined {
 	const [type, rawId, extra] = key.split(":");
 	if (
 		extra !== undefined ||
 		rawId === undefined ||
 		!/^\d+$/u.test(rawId) ||
-		(type !== "continuity" && type !== "group")
+		type !== "continuity"
 	) {
 		return undefined;
 	}
-	return { id: Number(rawId), type };
+	return Number(rawId);
 }
 
 function continuityKey(id: number): `continuity:${number}` {
 	return `continuity:${id}`;
 }
 
-function groupContinuityKey(id: number): `group:${number}` {
-	return `group:${id}`;
-}
-
-export { continuityKey, groupContinuityKey, parseContinuityKey };
-export type { ParsedContinuityKey };
+export { continuityKey, parseContinuityKey };
