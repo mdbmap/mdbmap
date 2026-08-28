@@ -1,6 +1,7 @@
 import { eq } from "drizzle-orm";
 
 import type { Db } from "@/db";
+import type { AssertionConfidence } from "@/db/columns";
 import { serviceInstalments } from "@/db/engine-schema";
 import type { InstalmentLocator } from "@/db/schema";
 import { discoverStructuralGroup } from "@/engine/discovery/structural.ts";
@@ -13,9 +14,15 @@ import type {
 } from "@/engine/discovery/structural.ts";
 import { toGraphMember } from "@/engine/gateway/keys.ts";
 import type { Service, TitleIdentity } from "@/engine/identity.ts";
-import { createBudget, createTier3, runLadder } from "@/engine/matcher";
+import {
+	createBudget,
+	createTier3,
+	publishedAlignmentFromPairings,
+	runLadder,
+} from "@/engine/matcher";
 import type {
 	AlignmentOutcome,
+	PublishedAlignment,
 	FactsByLocator,
 	InstalmentFacts,
 	InstalmentStream,
@@ -173,6 +180,25 @@ const alignTarget = (input: AlignInput): AlignPhaseOutcome => {
 	return { alignment: ladder.outcome, kind: "aligned", ladder };
 };
 
+const alignmentFromMappedPairs = (
+	shared: InstalmentStream,
+	member: InstalmentStream,
+	pairs: readonly {
+		readonly confidence: AssertionConfidence;
+		readonly memberLocators: readonly InstalmentLocator[];
+		readonly sharedLocators: readonly InstalmentLocator[];
+	}[],
+): PublishedAlignment =>
+	publishedAlignmentFromPairings(
+		shared,
+		member,
+		pairs.map((pair) => ({
+			confidence: pair.confidence,
+			left: pair.sharedLocators,
+			right: pair.memberLocators,
+		})),
+	);
+
 const highestTriedTier = (ladder: LadderResult | undefined): TierId => {
 	if (ladder === undefined) {
 		return "t3-episode";
@@ -216,6 +242,7 @@ const convergeMembersOf = (
 ];
 
 export {
+	alignmentFromMappedPairs,
 	alignTarget,
 	anchorStreamFromDb,
 	convergeMembersOf,

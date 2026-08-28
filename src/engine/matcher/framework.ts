@@ -191,7 +191,38 @@ const alignStreams = (input: AlignInput): AlignmentOutcome => {
 	};
 };
 
-export { alignStreams };
+const publishedAlignmentFromPairings = (
+	left: InstalmentStream,
+	right: InstalmentStream,
+	links: readonly {
+		readonly confidence: AssertionConfidence;
+		readonly left: readonly InstalmentLocator[];
+		readonly right: readonly InstalmentLocator[];
+	}[],
+): PublishedAlignment => {
+	const leftPaired = new Set<InstalmentLocator>();
+	const rightPaired = new Set<InstalmentLocator>();
+	const pairs: AlignedPair[] = links.map((link) => {
+		for (const locator of link.left) {
+			leftPaired.add(locator);
+		}
+		for (const locator of link.right) {
+			rightPaired.add(locator);
+		}
+		return {
+			confidence: link.confidence,
+			left: link.left,
+			right: link.right,
+		};
+	});
+	return {
+		left: disposeSide(left, leftPaired),
+		pairs,
+		right: disposeSide(right, rightPaired),
+	};
+};
+
+export { alignStreams, publishedAlignmentFromPairings };
 export type {
 	AlignedPair,
 	AlignInput,

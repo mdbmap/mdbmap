@@ -17,10 +17,11 @@ import {
 import { recomputeGroup } from "@/engine/recompute/recompute.ts";
 import type { FreshPairing } from "@/engine/recompute/recompute.ts";
 
-import { queueStructuralAlignmentConflict } from "./alignment-conflict.ts";
+import { queueAlignmentCrossingConflicts } from "./alignment-conflict.ts";
 import type { BootstrappedGroup } from "./bootstrap.ts";
 import { retireBootstrapScaffolding } from "./bootstrap.ts";
 import {
+	alignmentFromMappedPairs,
 	alignTarget,
 	anchorStreamFromDb,
 	convergeMembersOf,
@@ -200,15 +201,48 @@ const publishAlignedTarget = async (
 		target: input.mapping.member,
 	});
 	if (fetched.kind === "unavailable") {
-		return endPublishAttempt(db, input, {
-			kind: "refused",
-			reason: "unavailable-target",
+		return finishPublish(db, {
+			continuity: input.continuity,
+			groupId: input.groupId,
+			revision: input.revision,
+			targetService: input.targetService,
 		});
 	}
 
-	const anchorStream = await anchorStreamFromDb(db, input.anchorTitleId);
+	const sharedFetched = await fetchTargetStream({
+		clients: input.clients.discovery,
+		target: input.discovered.shared,
+	});
+	const anchorStream =
+		sharedFetched.kind === "fetched"
+			? sharedFetched.enumerated.stream
+			: await anchorStreamFromDb(db, input.anchorTitleId);
+
+	if (input.mapping.pairs.length > 0) {
+		return commitPublish(db, {
+			alignment: alignmentFromMappedPairs(
+				anchorStream,
+				fetched.enumerated.stream,
+				input.mapping.pairs,
+			),
+			anchorTitleId: input.anchorTitleId,
+			continuity: input.continuity,
+			discovered: input.discovered,
+			enumeration: fetched.enumerated,
+			groupId: input.groupId,
+			revision: input.revision,
+			target: input.mapping.member,
+			targetOrdinal: input.mapping.ordinal,
+			targetService: input.targetService,
+			triedSource: "t3-episode",
+		});
+	}
+
 	const aligned = alignTarget({
 		anchor: anchorStream,
+		...(sharedFetched.kind === "fetched"
+			? { anchorFacts: sharedFetched.enumerated.facts }
+			: {}),
 		budget: input.budget,
 		target: fetched.enumerated,
 	});
@@ -221,11 +255,22 @@ const publishAlignedTarget = async (
 	const { alignment } = aligned;
 	if (alignment === undefined || alignment.status !== "published") {
 		if (alignment?.status === "conflict") {
-			await queueStructuralAlignmentConflict(db, {
+			const targetTitleId = await ensureTitle(
+				db,
+				input.groupId,
+				input.mapping.member,
+				input.mapping.ordinal,
+			);
+			if (sharedFetched.kind === "fetched") {
+				await ensureSpokes(db, input.anchorTitleId, sharedFetched.enumerated);
+			}
+			await ensureSpokes(db, targetTitleId, fetched.enumerated);
+			await queueAlignmentCrossingConflicts(db, {
 				anchorTitleId: input.anchorTitleId,
-				discovered: input.discovered,
+				crossings: alignment.crossings,
 				evidenceHashPrefix: "publish-alignment-conflict",
-				groupId: input.groupId,
+				targetTitleId,
+				triedSource: highestTriedTier(aligned.ladder),
 			});
 			return endPublishAttempt(db, input, {
 				kind: "conflict",

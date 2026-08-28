@@ -1,55 +1,87 @@
+import { eq } from "drizzle-orm";
+
 import type { Db } from "@/db";
 import {
 	candidateSubjectKey,
+	instalmentAssertions,
 	pendingGroupCandidates,
 } from "@/db/engine-schema";
+import type {
+	AssertionSource,
+	CandidateEvidence,
+	CandidateSubject,
+} from "@/db/engine-schema";
+import type { InstalmentLocator } from "@/db/schema";
+import type { Crossing } from "@/engine/matcher";
 
-import type { DiscoveredGroup } from "./phases.ts";
-import { convergeMembersOf } from "./phases.ts";
+import { spokeIdFor } from "./spokes.ts";
 
-const queueStructuralAlignmentConflict = async (
+const proposedUnitIdFor = (
+	left: readonly InstalmentLocator[],
+	right: readonly InstalmentLocator[],
+): string => {
+	const digest = [...left, ...right].toSorted().join("|");
+	return `alignment:${digest}`;
+};
+
+const queueCrossingConflict = async (
 	db: Db,
 	input: {
 		readonly anchorTitleId: number;
-		readonly discovered: DiscoveredGroup;
+		readonly crossing: Crossing;
 		readonly evidenceHashPrefix: string;
-		readonly groupId: number;
+		readonly targetTitleId: number;
+		readonly triedSource: AssertionSource;
 	},
 ): Promise<void> => {
-	const subject = {
-		subjectType: "title" as const,
-		titleId: input.anchorTitleId,
+	const { earlier, later, side } = input.crossing;
+	const titleId = side === "left" ? input.anchorTitleId : input.targetTitleId;
+	const earlierLocators = side === "left" ? earlier.left : earlier.right;
+	const laterLocators = side === "left" ? later.left : later.right;
+	const laterTargetLocators = side === "left" ? later.right : later.left;
+
+	const earlierSpokeId = await spokeIdFor(db, titleId, earlierLocators[0]);
+	const laterSpokeId = await spokeIdFor(db, titleId, laterLocators[0]);
+	if (earlierSpokeId === undefined || laterSpokeId === undefined) {
+		return;
+	}
+
+	const primaryInstalmentId = laterSpokeId;
+	const publishedRow = await db
+		.select()
+		.from(instalmentAssertions)
+		.where(eq(instalmentAssertions.instalmentId, earlierSpokeId))
+		.get();
+	if (publishedRow === undefined) {
+		return;
+	}
+	const subject: CandidateSubject = {
+		instalmentAId: earlierSpokeId,
+		instalmentBId: laterSpokeId,
+		subjectType: "instalment-pair",
 	};
-	const proposedMembers = convergeMembersOf(input.discovered)
-		.map((member) => ({
-			service: member.service,
-			serviceId: member.serviceId,
-		}))
-		.toSorted((left, right) => {
-			if (left.service !== right.service) {
-				return left.service < right.service ? -1 : 1;
-			}
-			if (left.serviceId !== right.serviceId) {
-				return left.serviceId < right.serviceId ? -1 : 1;
-			}
-			return 0;
-		});
-	const evidence = {
-		competingGroupIds: [input.groupId],
-		kind: "structural" as const,
-		proposedMembers,
+	const proposedUnitId = proposedUnitIdFor(laterLocators, laterTargetLocators);
+	const evidence: CandidateEvidence = {
+		instalmentId: primaryInstalmentId,
+		kind: "instalment-assertion-conflict",
+		proposed: {
+			confidence: "high",
+			source: input.triedSource,
+			unitId: proposedUnitId,
+		},
+		published: {
+			confidence: publishedRow.confidence,
+			source: publishedRow.source,
+			unitId: publishedRow.unitId,
+		},
 	};
-	const membersDigest = proposedMembers
-		.map((member) => `${member.service}:${member.serviceId}`)
-		.toSorted()
-		.join(",");
-	const evidenceHash = `${input.evidenceHashPrefix}:${input.groupId}:${input.anchorTitleId}:${membersDigest}`;
+	const evidenceHash = `${input.evidenceHashPrefix}:instalment-assertion-conflict:${primaryInstalmentId}:${proposedUnitId}`;
 	await db
 		.insert(pendingGroupCandidates)
 		.values({
 			evidence,
 			evidenceHash,
-			kind: "structural",
+			kind: "instalment-assertion-conflict",
 			subject,
 			subjectKey: candidateSubjectKey(subject),
 		})
@@ -57,4 +89,21 @@ const queueStructuralAlignmentConflict = async (
 		.run();
 };
 
-export { queueStructuralAlignmentConflict };
+const queueAlignmentCrossingConflicts = async (
+	db: Db,
+	input: {
+		readonly anchorTitleId: number;
+		readonly crossings: readonly Crossing[];
+		readonly evidenceHashPrefix: string;
+		readonly targetTitleId: number;
+		readonly triedSource: AssertionSource;
+	},
+): Promise<void> => {
+	await Promise.all(
+		input.crossings.map(async (crossing) =>
+			queueCrossingConflict(db, { ...input, crossing }),
+		),
+	);
+};
+
+export { queueAlignmentCrossingConflicts };

@@ -3,13 +3,15 @@ import { and, eq } from "drizzle-orm";
 import { serviceTitles } from "@/db/engine-schema";
 import type {
 	DiscoveryClients,
+	EnumeratedTitle,
 	MemberMapping,
 } from "@/engine/discovery/structural.ts";
 import { toGraphMember } from "@/engine/gateway/keys.ts";
 import type { Service, TitleIdentity } from "@/engine/identity.ts";
-import { queueStructuralAlignmentConflict } from "@/engine/ingest/alignment-conflict.ts";
+import { queueAlignmentCrossingConflicts } from "@/engine/ingest/alignment-conflict.ts";
 import type { IngestEnv } from "@/engine/ingest/env.ts";
 import {
+	alignmentFromMappedPairs,
 	alignTarget,
 	anchorStreamFromDb,
 	discoverGroup,
@@ -26,7 +28,8 @@ import {
 	commitPublish,
 	finishPublish,
 } from "@/engine/ingest/publish.ts";
-import type { PublishedAlignment, TierId } from "@/engine/matcher";
+import { ensureSpokes, ensureTitle } from "@/engine/ingest/spokes.ts";
+import type { Crossing, PublishedAlignment, TierId } from "@/engine/matcher";
 
 import type { BuildDeps } from "./build.ts";
 import { seedPendingCoverage, writeCoverageState } from "./coverage.ts";
@@ -48,7 +51,7 @@ interface OverflowChain {
 	readonly targetService: Service;
 }
 
-type OverflowFetchSkip = "no-group" | "no-mapping";
+type OverflowFetchSkip = "no-group" | "no-mapping" | "refused";
 
 interface OverflowStreams {
 	readonly chain: OverflowChain;
@@ -62,6 +65,7 @@ interface OverflowAlignment {
 	readonly anchorTitleId: number;
 	readonly discovered?: DiscoveredGroup;
 	readonly enumerated: SerializableEnumerated;
+	readonly leavePending?: boolean;
 	readonly mapping?: MemberMapping;
 	readonly publishContext: {
 		readonly continuity: GroupCoverageKey;
@@ -140,8 +144,14 @@ const skippedAlignment = (
 
 const recordAlignmentConflict = async (
 	ctx: OverflowContext,
-	discovered: DiscoveredGroup,
-	anchorTitleId: number,
+	input: {
+		readonly anchorTitleId: number;
+		readonly crossings: readonly Crossing[];
+		readonly enumerated: SerializableEnumerated;
+		readonly mapping: MemberMapping;
+		readonly sharedEnumerated?: EnumeratedTitle;
+		readonly triedSource: TierId;
+	},
 ): Promise<void> => {
 	await writeCoverageState(
 		ctx.db,
@@ -150,25 +160,40 @@ const recordAlignmentConflict = async (
 		ctx.targetService,
 		"conflict",
 	);
-	await queueStructuralAlignmentConflict(ctx.db, {
-		anchorTitleId,
-		discovered,
+	const targetTitleId = await ensureTitle(
+		ctx.db,
+		ctx.groupId,
+		input.mapping.member,
+		input.mapping.ordinal,
+	);
+	if (input.sharedEnumerated !== undefined) {
+		await ensureSpokes(ctx.db, input.anchorTitleId, input.sharedEnumerated);
+	}
+	await ensureSpokes(
+		ctx.db,
+		targetTitleId,
+		deserializeEnumerated(input.enumerated),
+	);
+	await queueAlignmentCrossingConflicts(ctx.db, {
+		anchorTitleId: input.anchorTitleId,
+		crossings: input.crossings,
 		evidenceHashPrefix: "overflow-alignment-conflict",
-		groupId: ctx.groupId,
+		targetTitleId,
+		triedSource: input.triedSource,
 	});
 };
 
 const overflowDiscover = async (
 	ctx: OverflowContext,
 ): Promise<OverflowChain> => {
-	if (ctx.discovery === undefined) {
-		throw new Error("overflow deps: structural discovery not configured");
-	}
-	const outcome = await discoverGroup({
-		anchor: ctx.anchor,
-		budget: ctx.budget,
-		clients: ctx.discovery,
-	});
+	const outcome =
+		ctx.discovery === undefined
+			? { kind: "no-group" as const }
+			: await discoverGroup({
+					anchor: ctx.anchor,
+					budget: ctx.budget,
+					clients: ctx.discovery,
+				});
 	return {
 		budget: ctx.budget,
 		continuity: ctx.continuity,
@@ -184,9 +209,7 @@ const overflowFetch = async (
 	chain: OverflowChain,
 ): Promise<OverflowStreams> => {
 	if (chain.outcome.kind === "refused") {
-		throw new Error(
-			`overflow deps: discovery refused (${chain.outcome.reason})`,
-		);
+		return { chain, enumerated: emptyEnumerated(), skip: "refused" };
 	}
 	if (chain.outcome.kind !== "discovered") {
 		return { chain, enumerated: emptyEnumerated(), skip: "no-group" };
@@ -196,14 +219,24 @@ const overflowFetch = async (
 		return { chain, enumerated: emptyEnumerated(), skip: "no-mapping" };
 	}
 	if (ctx.discovery === undefined) {
-		throw new Error("overflow deps: structural discovery not configured");
+		return {
+			chain,
+			enumerated: emptyEnumerated(),
+			mapping,
+			skip: "no-mapping",
+		};
 	}
 	const fetched = await fetchTargetStream({
 		clients: ctx.discovery,
 		target: mapping.member,
 	});
 	if (fetched.kind === "unavailable") {
-		throw new Error(`${ctx.targetService} upstream unavailable`);
+		return {
+			chain,
+			enumerated: emptyEnumerated(),
+			mapping,
+			skip: "no-mapping",
+		};
 	}
 	return {
 		chain,
@@ -225,16 +258,54 @@ const overflowAlign = async (
 		mapping === undefined ||
 		discovered.kind !== "discovered"
 	) {
-		return skippedAlignment(
-			streams,
-			await anchorTitleIdFor(ctx.db, ctx.groupId, ctx.anchor),
+		const anchorTitleId = await anchorTitleIdFor(
+			ctx.db,
+			ctx.groupId,
+			ctx.anchor,
 		);
+		return {
+			...skippedAlignment(streams, anchorTitleId),
+			...(streams.skip === "refused" ? { leavePending: true } : {}),
+		};
 	}
 	const anchorTitleId = await anchorTitleIdFor(ctx.db, ctx.groupId, ctx.anchor);
+	const targetEnumerated = deserializeEnumerated(streams.enumerated);
+	const sharedFetched =
+		ctx.discovery === undefined
+			? { kind: "unavailable" as const }
+			: await fetchTargetStream({
+					clients: ctx.discovery,
+					target: discovered.discovered.shared,
+				});
+	const anchorStream =
+		sharedFetched.kind === "fetched"
+			? sharedFetched.enumerated.stream
+			: await anchorStreamFromDb(ctx.db, anchorTitleId);
+
+	if (mapping.pairs.length > 0) {
+		return {
+			alignment: alignmentFromMappedPairs(
+				anchorStream,
+				targetEnumerated.stream,
+				mapping.pairs,
+			),
+			anchorTitleId,
+			discovered: discovered.discovered,
+			enumerated: streams.enumerated,
+			mapping,
+			publishContext: publishContextFor(chain),
+			skip: false,
+			triedSource: "t3-episode",
+		};
+	}
+
 	const aligned = alignTarget({
-		anchor: await anchorStreamFromDb(ctx.db, anchorTitleId),
+		anchor: anchorStream,
+		...(sharedFetched.kind === "fetched"
+			? { anchorFacts: sharedFetched.enumerated.facts }
+			: {}),
 		budget: chain.budget,
-		target: deserializeEnumerated(streams.enumerated),
+		target: targetEnumerated,
 	});
 	if (aligned.kind === "over-budget") {
 		throw new Error("overflow deps: alignment over budget");
@@ -244,7 +315,16 @@ const overflowAlign = async (
 		aligned.alignment.status !== "published"
 	) {
 		if (aligned.alignment?.status === "conflict") {
-			await recordAlignmentConflict(ctx, discovered.discovered, anchorTitleId);
+			await recordAlignmentConflict(ctx, {
+				anchorTitleId,
+				crossings: aligned.alignment.crossings,
+				enumerated: streams.enumerated,
+				mapping,
+				...(sharedFetched.kind === "fetched"
+					? { sharedEnumerated: sharedFetched.enumerated }
+					: {}),
+				triedSource: highestTriedTier(aligned.ladder),
+			});
 			throw new Error("overflow deps: alignment conflict");
 		}
 		throw new Error("overflow deps: unpublishable alignment");
@@ -266,6 +346,9 @@ const overflowPublish = async (
 	alignment: OverflowAlignment,
 ): Promise<void> => {
 	if (alignment.skip || alignment.mapping === undefined) {
+		if (alignment.leavePending) {
+			return;
+		}
 		const result = await finishPublish(ctx.db, alignment.publishContext);
 		if (result.kind !== "published") {
 			throw new Error(`overflow publish refused: ${result.kind}`);

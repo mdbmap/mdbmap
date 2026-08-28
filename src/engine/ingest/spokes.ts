@@ -142,4 +142,4 @@ const pairingsFromAlignment = async (
 	return nested.flat();
 };
 
-export { ensureSpokes, ensureTitle, pairingsFromAlignment };
+export { ensureSpokes, ensureTitle, pairingsFromAlignment, spokeIdFor };

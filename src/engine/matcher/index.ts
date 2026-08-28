@@ -1,6 +1,6 @@
 export { createBudget } from "./budget.ts";
 export type { BudgetLedger, BudgetSnapshot } from "./budget.ts";
-export { alignStreams } from "./framework.ts";
+export { alignStreams, publishedAlignmentFromPairings } from "./framework.ts";
 export type {
 	AlignedPair,
 	AlignInput,

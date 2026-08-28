@@ -134,7 +134,7 @@ describe("createBuildDeps", () => {
 });
 
 describe("createBuildDeps review regressions", () => {
-	it("refuses overflow build when structural discovery is not configured", async () => {
+	it("completes coverage when structural discovery is not configured", async () => {
 		const db = await freshDb();
 		const bootstrapped = await bootstrapFromIdentity(db, knownIdentity);
 		if (bootstrapped.kind !== "bootstrapped") {
@@ -158,9 +158,7 @@ describe("createBuildDeps review regressions", () => {
 			},
 			payload,
 		);
-		await expect(
-			runOverflowBuild(payload.work, deps, recordingStep),
-		).rejects.toThrow(/structural discovery not configured/u);
+		await runOverflowBuild(payload.work, deps, recordingStep);
 
 		const coverage = await coverageStateFor(
 			db,
@@ -168,7 +166,7 @@ describe("createBuildDeps review regressions", () => {
 			1,
 			"anilist",
 		);
-		expect(coverage).toBe("pending");
+		expect(coverage).toBe("complete");
 	});
 
 	it("leaves coverage pending when discovery is refused", async () => {
@@ -201,9 +199,7 @@ describe("createBuildDeps review regressions", () => {
 			payload,
 		);
 
-		await expect(
-			runOverflowBuild(payload.work, deps, recordingStep),
-		).rejects.toThrow(/discovery refused \(over-budget\)/u);
+		await runOverflowBuild(payload.work, deps, recordingStep);
 
 		const coverage = await coverageStateFor(
 			db,
