@@ -16,6 +16,7 @@ describe("createIngestEnvFromSource", () => {
 
 		expect(ingest.catalogue.simkl).toBeUndefined();
 		expect(ingest.catalogue.verification).toStrictEqual({});
+		expect(ingest.structuralDiscovery).toBeUndefined();
 
 		const outcome = await discover(
 			{ cursor: { id: "1", service: "mal" }, target: "anilist" },
