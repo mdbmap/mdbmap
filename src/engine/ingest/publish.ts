@@ -68,6 +68,7 @@ interface CommitPublishInput {
 	readonly discovered: DiscoveredGroup;
 	readonly enumeration: EnumeratedTitle;
 	readonly groupId: number;
+	readonly sharedEnumeration?: EnumeratedTitle;
 	readonly revision: number;
 	readonly target: ServiceRef;
 	readonly targetOrdinal: number;
@@ -131,6 +132,9 @@ const commitPublish = async (
 		input.target,
 		input.targetOrdinal,
 	);
+	if (input.sharedEnumeration !== undefined) {
+		await ensureSpokes(db, input.anchorTitleId, input.sharedEnumeration);
+	}
 	await ensureSpokes(db, targetTitleId, input.enumeration);
 
 	const converge = await convergeGroups(db, {
@@ -228,6 +232,7 @@ const publishAlignedTarget = async (
 			enumeration: fetched.enumerated,
 			groupId: input.groupId,
 			revision: input.revision,
+			sharedEnumeration: sharedFetched.enumerated,
 			target: input.mapping.member,
 			targetOrdinal: input.mapping.ordinal,
 			targetService: input.targetService,
@@ -288,6 +293,7 @@ const publishAlignedTarget = async (
 		enumeration: fetched.enumerated,
 		groupId: input.groupId,
 		revision: input.revision,
+		sharedEnumeration: sharedFetched.enumerated,
 		target: input.mapping.member,
 		targetOrdinal: input.mapping.ordinal,
 		targetService: input.targetService,

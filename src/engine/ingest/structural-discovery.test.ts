@@ -192,16 +192,47 @@ describe("buildStructuralDiscoveryClients", () => {
 			clients.instalments.enumerate({ service: "mal", serviceId: "77" }),
 		).rejects.toThrow(/malformed episodes payload/u);
 	});
-	it("skips unsupported enumeration services without throwing", async () => {
+	it("throws for services outside the instalment enumeration whitelist", async () => {
 		const clients = buildStructuralDiscoveryClients({ simkl: emptySimkl });
 
-		const enumerated = await clients.instalments.enumerate({
-			service: "tmdb",
-			serviceId: "123",
+		await expect(
+			clients.instalments.enumerate({ service: "tmdb", serviceId: "123" }),
+		).rejects.toThrow("not enumerable: tmdb");
+	});
+
+	it("falls through to direct describe when SIMKL lookup throws", async () => {
+		const fetchFn = vi.fn(
+			async (input: RequestInfo | URL): Promise<Response> => {
+				await Promise.resolve();
+				const url = urlOf(input);
+				if (url.includes("api.jikan.moe/v4/anime/42")) {
+					return Response.json({
+						data: {
+							aired: { from: "2022-04-09T00:00:00+00:00" },
+							external: [],
+						},
+					});
+				}
+				throw new Error(`unexpected fetch: ${url}`);
+			},
+		);
+		const clients = buildStructuralDiscoveryClients({
+			fetchFn,
+			simkl: {
+				fetchEntry: emptySimkl.fetchEntry,
+				findByExternalId: () => {
+					throw new Error("simkl unavailable");
+				},
+			},
 		});
 
-		expect(enumerated.stream.instalments).toHaveLength(0);
-		expect(enumerated.stream.boundary).toBe("truncated");
+		const described = await clients.externalIds.describe({
+			service: "mal",
+			serviceId: "42",
+		});
+
+		expect(described.firstAirDate).toBe("2022-04-09");
+		expect(fetchFn).toHaveBeenCalled();
 	});
 	it("downgrades complete boundary when mal episodes fall short of meta count", async () => {
 		const fetchFn = vi.fn(

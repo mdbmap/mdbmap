@@ -31,7 +31,7 @@ import type {
 	TierId,
 } from "@/engine/matcher";
 
-import { instalmentEnumerableServices } from "./enumerable-services.ts";
+import { isNotEnumerableServiceError } from "./not-enumerable.ts";
 
 interface DiscoverInput {
 	readonly anchor: TitleIdentity;
@@ -107,14 +107,11 @@ const fetchTargetStream = async (
 ): Promise<FetchTargetOutcome> => {
 	try {
 		const enumerated = await input.clients.instalments.enumerate(input.target);
-		if (
-			!instalmentEnumerableServices.has(input.target.service) &&
-			enumerated.stream.instalments.length === 0
-		) {
+		return { enumerated, kind: "fetched" };
+	} catch (error) {
+		if (isNotEnumerableServiceError(error)) {
 			return { kind: "unavailable", reason: "not-enumerable" };
 		}
-		return { enumerated, kind: "fetched" };
-	} catch {
 		return { kind: "unavailable", reason: "fetch-failed" };
 	}
 };

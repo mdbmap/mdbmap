@@ -15,6 +15,7 @@ import type {
 } from "@/engine/matcher";
 
 import { instalmentEnumerableServices } from "./enumerable-services.ts";
+import { NotEnumerableServiceError } from "./not-enumerable.ts";
 
 interface StructuralDiscoveryDeps {
 	readonly fetchFn?: typeof fetch;
@@ -112,11 +113,6 @@ const factsOf = (
 	}
 	return map;
 };
-
-const skippedEnumerated = (): EnumeratedTitle => ({
-	facts: factsOf([]),
-	stream: instalmentStream([], "truncated"),
-});
 
 const optionalAirDate = (
 	year: number | null | undefined,
@@ -345,7 +341,7 @@ const enumerateTitle = async (
 	fetchFn: typeof fetch,
 ): Promise<EnumeratedTitle> => {
 	if (!instalmentEnumerableServices.has(title.service)) {
-		return skippedEnumerated();
+		throw new NotEnumerableServiceError(title.service);
 	}
 	switch (title.service) {
 		case "anilist": {
@@ -483,17 +479,21 @@ const buildStructuralDiscoveryClients = (
 		externalIds: {
 			describe: async (title) => {
 				if (simkl !== undefined && isSimklService(title.service)) {
-					const entry = await simkl.findByExternalId(
-						title.service,
-						title.serviceId,
-					);
-					if (entry === undefined) {
+					try {
+						const entry = await simkl.findByExternalId(
+							title.service,
+							title.serviceId,
+						);
+						if (entry === undefined) {
+							return await directDescribe(title, fetchFn);
+						}
+						return {
+							externalIds: simklRefsOf(entry),
+							firstAirDate: entry.firstAirDate,
+						};
+					} catch {
 						return directDescribe(title, fetchFn);
 					}
-					return {
-						externalIds: simklRefsOf(entry),
-						firstAirDate: entry.firstAirDate,
-					};
 				}
 				return directDescribe(title, fetchFn);
 			},
@@ -501,12 +501,16 @@ const buildStructuralDiscoveryClients = (
 		find: {
 			find: async (shared) => {
 				if (simkl !== undefined && isSimklService(shared.service)) {
-					const entry = await simkl.findByExternalId(
-						shared.service,
-						shared.serviceId,
-					);
-					if (entry !== undefined) {
-						return simklRefsOf(entry, shared.service);
+					try {
+						const entry = await simkl.findByExternalId(
+							shared.service,
+							shared.serviceId,
+						);
+						if (entry !== undefined) {
+							return simklRefsOf(entry, shared.service);
+						}
+					} catch {
+						return directFind(shared, fetchFn);
 					}
 				}
 				return directFind(shared, fetchFn);

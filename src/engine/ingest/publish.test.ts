@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import { serviceCoverages } from "@/db/engine-schema";
 import { freshDb } from "@/db/test-helpers";
+import type { SimklClient } from "@/engine/discovery/simkl.ts";
 import type {
 	DiscoveryClients,
 	EnumeratedTitle,
@@ -18,6 +19,7 @@ import {
 import { bootstrapFromIdentity } from "./bootstrap.ts";
 import { fetchTargetStream } from "./phases.ts";
 import { runSingleTargetPublish } from "./publish.ts";
+import { buildStructuralDiscoveryClients } from "./structural-discovery.ts";
 
 const knownMal = { id: "50265", service: "mal" as const };
 const knownIdentity = { kind: "title" as const, title: knownMal };
@@ -187,18 +189,13 @@ describe("runSingleTargetPublish", () => {
 });
 
 describe("fetchTargetStream", () => {
-	it("treats empty enumeration on non-enumerable services as unavailable", async () => {
-		const clients = publishClients();
+	it("treats non-enumerable services as unavailable", async () => {
+		const emptySimkl: SimklClient = {
+			fetchEntry: async () => {},
+			findByExternalId: async () => {},
+		};
 		const outcome = await fetchTargetStream({
-			clients: {
-				...clients,
-				instalments: {
-					enumerate: async () => {
-						await Promise.resolve();
-						return { facts: factsOf([]), stream: streamOf([]) };
-					},
-				},
-			},
+			clients: buildStructuralDiscoveryClients({ simkl: emptySimkl }),
 			target: { service: "tmdb", serviceId: "123" },
 		});
 

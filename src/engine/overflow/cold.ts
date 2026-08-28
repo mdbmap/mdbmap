@@ -79,12 +79,21 @@ const createOverflowColdLookup = (deps: OverflowColdDeps): ColdLookup => {
 
 // The production dispatcher over a Cloudflare Workflows binding. Structural over
 // the binding so it stays testable: `env.OVERFLOW_BUILD` satisfies it.
+interface WorkflowInstanceStatus {
+	readonly status: string;
+}
+
+interface WorkflowInstanceHandle {
+	readonly restart: () => Promise<void>;
+	readonly status: () => Promise<WorkflowInstanceStatus>;
+}
+
 interface DispatchHandle {
 	readonly create: (options: {
 		readonly id: string;
 		readonly params: BuildPayload;
 	}) => Promise<unknown>;
-	readonly get: (instanceId: string) => Promise<unknown>;
+	readonly get: (instanceId: string) => Promise<WorkflowInstanceHandle>;
 }
 
 const createWorkflowDispatcher = (
@@ -94,12 +103,14 @@ const createWorkflowDispatcher = (
 		try {
 			await workflow.create({ id: instanceId, params: payload });
 		} catch (error) {
-			// Creating an existing id throws: a concurrent request already started
-			// this exact work, so joining its instance is success. A get that also
-			// fails means the create error was real, not a duplicate — rethrow it.
-			await workflow.get(instanceId).catch(() => {
+			const instance = await workflow.get(instanceId).catch(() => {
 				throw error;
 			});
+			const { status } = await instance.status();
+			if (status === "errored" || status === "terminated") {
+				await instance.restart();
+				return;
+			}
 		}
 	},
 });

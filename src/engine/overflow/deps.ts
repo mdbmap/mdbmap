@@ -70,6 +70,7 @@ interface OverflowAlignment {
 	readonly discovered?: DiscoveredGroup;
 	readonly enumerated: SerializableEnumerated;
 	readonly leavePending?: boolean;
+	readonly sharedEnumerated?: SerializableEnumerated;
 	readonly mapping?: MemberMapping;
 	readonly publishContext: {
 		readonly continuity: GroupCoverageKey;
@@ -298,6 +299,7 @@ const overflowAlign = async (
 			enumerated: streams.enumerated,
 			mapping,
 			publishContext: publishContextFor(chain),
+			sharedEnumerated: serializeEnumerated(sharedFetched.enumerated),
 			skip: false,
 			triedSource: "t3-episode",
 		};
@@ -340,6 +342,7 @@ const overflowAlign = async (
 		enumerated: streams.enumerated,
 		mapping,
 		publishContext: publishContextFor(chain),
+		sharedEnumerated: serializeEnumerated(sharedFetched.enumerated),
 		skip: false,
 		triedSource: highestTriedTier(aligned.ladder),
 	};
@@ -371,6 +374,11 @@ const overflowPublish = async (
 		enumeration: deserializeEnumerated(alignment.enumerated),
 		groupId: alignment.publishContext.groupId,
 		revision: alignment.publishContext.revision,
+		...(alignment.sharedEnumerated === undefined
+			? {}
+			: {
+					sharedEnumeration: deserializeEnumerated(alignment.sharedEnumerated),
+				}),
 		target: alignment.mapping.member,
 		targetOrdinal: alignment.mapping.ordinal,
 		targetService: alignment.publishContext.targetService,

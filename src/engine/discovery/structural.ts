@@ -2,11 +2,12 @@ import type { Promisable } from "type-fest";
 
 import type { AssertionConfidence } from "@/db/columns";
 import type { InstalmentLocator } from "@/db/schema";
+import { instalmentEnumerableServices } from "@/engine/ingest/enumerable-services.ts";
 import { createBudget, createTier3, runLadder } from "@/engine/matcher";
 import type {
 	FactsByLocator,
-	InstalmentFacts,
 	InstalmentStream,
+	InstalmentFacts,
 	LadderResult,
 	Tier,
 	TierId,
@@ -282,6 +283,11 @@ const orderGroup = (
 	return { anchorOrdinal, members: targets };
 };
 
+const unenumeratedMemberEnumeration = (): EnumeratedTitle => ({
+	facts: new Map(),
+	stream: { boundary: "complete", instalments: [] } satisfies InstalmentStream,
+});
+
 interface EnumeratedMember {
 	readonly enumerated: EnumeratedTitle;
 	readonly ordinal: number;
@@ -312,11 +318,20 @@ const enumerateGroup = async (
 	const [shared, members] = await Promise.all([
 		input.clients.instalments.enumerate(input.shared),
 		Promise.all(
-			input.members.map(async (target) => ({
-				enumerated: await input.clients.instalments.enumerate(target.ref),
-				ordinal: target.ordinal,
-				ref: target.ref,
-			})),
+			input.members.map(async (target) => {
+				if (!instalmentEnumerableServices.has(target.ref.service)) {
+					return {
+						enumerated: unenumeratedMemberEnumeration(),
+						ordinal: target.ordinal,
+						ref: target.ref,
+					};
+				}
+				return {
+					enumerated: await input.clients.instalments.enumerate(target.ref),
+					ordinal: target.ordinal,
+					ref: target.ref,
+				};
+			}),
 		),
 	]);
 	return { members, shared };
@@ -330,6 +345,10 @@ const mapMembers = (enumeration: Enumeration): MapResult => {
 	const mappings: MemberMapping[] = [];
 	let sharedStream = enumeration.shared.stream;
 	for (const member of enumeration.members) {
+		if (!instalmentEnumerableServices.has(member.ref.service)) {
+			mappings.push({ member: member.ref, ordinal: member.ordinal, pairs: [] });
+			continue;
+		}
 		const facts = mergeFacts(enumeration.shared.facts, member.enumerated.facts);
 		const pairs = publishedPairs(
 			matchMember(sharedStream, member.enumerated.stream, facts),
