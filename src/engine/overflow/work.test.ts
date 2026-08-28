@@ -1,11 +1,12 @@
 import { describe, expect, it } from "vitest";
 
+import { groupCoverageKey } from "./coverage.ts";
 import { overflowInstanceId } from "./work.ts";
 import type { BuildWork } from "./work.ts";
 
 const work: BuildWork = {
 	baselineRevision: 3,
-	continuity: "simkl:anime:42",
+	continuity: groupCoverageKey(42),
 	targetService: "mal",
 };
 
@@ -16,7 +17,7 @@ describe("overflowInstanceId", () => {
 
 	it("stays within the instance-id charset", () => {
 		expect(
-			overflowInstanceId({ ...work, continuity: "group:7 tricky/id" }),
+			overflowInstanceId({ ...work, continuity: groupCoverageKey(7) }),
 		).toMatch(/^overflow_[0-9a-f]+$/u);
 	});
 
@@ -24,7 +25,7 @@ describe("overflowInstanceId", () => {
 		const ids = new Set([
 			overflowInstanceId(work),
 			overflowInstanceId({ ...work, baselineRevision: 4 }),
-			overflowInstanceId({ ...work, continuity: "simkl:anime:43" }),
+			overflowInstanceId({ ...work, continuity: groupCoverageKey(43) }),
 			overflowInstanceId({ ...work, targetService: "anilist" }),
 		]);
 		expect(ids.size).toBe(4);

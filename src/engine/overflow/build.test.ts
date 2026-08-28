@@ -1,6 +1,5 @@
 import { describe, expect, it } from "vitest";
 
-import type { ContinuityKey } from "@/db/schema.ts";
 import { freshDb } from "@/db/test-helpers";
 import type { Service } from "@/engine/identity.ts";
 
@@ -9,6 +8,7 @@ import type { BuildDeps, DurableStep, StepPolicy } from "./build.ts";
 import {
 	completeCoverage,
 	coverageStatesFor,
+	groupCoverageKey,
 	seedPendingCoverage,
 } from "./coverage.ts";
 import type { BuildWork } from "./work.ts";
@@ -36,7 +36,7 @@ const recordingStep = (): {
 
 const workFor = (targetService: Service): BuildWork => ({
 	baselineRevision: 1,
-	continuity: "simkl:anime:42",
+	continuity: groupCoverageKey(42),
 	targetService,
 });
 
@@ -88,7 +88,7 @@ describe("runOverflowBuild", () => {
 
 	it("publishes healthy services while an outage leaves its service pending", async () => {
 		const db = await freshDb();
-		const continuity: ContinuityKey = "simkl:anime:42";
+		const continuity = groupCoverageKey(42);
 		const revision = 1;
 
 		const healthyDeps = (
@@ -98,7 +98,8 @@ describe("runOverflowBuild", () => {
 			discover: () => "chain",
 			fetchTarget: (chain) => chain,
 			publish: async () => completeCoverage(db, continuity, revision, service),
-			seedPending: async () => seedPendingCoverage(db, continuity, revision, service),
+			seedPending: async () =>
+				seedPendingCoverage(db, continuity, revision, service),
 		});
 		const kitsuDeps: BuildDeps<string, string, string> = {
 			align: () => "aligned",
@@ -107,7 +108,8 @@ describe("runOverflowBuild", () => {
 				throw new Error("kitsu upstream unavailable");
 			},
 			publish: async () => completeCoverage(db, continuity, revision, "kitsu"),
-			seedPending: async () => seedPendingCoverage(db, continuity, revision, "kitsu"),
+			seedPending: async () =>
+				seedPendingCoverage(db, continuity, revision, "kitsu"),
 		};
 
 		await runOverflowBuild(

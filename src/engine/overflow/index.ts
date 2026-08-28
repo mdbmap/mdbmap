@@ -20,10 +20,11 @@ export {
 	completeCoverage,
 	coverageStateFor,
 	coverageStatesFor,
+	groupCoverageKey,
 	reconcileCoveragesAfterMerge,
 	seedPendingCoverage,
 } from "./coverage.ts";
-export type { MergeCoverageInput } from "./coverage.ts";
+export type { GroupCoverageKey, MergeCoverageInput } from "./coverage.ts";
 export type { Db as CoverageDb } from "@/db";
 export { defaultOverflowBudget, estimateBuild } from "./estimate.ts";
 export type {
