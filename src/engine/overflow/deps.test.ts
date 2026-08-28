@@ -93,6 +93,14 @@ const recordingStep: DurableStep = {
 	do: async (_name, _policy, run) => run(),
 };
 
+const expectOverflowPending = async (
+	work: BuildPayload["work"],
+	deps: ReturnType<typeof createBuildDeps>,
+): Promise<void> => {
+	const build = runOverflowBuild(work, deps, recordingStep);
+	await expect(build).rejects.toThrow("coverage pending");
+};
+
 describe("createBuildDeps", () => {
 	it("runs all five durable steps and marks coverage complete for one target", async () => {
 		const db = await freshDb();
@@ -158,7 +166,7 @@ describe("createBuildDeps review regressions", () => {
 			},
 			payload,
 		);
-		await runOverflowBuild(payload.work, deps, recordingStep);
+		await expectOverflowPending(payload.work, deps);
 
 		const coverage = await coverageStateFor(
 			db,
@@ -199,7 +207,7 @@ describe("createBuildDeps review regressions", () => {
 			payload,
 		);
 
-		await runOverflowBuild(payload.work, deps, recordingStep);
+		await expectOverflowPending(payload.work, deps);
 
 		const coverage = await coverageStateFor(
 			db,

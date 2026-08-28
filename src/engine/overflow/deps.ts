@@ -13,7 +13,6 @@ import type { IngestEnv } from "@/engine/ingest/env.ts";
 import {
 	alignmentFromMappedPairs,
 	alignTarget,
-	anchorStreamFromDb,
 	discoverGroup,
 	fetchTargetStream,
 	highestTriedTier,
@@ -187,6 +186,9 @@ const recordAlignmentConflict = async (
 	});
 };
 
+const overflowPendingError = (targetService: Service): Error =>
+	new Error(`overflow align: ${targetService} coverage pending`);
+
 const overflowDiscover = async (
 	ctx: OverflowContext,
 ): Promise<OverflowChain> => {
@@ -265,20 +267,20 @@ const overflowAlign = async (
 		mapping === undefined ||
 		discovered.kind !== "discovered"
 	) {
+		if (
+			streams.skip === "refused" ||
+			streams.skip === "unavailable-target" ||
+			streams.skip === "no-group" ||
+			streams.skip === "no-mapping"
+		) {
+			throw overflowPendingError(ctx.targetService);
+		}
 		const anchorTitleId = await anchorTitleIdFor(
 			ctx.db,
 			ctx.groupId,
 			ctx.anchor,
 		);
-		return {
-			...skippedAlignment(streams, anchorTitleId),
-			...(streams.skip === "refused" ||
-			streams.skip === "unavailable-target" ||
-			streams.skip === "no-group" ||
-			streams.skip === "no-mapping"
-				? { leavePending: true }
-				: {}),
-		};
+		return skippedAlignment(streams, anchorTitleId);
 	}
 	const anchorTitleId = await anchorTitleIdFor(ctx.db, ctx.groupId, ctx.anchor);
 	const targetEnumerated = deserializeEnumerated(streams.enumerated);
@@ -289,10 +291,10 @@ const overflowAlign = async (
 					clients: ctx.discovery,
 					target: discovered.discovered.shared,
 				});
-	const anchorStream =
-		sharedFetched.kind === "fetched"
-			? sharedFetched.enumerated.stream
-			: await anchorStreamFromDb(ctx.db, anchorTitleId);
+	if (sharedFetched.kind !== "fetched") {
+		throw overflowPendingError(ctx.targetService);
+	}
+	const anchorStream = sharedFetched.enumerated.stream;
 
 	if (mapping.pairs.length > 0) {
 		return {

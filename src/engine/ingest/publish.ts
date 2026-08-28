@@ -26,7 +26,6 @@ import { retireBootstrapScaffolding } from "./bootstrap.ts";
 import {
 	alignmentFromMappedPairs,
 	alignTarget,
-	anchorStreamFromDb,
 	convergeMembersOf,
 	discoverGroup,
 	fetchTargetStream,
@@ -217,10 +216,13 @@ const publishAlignedTarget = async (
 		clients: input.clients.discovery,
 		target: input.discovered.shared,
 	});
-	const anchorStream =
-		sharedFetched.kind === "fetched"
-			? sharedFetched.enumerated.stream
-			: await anchorStreamFromDb(db, input.anchorTitleId);
+	if (sharedFetched.kind !== "fetched") {
+		return endPublishAttempt(db, input, {
+			kind: "refused",
+			reason: "unavailable-target",
+		});
+	}
+	const anchorStream = sharedFetched.enumerated.stream;
 
 	if (input.mapping.pairs.length > 0) {
 		return commitPublish(db, {
