@@ -2,7 +2,6 @@ import { describe, expect, it } from "vitest";
 
 import { serviceCoverages } from "@/db/engine-schema";
 import { freshDb } from "@/db/test-helpers";
-import type { SimklClient } from "@/engine/discovery/simkl.ts";
 import type {
 	DiscoveryClients,
 	EnumeratedTitle,
@@ -19,7 +18,6 @@ import {
 import { bootstrapFromIdentity } from "./bootstrap.ts";
 import { fetchTargetStream } from "./phases.ts";
 import { runSingleTargetPublish } from "./publish.ts";
-import { buildStructuralDiscoveryClients } from "./structural-discovery.ts";
 
 const knownMal = { id: "50265", service: "mal" as const };
 const knownIdentity = { kind: "title" as const, title: knownMal };
@@ -150,7 +148,7 @@ describe("runSingleTargetPublish", () => {
 			anchor: knownMal,
 			clients: { discovery: isolatedClients },
 			group: bootstrapped.group,
-			targetService: "imdb",
+			targetService: "anilist",
 		});
 
 		expect(result).toEqual({
@@ -162,7 +160,7 @@ describe("runSingleTargetPublish", () => {
 			db,
 			groupCoverageKey(bootstrapped.group.groupId),
 			1,
-			"imdb",
+			"anilist",
 		);
 		expect(coverage).toBe("pending");
 	});
@@ -186,20 +184,59 @@ describe("runSingleTargetPublish", () => {
 		expect(first).toEqual(second);
 		expect(await db.select().from(serviceCoverages).all()).toHaveLength(1);
 	});
+
+	it("marks coverage open when the target is not enumerable", async () => {
+		const db = await freshDb();
+		const bootstrapped = await bootstrapFromIdentity(db, knownIdentity);
+		if (bootstrapped.kind !== "bootstrapped") {
+			throw new Error(`expected bootstrapped, got ${bootstrapped.kind}`);
+		}
+
+		const result = await runSingleTargetPublish(db, {
+			anchor: knownMal,
+			clients: { discovery: publishClients() },
+			group: bootstrapped.group,
+			targetService: "tmdb",
+		});
+
+		expect(result).toEqual({
+			kind: "refused",
+			reason: "not-enumerable",
+		});
+		const coverage = await coverageStateFor(
+			db,
+			groupCoverageKey(bootstrapped.group.groupId),
+			1,
+			"tmdb",
+		);
+		expect(coverage).toBe("open");
+	});
 });
 
 describe("fetchTargetStream", () => {
 	it("treats non-enumerable services as unavailable", async () => {
-		const emptySimkl: SimklClient = {
-			fetchEntry: async () => {
-				await Promise.resolve();
-			},
-			findByExternalId: async () => {
-				await Promise.resolve();
-			},
-		};
+		const { NotEnumerableServiceError } = await import("./not-enumerable.ts");
 		const outcome = await fetchTargetStream({
-			clients: buildStructuralDiscoveryClients({ simkl: emptySimkl }),
+			clients: {
+				externalIds: {
+					describe: async () => {
+						await Promise.resolve();
+						return { externalIds: [], firstAirDate: undefined };
+					},
+				},
+				find: {
+					find: async () => {
+						await Promise.resolve();
+						return [];
+					},
+				},
+				instalments: {
+					enumerate: async (title) => {
+						await Promise.resolve();
+						throw new NotEnumerableServiceError(title.service);
+					},
+				},
+			},
 			target: { service: "tmdb", serviceId: "123" },
 		});
 

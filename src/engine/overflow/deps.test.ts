@@ -97,8 +97,9 @@ const expectOverflowPending = async (
 	work: BuildPayload["work"],
 	deps: ReturnType<typeof createBuildDeps>,
 ): Promise<void> => {
-	const build = runOverflowBuild(work, deps, recordingStep);
-	await expect(build).rejects.toThrow("coverage pending");
+	await expect(runOverflowBuild(work, deps, recordingStep)).rejects.toThrow(
+		"coverage pending",
+	);
 };
 
 describe("createBuildDeps", () => {
@@ -223,5 +224,41 @@ describe("createBuildDeps review regressions", () => {
 			"anilist",
 		);
 		expect(coverage).toBe("pending");
+	});
+
+	it("marks coverage open when the target is not enumerable", async () => {
+		const db = await freshDb();
+		const bootstrapped = await bootstrapFromIdentity(db, knownIdentity);
+		if (bootstrapped.kind !== "bootstrapped") {
+			throw new Error(`expected bootstrapped, got ${bootstrapped.kind}`);
+		}
+		const payload: BuildPayload = {
+			identity: knownIdentity,
+			profile: "anime",
+			work: {
+				baselineRevision: 1,
+				continuity: groupCoverageKey(bootstrapped.group.groupId),
+				targetService: "tmdb",
+			},
+		};
+		const deps = createBuildDeps(
+			{
+				catalogue: { simkl: undefined, verification: {} },
+				db,
+				dispatcher: undefined,
+				structuralDiscovery: publishClients(),
+			},
+			payload,
+		);
+
+		await runOverflowBuild(payload.work, deps, recordingStep);
+
+		const coverage = await coverageStateFor(
+			db,
+			groupCoverageKey(bootstrapped.group.groupId),
+			1,
+			"tmdb",
+		);
+		expect(coverage).toBe("open");
 	});
 });

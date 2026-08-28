@@ -20,6 +20,7 @@ import type { FreshPairing } from "@/engine/recompute/recompute.ts";
 import { queueAlignmentCrossingConflicts } from "./alignment-conflict.ts";
 import type { BootstrappedGroup } from "./bootstrap.ts";
 import { retireBootstrapScaffoldingForGroup } from "./bootstrap.ts";
+import { instalmentEnumerableServices } from "./enumerable-services.ts";
 import {
 	alignmentFromMappedPairs,
 	alignTarget,
@@ -49,6 +50,7 @@ interface SingleTargetPublishInput {
 }
 
 type PublishRefusalReason =
+	| "not-enumerable"
 	| "over-budget"
 	| "unavailable-target"
 	| "unmappable-member"
@@ -92,6 +94,15 @@ const endPublishAttempt = async (
 			input.revision,
 			input.targetService,
 			"conflict",
+		);
+	}
+	if (result.kind === "refused" && result.reason === "not-enumerable") {
+		await writeCoverageState(
+			db,
+			input.continuity,
+			input.revision,
+			input.targetService,
+			"open",
 		);
 	}
 	return result;
@@ -203,7 +214,10 @@ const publishAlignedTarget = async (
 	if (fetched.kind === "unavailable") {
 		return endPublishAttempt(db, input, {
 			kind: "refused",
-			reason: "unavailable-target",
+			reason:
+				fetched.reason === "not-enumerable"
+					? "not-enumerable"
+					: "unavailable-target",
 		});
 	}
 
@@ -214,7 +228,10 @@ const publishAlignedTarget = async (
 	if (sharedFetched.kind !== "fetched") {
 		return endPublishAttempt(db, input, {
 			kind: "refused",
-			reason: "unavailable-target",
+			reason:
+				sharedFetched.reason === "not-enumerable"
+					? "not-enumerable"
+					: "unavailable-target",
 		});
 	}
 	const anchorStream = sharedFetched.enumerated.stream;
@@ -316,6 +333,14 @@ const runSingleTargetPublish = async (
 	const continuity = groupCoverageKey(input.group.groupId);
 
 	await seedPendingCoverage(db, continuity, revision, input.targetService);
+
+	if (!instalmentEnumerableServices.has(input.targetService)) {
+		return endPublishAttempt(
+			db,
+			{ continuity, revision, targetService: input.targetService },
+			{ kind: "refused", reason: "not-enumerable" },
+		);
+	}
 
 	const discovered = await discoverGroup({
 		anchor: input.anchor,
