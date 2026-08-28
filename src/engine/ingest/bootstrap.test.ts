@@ -73,7 +73,7 @@ describe("probeUpstream", () => {
 		expect(await db.select().from(titleGroups).all()).toEqual(groupsBefore);
 	});
 
-	it("queries SIMKL with namespace:id for TMDB titles", async () => {
+	it("queries SIMKL with bare id for TMDB titles", async () => {
 		const tmdbMovie = {
 			id: "123",
 			namespace: "movie" as const,
@@ -100,7 +100,35 @@ describe("probeUpstream", () => {
 
 		const result = await probeUpstream(tmdbMovie, { simkl });
 
-		expect(lookupId).toBe("movie:123");
+		expect(lookupId).toBe("123");
+		expect(result).toEqual({ kind: "confirmed" });
+	});
+
+	it("accepts anime SIMKL type for TMDB tv namespace", async () => {
+		const tmdbTv = {
+			id: "456",
+			namespace: "tv" as const,
+			service: "tmdb" as const,
+		};
+		const simkl: SimklClient = {
+			fetchEntry: async () => {
+				await Promise.resolve();
+				return;
+			},
+			findByExternalId: async () => {
+				await Promise.resolve();
+				return {
+					externalIds: { tmdb: "456" },
+					id: "simkl-anime",
+					relations: [],
+					title: "Fixture Anime",
+					type: "anime",
+				};
+			},
+		};
+
+		const result = await probeUpstream(tmdbTv, { simkl });
+
 		expect(result).toEqual({ kind: "confirmed" });
 	});
 
@@ -118,11 +146,11 @@ describe("probeUpstream", () => {
 			findByExternalId: async () => {
 				await Promise.resolve();
 				return {
-					externalIds: { tmdb: "tv:456" },
+					externalIds: { tmdb: "456" },
 					id: "simkl-2",
 					relations: [],
-					title: "Fixture Anime",
-					type: "anime",
+					title: "Fixture Film",
+					type: "movie",
 				};
 			},
 		};
@@ -179,7 +207,7 @@ describe("bootstrapFromIdentity", () => {
 		expect(assertions).toHaveLength(1);
 		expect(assertions[0]).toMatchObject({
 			confidence: "low",
-			source: "manual",
+			source: "t3-episode",
 		});
 
 		const segments = await db

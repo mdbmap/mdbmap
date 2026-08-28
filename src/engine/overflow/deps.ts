@@ -291,18 +291,26 @@ const createBuildDeps = (
 		targetService: work.targetService,
 	};
 
+	const assertStructuralDiscovery = (): void => {
+		if (ctx.discovery === undefined) {
+			throw new Error("overflow deps: structural discovery not configured");
+		}
+	};
+
 	return {
 		align: async ({ chain, streams }) => overflowAlign(ctx, chain, streams),
 		discover: async () => overflowDiscover(ctx),
 		fetchTarget: async (chain) => overflowFetch(ctx, chain),
 		publish: async (alignment) => overflowPublish(ctx, alignment),
-		seedPending: async () =>
-			seedPendingCoverage(
+		seedPending: async () => {
+			assertStructuralDiscovery();
+			await seedPendingCoverage(
 				ctx.db,
 				ctx.continuity,
 				ctx.revision,
 				ctx.targetService,
-			),
+			);
+		},
 	};
 };
 

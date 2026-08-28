@@ -13,6 +13,7 @@ import { ensureGroupContinuity } from "@/engine/continuity/persist.ts";
 import { toGraphMember } from "@/engine/gateway/keys.ts";
 import { survivorGroupId } from "@/engine/gateway/read.ts";
 import type { Identity, TitleIdentity } from "@/engine/identity.ts";
+import { queueInstalmentFlag } from "@/engine/research/low-confidence-flag.ts";
 
 interface BootstrappedGroup {
 	readonly baselineContinuity: `group:${number}`;
@@ -86,11 +87,17 @@ const insertHubSpokesForTitle = async (
 		.values({
 			confidence: "low",
 			instalmentId: spoke.id,
-			source: "manual",
+			source: "t3-episode",
 			unitId,
 		})
 		.onConflictDoNothing()
 		.run();
+	await queueInstalmentFlag(db, {
+		assertionConfidence: "low",
+		instalmentId: spoke.id,
+		titleId,
+		unitId,
+	});
 };
 
 const claimGroup = async (

@@ -130,7 +130,7 @@ describe("createBuildDeps", () => {
 });
 
 describe("createBuildDeps review regressions", () => {
-	it("leaves coverage pending when structural discovery clients are missing", async () => {
+	it("does not seed coverage when structural discovery is not configured", async () => {
 		const db = await freshDb();
 		const bootstrapped = await bootstrapFromIdentity(db, knownIdentity);
 		if (bootstrapped.kind !== "bootstrapped") {
@@ -157,7 +157,7 @@ describe("createBuildDeps review regressions", () => {
 
 		await expect(
 			runOverflowBuild(payload.work, deps, recordingStep),
-		).rejects.toThrow(/structural discovery clients missing/u);
+		).rejects.toThrow(/structural discovery not configured/u);
 
 		const coverage = await coverageStateFor(
 			db,
@@ -165,7 +165,7 @@ describe("createBuildDeps review regressions", () => {
 			1,
 			"anilist",
 		);
-		expect(coverage).toBe("pending");
+		expect(coverage).toBeUndefined();
 	});
 
 	it("leaves coverage pending when discovery is refused", async () => {

@@ -18,9 +18,6 @@ interface ProbeDeps {
 const isSimklService = (value: string): value is SimklService =>
 	(simklServices as readonly string[]).includes(value);
 
-const simklLookupId = (title: TitleIdentity): string =>
-	title.service === "tmdb" ? `${title.namespace}:${title.id}` : title.id;
-
 const simklTypeMatches = (
 	title: TitleIdentity,
 	entryType: "anime" | "movie" | "show",
@@ -28,8 +25,10 @@ const simklTypeMatches = (
 	if (title.service !== "tmdb") {
 		return true;
 	}
-	const expected = title.namespace === "movie" ? "movie" : "show";
-	return entryType === expected;
+	if (title.namespace === "movie") {
+		return entryType === "movie";
+	}
+	return entryType === "show" || entryType === "anime";
 };
 
 const probeUpstream = async (
@@ -43,10 +42,7 @@ const probeUpstream = async (
 			return { kind: "refused", reason: "unconfigured" };
 		}
 		try {
-			const entry = await simkl.findByExternalId(
-				member.service,
-				simklLookupId(title),
-			);
+			const entry = await simkl.findByExternalId(member.service, title.id);
 			if (entry === undefined || !simklTypeMatches(title, entry.type)) {
 				return { kind: "refused", reason: "no-record" };
 			}
