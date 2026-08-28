@@ -96,9 +96,11 @@ interface FetchTargetInput {
 	readonly target: ServiceRef;
 }
 
+type UnavailableReason = "fetch-failed" | "not-enumerable";
+
 type FetchTargetOutcome =
 	| { readonly enumerated: EnumeratedTitle; readonly kind: "fetched" }
-	| { readonly kind: "unavailable" };
+	| { readonly kind: "unavailable"; readonly reason: UnavailableReason };
 
 const fetchTargetStream = async (
 	input: FetchTargetInput,
@@ -109,11 +111,11 @@ const fetchTargetStream = async (
 			!instalmentEnumerableServices.has(input.target.service) &&
 			enumerated.stream.instalments.length === 0
 		) {
-			return { kind: "unavailable" };
+			return { kind: "unavailable", reason: "not-enumerable" };
 		}
 		return { enumerated, kind: "fetched" };
 	} catch {
-		return { kind: "unavailable" };
+		return { kind: "unavailable", reason: "fetch-failed" };
 	}
 };
 
@@ -252,6 +254,7 @@ export {
 	targetMappingFor,
 };
 export type {
+	UnavailableReason,
 	AlignInput,
 	AlignPhaseOutcome,
 	DiscoverInput,

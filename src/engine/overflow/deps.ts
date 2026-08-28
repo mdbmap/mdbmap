@@ -235,6 +235,9 @@ const overflowFetch = async (
 		target: mapping.member,
 	});
 	if (fetched.kind === "unavailable") {
+		if (fetched.reason === "fetch-failed") {
+			throw new Error(`${ctx.targetService} upstream unavailable`);
+		}
 		return {
 			chain,
 			enumerated: emptyEnumerated(),
@@ -269,7 +272,10 @@ const overflowAlign = async (
 		);
 		return {
 			...skippedAlignment(streams, anchorTitleId),
-			...(streams.skip === "refused" || streams.skip === "unavailable-target"
+			...(streams.skip === "refused" ||
+			streams.skip === "unavailable-target" ||
+			streams.skip === "no-group" ||
+			streams.skip === "no-mapping"
 				? { leavePending: true }
 				: {}),
 		};

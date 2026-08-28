@@ -1,4 +1,7 @@
+import { eq } from "drizzle-orm";
+
 import type { Db } from "@/db";
+import { serviceInstalments } from "@/db/engine-schema";
 import { ensureGroupContinuity } from "@/engine/continuity/persist.ts";
 import { convergeGroups } from "@/engine/discovery/converge.ts";
 import type {
@@ -157,10 +160,13 @@ const commitPublish = async (
 		input.alignment,
 		input.triedSource,
 	);
-	const pairingSpokeIds = pairings.flatMap((pairing) => pairing.spokeIds);
-	if (pairingSpokeIds.length > 0) {
-		await retireBootstrapScaffolding(db, pairingSpokeIds);
-	}
+	const anchorSpokes = await db
+		.select({ id: serviceInstalments.id })
+		.from(serviceInstalments)
+		.where(eq(serviceInstalments.titleId, input.anchorTitleId))
+		.all();
+	const anchorSpokeIds = anchorSpokes.map((row) => row.id);
+	await retireBootstrapScaffolding(db, anchorSpokeIds);
 	const recompute = await recomputeGroup(db, {
 		groupId: input.groupId,
 		ladderComplete: ladderCompleteFor(input.alignment),

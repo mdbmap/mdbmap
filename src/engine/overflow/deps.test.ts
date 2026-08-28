@@ -134,7 +134,7 @@ describe("createBuildDeps", () => {
 });
 
 describe("createBuildDeps review regressions", () => {
-	it("completes coverage when structural discovery is not configured", async () => {
+	it("leaves coverage pending when structural discovery is not configured", async () => {
 		const db = await freshDb();
 		const bootstrapped = await bootstrapFromIdentity(db, knownIdentity);
 		if (bootstrapped.kind !== "bootstrapped") {
@@ -166,7 +166,7 @@ describe("createBuildDeps review regressions", () => {
 			1,
 			"anilist",
 		);
-		expect(coverage).toBe("complete");
+		expect(coverage).toBe("pending");
 	});
 
 	it("leaves coverage pending when discovery is refused", async () => {

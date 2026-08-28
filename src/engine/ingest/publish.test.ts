@@ -199,6 +199,6 @@ describe("fetchTargetStream", () => {
 			target: { service: "tmdb", serviceId: "123" },
 		});
 
-		expect(outcome).toEqual({ kind: "unavailable" });
+		expect(outcome).toEqual({ kind: "unavailable", reason: "not-enumerable" });
 	});
 });
