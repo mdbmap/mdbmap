@@ -78,18 +78,8 @@ const completeCoverage = async (
 	continuity: GroupCoverageKey,
 	revision: number,
 	service: Service,
-): Promise<void> => {
-	await writeCoverageState(db, continuity, revision, service, "complete");
-};
-
-const markCoverageConflict = async (
-	db: CoverageDb,
-	continuity: GroupCoverageKey,
-	revision: number,
-	service: Service,
-): Promise<void> => {
-	await writeCoverageState(db, continuity, revision, service, "conflict");
-};
+): Promise<void> =>
+	writeCoverageState(db, continuity, revision, service, "complete");
 
 const coverageStateFor = async (
 	db: CoverageDb,
@@ -182,7 +172,7 @@ const reconcileCoveragesAfterMerge = async (
 
 export {
 	completeCoverage,
-	markCoverageConflict,
+	writeCoverageState,
 	coverageStateFor,
 	coverageStatesFor,
 	groupCoverageKey,

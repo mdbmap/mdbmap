@@ -118,7 +118,7 @@ interface OverflowContext {
 	readonly budget: number;
 	readonly continuity: GroupCoverageKey;
 	readonly db: IngestEnv["db"];
-	readonly discovery: DiscoveryClients | undefined;
+	readonly discovery: DiscoveryClients;
 	readonly groupId: number;
 	readonly revision: number;
 	readonly targetService: Service;
@@ -140,9 +140,6 @@ const skippedAlignment = (
 const overflowDiscover = async (
 	ctx: OverflowContext,
 ): Promise<OverflowChain> => {
-	if (ctx.discovery === undefined) {
-		throw new Error("overflow deps: structural discovery clients missing");
-	}
 	const outcome = await discoverGroup({
 		anchor: ctx.anchor,
 		budget: ctx.budget,
@@ -173,9 +170,6 @@ const overflowFetch = async (
 	const mapping = targetMappingFor(chain.outcome.discovered, ctx.targetService);
 	if (mapping === undefined) {
 		return { chain, enumerated: emptyEnumerated(), skip: "no-mapping" };
-	}
-	if (ctx.discovery === undefined) {
-		throw new Error("overflow deps: structural discovery clients missing");
 	}
 	const fetched = await fetchTargetStream({
 		clients: ctx.discovery,
@@ -280,6 +274,9 @@ const createBuildDeps = (
 	if (identity.kind !== "title") {
 		throw new Error("overflow deps: instalment identities are not supported");
 	}
+	if (ingest.structuralDiscovery === undefined) {
+		throw new Error("overflow deps: structural discovery not configured");
+	}
 	const ctx: OverflowContext = {
 		anchor: identity.title,
 		budget: DEFAULT_BUDGET,
@@ -291,26 +288,18 @@ const createBuildDeps = (
 		targetService: work.targetService,
 	};
 
-	const assertStructuralDiscovery = (): void => {
-		if (ctx.discovery === undefined) {
-			throw new Error("overflow deps: structural discovery not configured");
-		}
-	};
-
 	return {
 		align: async ({ chain, streams }) => overflowAlign(ctx, chain, streams),
 		discover: async () => overflowDiscover(ctx),
 		fetchTarget: async (chain) => overflowFetch(ctx, chain),
 		publish: async (alignment) => overflowPublish(ctx, alignment),
-		seedPending: async () => {
-			assertStructuralDiscovery();
-			await seedPendingCoverage(
+		seedPending: async () =>
+			seedPendingCoverage(
 				ctx.db,
 				ctx.continuity,
 				ctx.revision,
 				ctx.targetService,
-			);
-		},
+			),
 	};
 };
 

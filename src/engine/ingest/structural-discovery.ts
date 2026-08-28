@@ -1,8 +1,8 @@
 import { z } from "zod";
 
 import type { InstalmentLocator } from "@/db/schema";
-import type { SimklClient, SimklService } from "@/engine/discovery/simkl.ts";
-import { simklServices } from "@/engine/discovery/simkl.ts";
+import type { SimklClient } from "@/engine/discovery/simkl.ts";
+import { isSimklService } from "@/engine/discovery/simkl.ts";
 import type {
 	DiscoveryClients,
 	EnumeratedTitle,
@@ -25,8 +25,20 @@ const anilistStartDateSchema = z.object({
 	year: z.number().nullable().optional(),
 });
 
+const anilistEpisodeRowSchema = z.object({
+	airingAt: z.number().nullable().optional(),
+	episode: z.number().nullable().optional(),
+	title: z.object({ romaji: z.string().nullable().optional() }).optional(),
+});
+
+const anilistEpisodesPageSchema = z.object({
+	episodes: z.array(anilistEpisodeRowSchema),
+	pageInfo: z.object({ hasNextPage: z.boolean().optional() }).optional(),
+});
+
 const anilistMediaSchema = z.object({
 	episodes: z.number().nullable().optional(),
+	episodesList: anilistEpisodesPageSchema.optional(),
 	startDate: anilistStartDateSchema.optional(),
 	title: z.object({ romaji: z.string().nullable().optional() }).optional(),
 });
@@ -42,17 +54,16 @@ const jikanEpisodeRowSchema = z.object({
 
 const jikanEpisodesSchema = z.object({
 	data: z.array(jikanEpisodeRowSchema),
+	pagination: z.object({ has_next_page: z.boolean().optional() }).optional(),
 });
-
-const isSimklService = (value: string): value is SimklService =>
-	(simklServices as readonly string[]).includes(value);
 
 const instalmentLocator = (raw: string): InstalmentLocator => raw;
 
 const instalmentStream = (
 	locators: readonly InstalmentLocator[],
+	boundary: InstalmentStream["boundary"],
 ): InstalmentStream => ({
-	boundary: "complete",
+	boundary,
 	instalments: locators.map((locator) => ({
 		kind: "regular",
 		locator,
@@ -80,15 +91,25 @@ const optionalAirDate = (
 	return `${year}-${String(month ?? 1).padStart(2, "0")}-${String(day ?? 1).padStart(2, "0")}`;
 };
 
-const enumerateAnilist = async (
+const timestampToAirDate = (
+	timestamp: number | null | undefined,
+): string | undefined => {
+	if (timestamp === undefined || timestamp === null) {
+		return undefined;
+	}
+	return new Date(timestamp * 1000).toISOString().slice(0, 10);
+};
+
+const fetchAnilistPage = async (
 	serviceId: string,
+	page: number,
 	fetchFn: typeof fetch,
-): Promise<EnumeratedTitle> => {
+) => {
 	const response = await fetchFn("https://graphql.anilist.co", {
 		body: JSON.stringify({
 			query:
-				"query ($id: Int) { Media(id: $id, type: ANIME) { episodes title { romaji } startDate { year month day } } }",
-			variables: { id: Number(serviceId) },
+				"query ($id: Int, $page: Int) { Media(id: $id, type: ANIME) { episodes episodesList(page: $page, perPage: 50) { pageInfo { hasNextPage } episodes { episode airingAt title { romaji } } } startDate { year month day } title { romaji } } }",
+			variables: { id: Number(serviceId), page },
 		}),
 		headers: { "Content-Type": "application/json" },
 		method: "POST",
@@ -97,48 +118,119 @@ const enumerateAnilist = async (
 		throw new Error(`anilist: ${response.status} for media ${serviceId}`);
 	}
 	const parsed = anilistResponseSchema.safeParse(await response.json());
-	const media = parsed.success ? parsed.data.data.Media : undefined;
-	const episodeCount = media?.episodes ?? 0;
-	const title = media?.title?.romaji ?? "";
-	const airDate = optionalAirDate(
-		media?.startDate?.year,
-		media?.startDate?.month,
-		media?.startDate?.day,
-	);
-	const entries: (readonly [InstalmentLocator, InstalmentFacts])[] = [];
-	for (let episode = 1; episode <= episodeCount; episode += 1) {
+	return parsed.success ? parsed.data.data.Media : undefined;
+};
+
+const collectAnilistEpisodes = async (
+	serviceId: string,
+	page: number,
+	entries: (readonly [InstalmentLocator, InstalmentFacts])[],
+	fallbackTitle: string,
+	fallbackAirDate: string | undefined,
+	fetchFn: typeof fetch,
+): Promise<void> => {
+	const media = await fetchAnilistPage(serviceId, page, fetchFn);
+	const episodePage = media?.episodesList;
+	for (const row of episodePage?.episodes ?? []) {
+		const episode = row.episode ?? entries.length + 1;
 		const locator = instalmentLocator(`s1e${episode}`);
+		const title = row.title?.romaji ?? fallbackTitle;
+		const airDate = timestampToAirDate(row.airingAt) ?? fallbackAirDate;
 		const fact: InstalmentFacts =
 			airDate === undefined ? { title } : { airDate, title };
 		entries.push([locator, fact]);
 	}
-	const locators = entries.map(([locator]) => locator);
-	return { facts: factsOf(entries), stream: instalmentStream(locators) };
+	if (episodePage?.pageInfo?.hasNextPage === true) {
+		await collectAnilistEpisodes(
+			serviceId,
+			page + 1,
+			entries,
+			fallbackTitle,
+			fallbackAirDate,
+			fetchFn,
+		);
+	}
 };
 
-const enumerateMal = async (
+const enumerateAnilist = async (
 	serviceId: string,
 	fetchFn: typeof fetch,
 ): Promise<EnumeratedTitle> => {
+	const head = await fetchAnilistPage(serviceId, 1, fetchFn);
+	const totalEpisodes = head?.episodes;
+	const boundary: InstalmentStream["boundary"] =
+		totalEpisodes === undefined || totalEpisodes === null
+			? "airing"
+			: "complete";
+	const fallbackTitle = head?.title?.romaji ?? "";
+	const fallbackAirDate = optionalAirDate(
+		head?.startDate?.year,
+		head?.startDate?.month,
+		head?.startDate?.day,
+	);
+	const entries: (readonly [InstalmentLocator, InstalmentFacts])[] = [];
+	await collectAnilistEpisodes(
+		serviceId,
+		1,
+		entries,
+		fallbackTitle,
+		fallbackAirDate,
+		fetchFn,
+	);
+	const locators = entries.map(([locator]) => locator);
+	return {
+		facts: factsOf(entries),
+		stream: instalmentStream(locators, boundary),
+	};
+};
+
+const collectMalEpisodes = async (
+	serviceId: string,
+	page: number,
+	entries: (readonly [InstalmentLocator, InstalmentFacts])[],
+	fetchFn: typeof fetch,
+): Promise<boolean> => {
 	const response = await fetchFn(
-		`https://api.jikan.moe/v4/anime/${serviceId}/episodes`,
+		`https://api.jikan.moe/v4/anime/${serviceId}/episodes?page=${page}`,
 	);
 	if (!response.ok) {
 		throw new Error(`jikan: ${response.status} for mal:${serviceId}`);
 	}
 	const parsed = jikanEpisodesSchema.safeParse(await response.json());
 	const data = parsed.success ? parsed.data.data : [];
-	const entries: (readonly [InstalmentLocator, InstalmentFacts])[] = data.map(
-		(row) => {
-			const episode = row.episode ?? 1;
-			return [
-				instalmentLocator(`s1e${episode}`),
-				{ title: row.title ?? "" },
-			] as const;
-		},
-	);
+	for (const row of data) {
+		const episode = row.episode ?? entries.length + 1;
+		entries.push([
+			instalmentLocator(`s1e${episode}`),
+			{ title: row.title ?? "" },
+		]);
+	}
+	return parsed.success && parsed.data.pagination?.has_next_page === true;
+};
+
+const paginateMalEpisodes = async (
+	serviceId: string,
+	page: number,
+	entries: (readonly [InstalmentLocator, InstalmentFacts])[],
+	fetchFn: typeof fetch,
+): Promise<void> => {
+	const hasNext = await collectMalEpisodes(serviceId, page, entries, fetchFn);
+	if (hasNext) {
+		await paginateMalEpisodes(serviceId, page + 1, entries, fetchFn);
+	}
+};
+
+const enumerateMal = async (
+	serviceId: string,
+	fetchFn: typeof fetch,
+): Promise<EnumeratedTitle> => {
+	const entries: (readonly [InstalmentLocator, InstalmentFacts])[] = [];
+	await paginateMalEpisodes(serviceId, 1, entries, fetchFn);
 	const locators = entries.map(([locator]) => locator);
-	return { facts: factsOf(entries), stream: instalmentStream(locators) };
+	return {
+		facts: factsOf(entries),
+		stream: instalmentStream(locators, "complete"),
+	};
 };
 
 const enumerateTitle = async (

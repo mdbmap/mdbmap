@@ -130,7 +130,7 @@ describe("createBuildDeps", () => {
 });
 
 describe("createBuildDeps review regressions", () => {
-	it("does not seed coverage when structural discovery is not configured", async () => {
+	it("refuses to build deps when structural discovery is not configured", async () => {
 		const db = await freshDb();
 		const bootstrapped = await bootstrapFromIdentity(db, knownIdentity);
 		if (bootstrapped.kind !== "bootstrapped") {
@@ -145,19 +145,17 @@ describe("createBuildDeps review regressions", () => {
 				targetService: "anilist",
 			},
 		};
-		const deps = createBuildDeps(
-			{
-				catalogue: { simkl: undefined, verification: {} },
-				db,
-				dispatcher: undefined,
-				structuralDiscovery: undefined,
-			},
-			payload,
-		);
-
-		await expect(
-			runOverflowBuild(payload.work, deps, recordingStep),
-		).rejects.toThrow(/structural discovery not configured/u);
+		expect(() =>
+			createBuildDeps(
+				{
+					catalogue: { simkl: undefined, verification: {} },
+					db,
+					dispatcher: undefined,
+					structuralDiscovery: undefined,
+				},
+				payload,
+			),
+		).toThrow(/structural discovery not configured/u);
 
 		const coverage = await coverageStateFor(
 			db,

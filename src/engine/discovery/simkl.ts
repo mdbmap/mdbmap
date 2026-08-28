@@ -138,6 +138,9 @@ const normalise = (raw: RawEntry): SimklEntry => ({
 	type: shapeOf(raw.type),
 });
 
+const isSimklService = (value: string): value is SimklService =>
+	(simklServices as readonly string[]).includes(value);
+
 const createSimklClient = (deps: SimklClientDeps): SimklClient => {
 	const { apiKey, baseUrl = DEFAULT_BASE_URL, fetchFn = fetch } = deps;
 
@@ -172,7 +175,7 @@ const createSimklClient = (deps: SimklClientDeps): SimklClient => {
 	};
 };
 
-export { createSimklClient, simklServices };
+export { createSimklClient, isSimklService, simklServices };
 export type {
 	MainlineRelation,
 	SimklClient,

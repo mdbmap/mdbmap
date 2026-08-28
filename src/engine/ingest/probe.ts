@@ -1,5 +1,5 @@
-import type { SimklClient, SimklService } from "@/engine/discovery/simkl.ts";
-import { simklServices } from "@/engine/discovery/simkl.ts";
+import type { SimklClient } from "@/engine/discovery/simkl.ts";
+import { isSimklService } from "@/engine/discovery/simkl.ts";
 import type { CatalogueClient } from "@/engine/discovery/verify.ts";
 import { toGraphMember } from "@/engine/gateway/keys.ts";
 import type { Service, TitleIdentity } from "@/engine/identity.ts";
@@ -14,9 +14,6 @@ interface ProbeDeps {
 	readonly catalogues?: Partial<Record<Service, CatalogueClient>>;
 	readonly simkl?: SimklClient;
 }
-
-const isSimklService = (value: string): value is SimklService =>
-	(simklServices as readonly string[]).includes(value);
 
 const simklTypeMatches = (
 	title: TitleIdentity,

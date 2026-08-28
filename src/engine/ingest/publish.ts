@@ -11,7 +11,7 @@ import type { PublishedAlignment } from "@/engine/matcher";
 import {
 	completeCoverage,
 	groupCoverageKey,
-	markCoverageConflict,
+	writeCoverageState,
 	seedPendingCoverage,
 } from "@/engine/overflow/coverage.ts";
 import { recomputeGroup } from "@/engine/recompute/recompute.ts";
@@ -77,18 +77,18 @@ const endPublishAttempt = async (
 	db: Db,
 	input: {
 		readonly continuity: ReturnType<typeof groupCoverageKey>;
-		readonly groupId: number;
 		readonly revision: number;
 		readonly targetService: Service;
 	},
 	result: PublishResult,
 ): Promise<PublishResult> => {
 	if (result.kind === "conflict") {
-		await markCoverageConflict(
+		await writeCoverageState(
 			db,
 			input.continuity,
 			input.revision,
 			input.targetService,
+			"conflict",
 		);
 	}
 	return result;
@@ -261,12 +261,7 @@ const runSingleTargetPublish = async (
 	if (discovered.kind === "refused") {
 		return endPublishAttempt(
 			db,
-			{
-				continuity,
-				groupId: input.group.groupId,
-				revision,
-				targetService: input.targetService,
-			},
+			{ continuity, revision, targetService: input.targetService },
 			{ kind: "refused", reason: discovered.reason },
 		);
 	}
