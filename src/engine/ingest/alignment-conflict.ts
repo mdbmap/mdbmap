@@ -1,5 +1,4 @@
 import { eq } from "drizzle-orm";
-import { z } from "zod";
 
 import type { Db } from "@/db";
 import {
@@ -30,9 +29,6 @@ const proposedUnitIdFor = (
 	const digest = [...left, ...right].toSorted().join("|");
 	return `alignment:${digest}`;
 };
-
-const absentInstalmentPublished = (): InstalmentConflictSide | null =>
-	z.null().parse(JSON.parse("null"));
 
 const queueCrossingConflict = async (
 	db: Db,
@@ -70,7 +66,8 @@ const queueCrossingConflict = async (
 	const proposedUnitId = proposedUnitIdFor(laterLocators, laterTargetLocators);
 	const published: InstalmentConflictSide | null =
 		publishedRow === undefined
-			? absentInstalmentPublished()
+			? // oxlint-disable-next-line unicorn/no-null -- CandidateEvidence uses null for absent sides
+				null
 			: {
 					confidence: publishedRow.confidence,
 					source: publishedRow.source,
