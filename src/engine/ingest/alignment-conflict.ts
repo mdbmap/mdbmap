@@ -3,7 +3,6 @@ import {
 	candidateSubjectKey,
 	pendingGroupCandidates,
 } from "@/db/engine-schema";
-import { serviceOrder } from "@/engine/identity.ts";
 
 import type { DiscoveredGroup } from "./phases.ts";
 import { convergeMembersOf } from "./phases.ts";
@@ -21,16 +20,20 @@ const queueStructuralAlignmentConflict = async (
 		subjectType: "title" as const,
 		titleId: input.anchorTitleId,
 	};
-	const proposedMembers = convergeMembersOf(input.discovered).flatMap(
-		(member) => {
-			const service = serviceOrder.find(
-				(candidate) => candidate === member.service,
-			);
-			return service === undefined
-				? []
-				: [{ service, serviceId: member.serviceId }];
-		},
-	);
+	const proposedMembers = convergeMembersOf(input.discovered)
+		.map((member) => ({
+			service: member.service,
+			serviceId: member.serviceId,
+		}))
+		.toSorted((left, right) => {
+			if (left.service !== right.service) {
+				return left.service < right.service ? -1 : 1;
+			}
+			if (left.serviceId !== right.serviceId) {
+				return left.serviceId < right.serviceId ? -1 : 1;
+			}
+			return 0;
+		});
 	const evidence = {
 		competingGroupIds: [input.groupId],
 		kind: "structural" as const,

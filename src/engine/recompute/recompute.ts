@@ -264,7 +264,7 @@ const commitRecompute = async (
 						SELECT count(*) FROM instalment_assertions AS assertions
 						JOIN service_instalments AS instalments ON instalments.id = assertions.instalment_id
 						JOIN service_titles AS titles ON titles.id = instalments.title_id
-						WHERE titles.group_id = groups.id AND assertions.source NOT IN (${sources})
+						WHERE titles.group_id = groups.id AND assertions.source NOT IN (${sources}) AND assertions.source <> 'bootstrap'
 					) = json_array_length(?)
 					AND NOT EXISTS (
 						SELECT 1 FROM json_each(?) AS expected
@@ -273,7 +273,7 @@ const commitRecompute = async (
 							JOIN service_instalments AS instalments ON instalments.id = assertions.instalment_id
 							JOIN service_titles AS titles ON titles.id = instalments.title_id
 							WHERE titles.group_id = groups.id AND assertions.id = expected.value
-							AND assertions.source NOT IN (${sources})
+							AND assertions.source NOT IN (${sources}) AND assertions.source <> 'bootstrap'
 						)
 					)
 					AND (
