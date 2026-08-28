@@ -1,22 +1,17 @@
 import { and, eq } from "drizzle-orm";
 
-import {
-	candidateSubjectKey,
-	pendingGroupCandidates,
-	serviceTitles,
-} from "@/db/engine-schema";
+import { serviceTitles } from "@/db/engine-schema";
 import type {
 	DiscoveryClients,
 	MemberMapping,
 } from "@/engine/discovery/structural.ts";
 import { toGraphMember } from "@/engine/gateway/keys.ts";
-import { serviceOrder } from "@/engine/identity.ts";
 import type { Service, TitleIdentity } from "@/engine/identity.ts";
+import { queueStructuralAlignmentConflict } from "@/engine/ingest/alignment-conflict.ts";
 import type { IngestEnv } from "@/engine/ingest/env.ts";
 import {
 	alignTarget,
 	anchorStreamFromDb,
-	convergeMembersOf,
 	discoverGroup,
 	fetchTargetStream,
 	highestTriedTier,
@@ -155,32 +150,12 @@ const recordAlignmentConflict = async (
 		ctx.targetService,
 		"conflict",
 	);
-	const subject = { subjectType: "title" as const, titleId: anchorTitleId };
-	const proposedMembers = convergeMembersOf(discovered).flatMap((member) => {
-		const service = serviceOrder.find(
-			(candidate) => candidate === member.service,
-		);
-		return service === undefined
-			? []
-			: [{ service, serviceId: member.serviceId }];
+	await queueStructuralAlignmentConflict(ctx.db, {
+		anchorTitleId,
+		discovered,
+		evidenceHashPrefix: "overflow-alignment-conflict",
+		groupId: ctx.groupId,
 	});
-	const evidence = {
-		competingGroupIds: [ctx.groupId],
-		kind: "structural" as const,
-		proposedMembers,
-	};
-	const evidenceHash = `overflow-alignment-conflict:${ctx.groupId}:${anchorTitleId}`;
-	await ctx.db
-		.insert(pendingGroupCandidates)
-		.values({
-			evidence,
-			evidenceHash,
-			kind: "structural",
-			subject,
-			subjectKey: candidateSubjectKey(subject),
-		})
-		.onConflictDoNothing()
-		.run();
 };
 
 const overflowDiscover = async (

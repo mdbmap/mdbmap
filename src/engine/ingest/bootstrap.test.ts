@@ -1,5 +1,5 @@
 import { eq } from "drizzle-orm";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import {
 	continuities,
@@ -263,5 +263,34 @@ describe("bootstrapFromIdentity", () => {
 		}
 		expect(second.group).toEqual(first.group);
 		expect(await db.select().from(titleGroups).all()).toHaveLength(1);
+	});
+});
+
+describe("claimGroup failure cleanup", () => {
+	it("removes orphan rows when hub spoke setup fails", async () => {
+		vi.doMock("@/engine/research/low-confidence-flag.ts", () => ({
+			queueFlag: async () => {
+				await Promise.resolve();
+				throw new Error("queue failed");
+			},
+		}));
+		vi.resetModules();
+		const { bootstrapFromIdentity: bootstrapClaim } =
+			await import("./bootstrap.ts");
+
+		const db = await freshDb();
+		await expect(
+			bootstrapClaim(db, {
+				kind: "title",
+				title: { id: "77777", service: "mal" },
+			}),
+		).rejects.toThrow("queue failed");
+
+		expect(await db.select().from(titleGroups).all()).toHaveLength(0);
+		expect(await db.select().from(serviceTitles).all()).toHaveLength(0);
+		expect(await db.select().from(contentUnits).all()).toHaveLength(0);
+
+		vi.doUnmock("@/engine/research/low-confidence-flag.ts");
+		vi.resetModules();
 	});
 });

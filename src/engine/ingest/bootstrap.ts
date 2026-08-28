@@ -61,48 +61,54 @@ const bootstrapped = async (
 const insertHubSpokesForTitle = async (
 	db: Db,
 	titleId: number,
-): Promise<void> => {
+): Promise<string> => {
 	const unitRows = await db.insert(contentUnits).values({}).returning().all();
 	const unitId = one(unitRows).id;
-	await db
-		.insert(serviceInstalments)
-		.values({ locator: "s1e1", locatorKind: "position", titleId })
-		.onConflictDoNothing()
-		.run();
-	const spoke = await db
-		.select({ id: serviceInstalments.id })
-		.from(serviceInstalments)
-		.where(
-			and(
-				eq(serviceInstalments.titleId, titleId),
-				eq(serviceInstalments.locator, "s1e1"),
-			),
-		)
-		.get();
-	if (spoke === undefined) {
-		throw new Error("bootstrap: hub spoke missing after insert");
+	try {
+		await db
+			.insert(serviceInstalments)
+			.values({ locator: "s1e1", locatorKind: "position", titleId })
+			.onConflictDoNothing()
+			.run();
+		const spoke = await db
+			.select({ id: serviceInstalments.id })
+			.from(serviceInstalments)
+			.where(
+				and(
+					eq(serviceInstalments.titleId, titleId),
+					eq(serviceInstalments.locator, "s1e1"),
+				),
+			)
+			.get();
+		if (spoke === undefined) {
+			throw new Error("bootstrap: hub spoke missing after insert");
+		}
+		await db
+			.insert(instalmentAssertions)
+			.values({
+				confidence: "low",
+				instalmentId: spoke.id,
+				source: "bootstrap",
+				unitId,
+			})
+			.onConflictDoNothing()
+			.run();
+		await queueFlag(db, {
+			evidence: {
+				confidence: "low",
+				instalmentId: spoke.id,
+				kind: "low-confidence-flag",
+				source: "bootstrap",
+				target: "instalment",
+				unitId,
+			},
+			subject: { subjectType: "title", titleId },
+		});
+		return unitId;
+	} catch (error) {
+		await db.delete(contentUnits).where(eq(contentUnits.id, unitId)).run();
+		throw error;
 	}
-	await db
-		.insert(instalmentAssertions)
-		.values({
-			confidence: "low",
-			instalmentId: spoke.id,
-			source: "bootstrap",
-			unitId,
-		})
-		.onConflictDoNothing()
-		.run();
-	await queueFlag(db, {
-		evidence: {
-			confidence: "low",
-			instalmentId: spoke.id,
-			kind: "low-confidence-flag",
-			source: "bootstrap",
-			target: "instalment",
-			unitId,
-		},
-		subject: { subjectType: "title", titleId },
-	});
 };
 
 const claimGroup = async (
@@ -126,6 +132,7 @@ const claimGroup = async (
 		.all();
 	const groupId = one(groupRows).id;
 
+	let claimedUnitId: string | undefined;
 	try {
 		const titleRows = await db
 			.insert(serviceTitles)
@@ -153,9 +160,19 @@ const claimGroup = async (
 			await db.delete(titleGroups).where(eq(titleGroups.id, groupId)).run();
 			return await bootstrapped(db, raced.groupId, raced.id);
 		}
-		await insertHubSpokesForTitle(db, insertedTitle.id);
+		claimedUnitId = await insertHubSpokesForTitle(db, insertedTitle.id);
 		return await bootstrapped(db, groupId, insertedTitle.id);
 	} catch (error) {
+		if (claimedUnitId !== undefined) {
+			await db
+				.delete(contentUnits)
+				.where(eq(contentUnits.id, claimedUnitId))
+				.run();
+		}
+		await db
+			.delete(serviceTitles)
+			.where(eq(serviceTitles.groupId, groupId))
+			.run();
 		await db.delete(titleGroups).where(eq(titleGroups.id, groupId)).run();
 		throw error;
 	}

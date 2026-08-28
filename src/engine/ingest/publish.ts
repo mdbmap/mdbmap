@@ -17,6 +17,7 @@ import {
 import { recomputeGroup } from "@/engine/recompute/recompute.ts";
 import type { FreshPairing } from "@/engine/recompute/recompute.ts";
 
+import { queueStructuralAlignmentConflict } from "./alignment-conflict.ts";
 import type { BootstrappedGroup } from "./bootstrap.ts";
 import {
 	alignTarget,
@@ -217,6 +218,12 @@ const publishAlignedTarget = async (
 	const { alignment } = aligned;
 	if (alignment === undefined || alignment.status !== "published") {
 		if (alignment?.status === "conflict") {
+			await queueStructuralAlignmentConflict(db, {
+				anchorTitleId: input.anchorTitleId,
+				discovered: input.discovered,
+				evidenceHashPrefix: "publish-alignment-conflict",
+				groupId: input.groupId,
+			});
 			return endPublishAttempt(db, input, {
 				kind: "conflict",
 				reason: "alignment-conflict",
