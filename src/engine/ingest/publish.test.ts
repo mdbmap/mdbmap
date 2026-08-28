@@ -16,6 +16,7 @@ import {
 } from "@/engine/overflow/coverage.ts";
 
 import { bootstrapFromIdentity } from "./bootstrap.ts";
+import { fetchTargetStream } from "./phases.ts";
 import { runSingleTargetPublish } from "./publish.ts";
 
 const knownMal = { id: "50265", service: "mal" as const };
@@ -179,5 +180,25 @@ describe("runSingleTargetPublish", () => {
 
 		expect(first).toEqual(second);
 		expect(await db.select().from(serviceCoverages).all()).toHaveLength(1);
+	});
+});
+
+describe("fetchTargetStream", () => {
+	it("treats empty enumeration on non-enumerable services as unavailable", async () => {
+		const clients = publishClients();
+		const outcome = await fetchTargetStream({
+			clients: {
+				...clients,
+				instalments: {
+					enumerate: async () => {
+						await Promise.resolve();
+						return { facts: factsOf([]), stream: streamOf([]) };
+					},
+				},
+			},
+			target: { service: "tmdb", serviceId: "123" },
+		});
+
+		expect(outcome).toEqual({ kind: "unavailable" });
 	});
 });

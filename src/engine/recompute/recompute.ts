@@ -158,7 +158,11 @@ const readGroupState = async (
 		.map((row) => row.id)
 		.toSorted(ascending);
 	return {
-		curatedSpokeIds: new Set(curated.map((row) => row.instalmentId)),
+		curatedSpokeIds: new Set(
+			curated
+				.filter((row) => row.source !== "bootstrap")
+				.map((row) => row.instalmentId),
+		),
 		precondition: {
 			algorithmicAssertionIds: algorithmic
 				.map((row) => row.id)

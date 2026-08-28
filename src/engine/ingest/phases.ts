@@ -91,11 +91,19 @@ type FetchTargetOutcome =
 	| { readonly enumerated: EnumeratedTitle; readonly kind: "fetched" }
 	| { readonly kind: "unavailable" };
 
+const instalmentEnumerableServices = new Set<string>(["anilist", "mal"]);
+
 const fetchTargetStream = async (
 	input: FetchTargetInput,
 ): Promise<FetchTargetOutcome> => {
 	try {
 		const enumerated = await input.clients.instalments.enumerate(input.target);
+		if (
+			!instalmentEnumerableServices.has(input.target.service) &&
+			enumerated.stream.instalments.length === 0
+		) {
+			return { kind: "unavailable" };
+		}
 		return { enumerated, kind: "fetched" };
 	} catch {
 		return { kind: "unavailable" };
