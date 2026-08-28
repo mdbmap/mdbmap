@@ -19,8 +19,6 @@ interface StructuralDiscoveryDeps {
 	readonly simkl: SimklClient;
 }
 
-const enumeratableServices = new Set(["anilist", "mal"]);
-
 const anilistStartDateSchema = z.object({
 	day: z.number().nullable().optional(),
 	month: z.number().nullable().optional(),
@@ -133,7 +131,12 @@ const fetchAnilistPage = async (
 		throw new Error(`anilist: ${response.status} for media ${serviceId}`);
 	}
 	const parsed = anilistResponseSchema.safeParse(await response.json());
-	return parsed.success ? parsed.data.data.Media : undefined;
+	if (!parsed.success) {
+		throw new Error(
+			`anilist: malformed media payload for ${serviceId} page ${page}`,
+		);
+	}
+	return parsed.data.data.Media;
 };
 
 const collectAnilistEpisodes = async (
@@ -286,9 +289,6 @@ const enumerateTitle = async (
 	title: ServiceRef,
 	fetchFn: typeof fetch,
 ): Promise<EnumeratedTitle> => {
-	if (!enumeratableServices.has(title.service)) {
-		return skippedEnumerated();
-	}
 	switch (title.service) {
 		case "anilist": {
 			return enumerateAnilist(title.serviceId, fetchFn);

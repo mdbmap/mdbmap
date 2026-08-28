@@ -97,6 +97,27 @@ describe("buildStructuralDiscoveryClients", () => {
 		).toBe(true);
 	});
 
+	it("throws when AniList episode payload is malformed", async () => {
+		const fetchFn = vi.fn(
+			async (input: RequestInfo | URL): Promise<Response> => {
+				await Promise.resolve();
+				const url = urlOf(input);
+				if (url.includes("graphql.anilist.co")) {
+					return Response.json({ data: { Media: { episodes: "bad" } } });
+				}
+				throw new Error(`unexpected fetch: ${url}`);
+			},
+		);
+
+		const clients = buildStructuralDiscoveryClients({
+			fetchFn,
+			simkl: emptySimkl,
+		});
+
+		await expect(
+			clients.instalments.enumerate({ service: "anilist", serviceId: "88" }),
+		).rejects.toThrow(/malformed media payload/u);
+	});
 	it("throws when Jikan episode payload is malformed", async () => {
 		const fetchFn = vi.fn(
 			async (input: RequestInfo | URL): Promise<Response> => {
