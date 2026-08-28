@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 
 import type { InstalmentLocator } from "@/db/schema";
-
+import { NotEnumerableServiceError } from "@/engine/ingest/not-enumerable.ts";
 import type { FactsByLocator, InstalmentFacts } from "@/engine/matcher";
 import { locator, regular, streamOf } from "@/engine/matcher/test-fixtures.ts";
 
@@ -65,7 +65,10 @@ const seasonTwo: EnumeratedTitle = {
 	stream: streamOf([regular("tmdb-s2#1"), regular("tmdb-s2#2")]),
 };
 
-const emptyTitle: EnumeratedTitle = { facts: factsOf([]), stream: streamOf([]) };
+const emptyTitle: EnumeratedTitle = {
+	facts: factsOf([]),
+	stream: streamOf([]),
+};
 
 const S1_REF = ref("tmdb", "40733");
 const S2_REF = ref("tmdb", "40734");
@@ -88,7 +91,10 @@ const totalDramaClients = (
 			if (title.serviceId === S2_REF.serviceId) {
 				return { externalIds: [SHARED], firstAirDate: "2008-01-04" };
 			}
-			return { externalIds: [ref("imdb", "tt-other")], firstAirDate: "2007-07-08" };
+			return {
+				externalIds: [ref("imdb", "tt-other")],
+				firstAirDate: "2007-07-08",
+			};
 		},
 	},
 	find: {
@@ -271,5 +277,43 @@ describe("discoverStructuralGroup", () => {
 			shared: SHARED,
 		});
 		expect(outcome).toStrictEqual({ kind: "no-group" });
+	});
+
+	it("refuses when the shared title is not enumerable", async () => {
+		const enumerate = async (title: ServiceRef): Promise<EnumeratedTitle> => {
+			await Promise.resolve();
+			if (title.service === SHARED.service) {
+				throw new NotEnumerableServiceError(title.service);
+			}
+			return enumerateFor(title);
+		};
+		const outcome = await discoverStructuralGroup({
+			budget: 10,
+			clients: totalDramaClients(enumerate),
+			shared: SHARED,
+		});
+		expect(outcome).toStrictEqual({
+			kind: "refused",
+			reason: "unmappable-member",
+		});
+	});
+
+	it("refuses when a member title is not enumerable", async () => {
+		const enumerate = async (title: ServiceRef): Promise<EnumeratedTitle> => {
+			await Promise.resolve();
+			if (title.serviceId === S2_REF.serviceId) {
+				throw new NotEnumerableServiceError(title.service);
+			}
+			return enumerateFor(title);
+		};
+		const outcome = await discoverStructuralGroup({
+			budget: 10,
+			clients: totalDramaClients(enumerate),
+			shared: SHARED,
+		});
+		expect(outcome).toStrictEqual({
+			kind: "refused",
+			reason: "unmappable-member",
+		});
 	});
 });
