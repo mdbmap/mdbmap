@@ -142,7 +142,13 @@ describe("createBuildDeps", () => {
 });
 
 describe("createBuildDeps review regressions", () => {
-	it("leaves coverage pending when structural discovery is not configured", async () => {
+	it("falls back to direct discovery when structural discovery override is absent", async () => {
+		const structuralModule =
+			await import("@/engine/ingest/structural-discovery.ts");
+		vi.spyOn(
+			structuralModule,
+			"buildStructuralDiscoveryClients",
+		).mockReturnValue(publishClients());
 		const db = await freshDb();
 		const bootstrapped = await bootstrapFromIdentity(db, knownIdentity);
 		if (bootstrapped.kind !== "bootstrapped") {
@@ -166,15 +172,16 @@ describe("createBuildDeps review regressions", () => {
 			},
 			payload,
 		);
-		await expectOverflowPending(payload.work, deps);
+		const outcome = await runOverflowBuild(payload.work, deps, recordingStep);
 
+		expect(outcome).toEqual({ targetService: "anilist" });
 		const coverage = await coverageStateFor(
 			db,
 			groupCoverageKey(bootstrapped.group.groupId),
 			1,
 			"anilist",
 		);
-		expect(coverage).toBe("pending");
+		expect(coverage).toBe("complete");
 	});
 
 	it("leaves coverage pending when discovery is refused", async () => {

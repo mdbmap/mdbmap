@@ -97,6 +97,57 @@ describe("buildStructuralDiscoveryClients", () => {
 		).toBe(true);
 	});
 
+	it("fetches anilist page 1 once during enumeration", async () => {
+		const fetchFn = vi.fn(
+			async (input: RequestInfo | URL): Promise<Response> => {
+				await Promise.resolve();
+				const url = urlOf(input);
+				if (!url.includes("graphql.anilist.co")) {
+					throw new Error(`unexpected fetch: ${url}`);
+				}
+				return Response.json({
+					data: {
+						Media: {
+							episodes: 2,
+							episodesList: {
+								episodes: [
+									{
+										airingAt: 1_649_990_400,
+										episode: 1,
+										title: { romaji: "One" },
+									},
+									{
+										airingAt: 1_650_595_200,
+										episode: 2,
+										title: { romaji: "Two" },
+									},
+								],
+								pageInfo: { hasNextPage: false },
+							},
+							startDate: { day: 9, month: 4, year: 2022 },
+							status: "FINISHED",
+							title: { romaji: "Fixture" },
+						},
+					},
+				});
+			},
+		);
+
+		const clients = buildStructuralDiscoveryClients({
+			fetchFn,
+			simkl: emptySimkl,
+		});
+
+		await clients.instalments.enumerate({
+			service: "anilist",
+			serviceId: "140960",
+		});
+
+		const graphqlCalls = fetchFn.mock.calls.filter((call) =>
+			urlOf(call[0]).includes("graphql.anilist.co"),
+		);
+		expect(graphqlCalls).toHaveLength(1);
+	});
 	it("throws when AniList episode payload is malformed", async () => {
 		const fetchFn = vi.fn(
 			async (input: RequestInfo | URL): Promise<Response> => {

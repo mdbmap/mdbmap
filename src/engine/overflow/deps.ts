@@ -28,6 +28,7 @@ import {
 	finishPublish,
 } from "@/engine/ingest/publish.ts";
 import { ensureSpokes, ensureTitle } from "@/engine/ingest/spokes.ts";
+import { buildStructuralDiscoveryClients } from "@/engine/ingest/structural-discovery.ts";
 import type { Crossing, PublishedAlignment, TierId } from "@/engine/matcher";
 
 import type { BuildDeps } from "./build.ts";
@@ -186,20 +187,20 @@ const recordAlignmentConflict = async (
 	});
 };
 
+const discoveryClientsFor = (ctx: OverflowContext): DiscoveryClients =>
+	ctx.discovery ?? buildStructuralDiscoveryClients({});
+
 const overflowPendingError = (targetService: Service): Error =>
 	new Error(`overflow align: ${targetService} coverage pending`);
 
 const overflowDiscover = async (
 	ctx: OverflowContext,
 ): Promise<OverflowChain> => {
-	const outcome =
-		ctx.discovery === undefined
-			? { kind: "no-group" as const }
-			: await discoverGroup({
-					anchor: ctx.anchor,
-					budget: ctx.budget,
-					clients: ctx.discovery,
-				});
+	const outcome = await discoverGroup({
+		anchor: ctx.anchor,
+		budget: ctx.budget,
+		clients: discoveryClientsFor(ctx),
+	});
 	return {
 		budget: ctx.budget,
 		continuity: ctx.continuity,
@@ -224,16 +225,8 @@ const overflowFetch = async (
 	if (mapping === undefined) {
 		return { chain, enumerated: emptyEnumerated(), skip: "no-mapping" };
 	}
-	if (ctx.discovery === undefined) {
-		return {
-			chain,
-			enumerated: emptyEnumerated(),
-			mapping,
-			skip: "no-mapping",
-		};
-	}
 	const fetched = await fetchTargetStream({
-		clients: ctx.discovery,
+		clients: discoveryClientsFor(ctx),
 		target: mapping.member,
 	});
 	if (fetched.kind === "unavailable") {
@@ -284,13 +277,10 @@ const overflowAlign = async (
 	}
 	const anchorTitleId = await anchorTitleIdFor(ctx.db, ctx.groupId, ctx.anchor);
 	const targetEnumerated = deserializeEnumerated(streams.enumerated);
-	const sharedFetched =
-		ctx.discovery === undefined
-			? { kind: "unavailable" as const }
-			: await fetchTargetStream({
-					clients: ctx.discovery,
-					target: discovered.discovered.shared,
-				});
+	const sharedFetched = await fetchTargetStream({
+		clients: discoveryClientsFor(ctx),
+		target: discovered.discovered.shared,
+	});
 	if (sharedFetched.kind !== "fetched") {
 		throw overflowPendingError(ctx.targetService);
 	}

@@ -171,8 +171,12 @@ const collectAnilistEpisodes = async (
 	fallbackTitle: string,
 	fallbackAirDate: string | undefined,
 	fetchFn: typeof fetch,
+	initialMedia?: z.infer<typeof anilistMediaSchema> | null,
 ): Promise<void> => {
-	const media = await fetchAnilistPage(serviceId, page, fetchFn);
+	const media =
+		initialMedia === undefined
+			? await fetchAnilistPage(serviceId, page, fetchFn)
+			: initialMedia;
 	const episodePage = media?.episodesList;
 	for (const row of episodePage?.episodes ?? []) {
 		const episode = row.episode ?? entries.length + 1;
@@ -228,6 +232,7 @@ const enumerateAnilist = async (
 		fallbackTitle,
 		fallbackAirDate,
 		fetchFn,
+		head,
 	);
 	const locators = entries.map(([locator]) => locator);
 	if (
