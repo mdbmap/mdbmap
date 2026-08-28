@@ -226,7 +226,7 @@ describe("createBuildDeps review regressions", () => {
 		expect(coverage).toBe("pending");
 	});
 
-	it("marks coverage open when the target is not enumerable", async () => {
+	it("leaves coverage pending when the target is not enumerable", async () => {
 		const db = await freshDb();
 		const bootstrapped = await bootstrapFromIdentity(db, knownIdentity);
 		if (bootstrapped.kind !== "bootstrapped") {
@@ -259,6 +259,6 @@ describe("createBuildDeps review regressions", () => {
 			1,
 			"tmdb",
 		);
-		expect(coverage).toBe("open");
+		expect(coverage).toBe("pending");
 	});
 });

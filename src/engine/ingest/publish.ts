@@ -96,15 +96,6 @@ const endPublishAttempt = async (
 			"conflict",
 		);
 	}
-	if (result.kind === "refused" && result.reason === "not-enumerable") {
-		await writeCoverageState(
-			db,
-			input.continuity,
-			input.revision,
-			input.targetService,
-			"open",
-		);
-	}
 	return result;
 };
 

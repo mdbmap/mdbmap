@@ -199,13 +199,6 @@ const overflowDiscover = async (
 	ctx: OverflowContext,
 ): Promise<OverflowChain> => {
 	if (!instalmentEnumerableServices.has(ctx.targetService)) {
-		await writeCoverageState(
-			ctx.db,
-			ctx.continuity,
-			ctx.revision,
-			ctx.targetService,
-			"open",
-		);
 		return {
 			budget: ctx.budget,
 			continuity: ctx.continuity,
@@ -280,13 +273,6 @@ const overflowAlign = async (
 		discovered.kind !== "discovered"
 	) {
 		if (streams.skip === "unavailable-target") {
-			await writeCoverageState(
-				ctx.db,
-				ctx.continuity,
-				ctx.revision,
-				ctx.targetService,
-				"open",
-			);
 			const anchorTitleId = await anchorTitleIdFor(
 				ctx.db,
 				ctx.groupId,
@@ -324,13 +310,6 @@ const overflowAlign = async (
 	});
 	if (sharedFetched.kind !== "fetched") {
 		if (sharedFetched.reason === "not-enumerable") {
-			await writeCoverageState(
-				ctx.db,
-				ctx.continuity,
-				ctx.revision,
-				ctx.targetService,
-				"open",
-			);
 			return skippedAlignment(streams, anchorTitleId);
 		}
 		throw overflowPendingError(ctx.targetService);
