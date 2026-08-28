@@ -120,12 +120,13 @@ async function loadJson(inPath: string, cwd: string): Promise<unknown> {
 	return response.json();
 }
 
-async function main(args: readonly string[], cwd: string): Promise<void> {
-	const options = parseCliArgs(args);
-	const bun = bunRuntime();
-	const sdl = printSdl(parseCatalog(await loadJson(options.inPath, cwd)));
-	await bun.write(options.outPath, sdl);
-	const code = await bun.spawn(["bunx", "oxfmt", options.outPath], {
+async function writeFormattedSdl(
+	bun: RuntimeBun,
+	outPath: string,
+	sdl: string,
+): Promise<void> {
+	await bun.write(outPath, sdl);
+	const code = await bun.spawn(["bunx", "oxfmt", outPath], {
 		stderr: "inherit",
 		stdout: "inherit",
 	}).exited;
@@ -134,7 +135,16 @@ async function main(args: readonly string[], cwd: string): Promise<void> {
 	}
 }
 
-const { argv, cwd } = processArgvAndCwd();
-void main(argv, cwd);
+async function main(args: readonly string[], cwd: string): Promise<void> {
+	const options = parseCliArgs(args);
+	const sdl = printSdl(parseCatalog(await loadJson(options.inPath, cwd)));
+	await writeFormattedSdl(bunRuntime(), options.outPath, sdl);
+}
 
+if (import.meta.main) {
+	const { argv, cwd } = processArgvAndCwd();
+	void main(argv, cwd);
+}
+
+export { loadJson, parseCliArgs, toFileUrl, writeFormattedSdl };
 export default main;

@@ -11,6 +11,12 @@ import type {
 } from "graphql";
 import { describe, expect, it } from "vitest";
 
+import {
+	loadJson,
+	parseCliArgs,
+	toFileUrl,
+	writeFormattedSdl,
+} from "./imdb-graphql.cli.ts";
 import { parseCatalog, printSdl } from "./imdb-graphql.ts";
 
 const none: never[] = [];
@@ -187,94 +193,118 @@ const fixture = {
 	},
 };
 
-function objectType(
-	document: DocumentNode,
-	name: string,
-): ObjectTypeDefinitionNode {
-	for (const definition of document.definitions) {
-		if (
-			definition.kind === Kind.OBJECT_TYPE_DEFINITION &&
-			definition.name.value === name
-		) {
-			return definition;
-		}
-	}
-	throw new Error(`missing object type ${name}`);
+type NamedTypeDefinition =
+	| EnumTypeDefinitionNode
+	| InputObjectTypeDefinitionNode
+	| InterfaceTypeDefinitionNode
+	| ObjectTypeDefinitionNode
+	| ScalarTypeDefinitionNode
+	| UnionTypeDefinitionNode;
+
+function isNamedTypeDefinition(
+	definition: DocumentNode["definitions"][number],
+): definition is NamedTypeDefinition {
+	return (
+		definition.kind === Kind.ENUM_TYPE_DEFINITION ||
+		definition.kind === Kind.INPUT_OBJECT_TYPE_DEFINITION ||
+		definition.kind === Kind.INTERFACE_TYPE_DEFINITION ||
+		definition.kind === Kind.OBJECT_TYPE_DEFINITION ||
+		definition.kind === Kind.SCALAR_TYPE_DEFINITION ||
+		definition.kind === Kind.UNION_TYPE_DEFINITION
+	);
 }
 
-function interfaceType(
+function findNamed(
 	document: DocumentNode,
+	kind: NamedTypeDefinition["kind"],
 	name: string,
-): InterfaceTypeDefinitionNode {
+): NamedTypeDefinition | undefined {
 	for (const definition of document.definitions) {
 		if (
-			definition.kind === Kind.INTERFACE_TYPE_DEFINITION &&
-			definition.name.value === name
-		) {
-			return definition;
-		}
-	}
-	throw new Error(`missing interface type ${name}`);
-}
-
-function unionType(
-	document: DocumentNode,
-	name: string,
-): UnionTypeDefinitionNode {
-	for (const definition of document.definitions) {
-		if (
-			definition.kind === Kind.UNION_TYPE_DEFINITION &&
-			definition.name.value === name
-		) {
-			return definition;
-		}
-	}
-	throw new Error(`missing union type ${name}`);
-}
-
-function enumType(
-	document: DocumentNode,
-	name: string,
-): EnumTypeDefinitionNode {
-	for (const definition of document.definitions) {
-		if (
-			definition.kind === Kind.ENUM_TYPE_DEFINITION &&
-			definition.name.value === name
-		) {
-			return definition;
-		}
-	}
-	throw new Error(`missing enum type ${name}`);
-}
-
-function inputType(
-	document: DocumentNode,
-	name: string,
-): InputObjectTypeDefinitionNode {
-	for (const definition of document.definitions) {
-		if (
-			definition.kind === Kind.INPUT_OBJECT_TYPE_DEFINITION &&
-			definition.name.value === name
-		) {
-			return definition;
-		}
-	}
-	throw new Error(`missing input type ${name}`);
-}
-
-function scalarType(
-	document: DocumentNode,
-	name: string,
-): ScalarTypeDefinitionNode | undefined {
-	for (const definition of document.definitions) {
-		if (
-			definition.kind === Kind.SCALAR_TYPE_DEFINITION &&
+			isNamedTypeDefinition(definition) &&
+			definition.kind === kind &&
 			definition.name.value === name
 		) {
 			return definition;
 		}
 	}
 	return undefined;
+}
+
+function objectType(
+	document: DocumentNode,
+	name: string,
+): ObjectTypeDefinitionNode {
+	const definition = findNamed(document, Kind.OBJECT_TYPE_DEFINITION, name);
+	if (definition === undefined || definition.kind !== "ObjectTypeDefinition") {
+		throw new Error(`missing object type ${name}`);
+	}
+	return definition;
+}
+
+function interfaceType(
+	document: DocumentNode,
+	name: string,
+): InterfaceTypeDefinitionNode {
+	const definition = findNamed(document, Kind.INTERFACE_TYPE_DEFINITION, name);
+	if (
+		definition === undefined ||
+		definition.kind !== "InterfaceTypeDefinition"
+	) {
+		throw new Error(`missing interface type ${name}`);
+	}
+	return definition;
+}
+
+function unionType(
+	document: DocumentNode,
+	name: string,
+): UnionTypeDefinitionNode {
+	const definition = findNamed(document, Kind.UNION_TYPE_DEFINITION, name);
+	if (definition === undefined || definition.kind !== "UnionTypeDefinition") {
+		throw new Error(`missing union type ${name}`);
+	}
+	return definition;
+}
+
+function enumType(
+	document: DocumentNode,
+	name: string,
+): EnumTypeDefinitionNode {
+	const definition = findNamed(document, Kind.ENUM_TYPE_DEFINITION, name);
+	if (definition === undefined || definition.kind !== "EnumTypeDefinition") {
+		throw new Error(`missing enum type ${name}`);
+	}
+	return definition;
+}
+
+function inputType(
+	document: DocumentNode,
+	name: string,
+): InputObjectTypeDefinitionNode {
+	const definition = findNamed(
+		document,
+		Kind.INPUT_OBJECT_TYPE_DEFINITION,
+		name,
+	);
+	if (
+		definition === undefined ||
+		definition.kind !== "InputObjectTypeDefinition"
+	) {
+		throw new Error(`missing input type ${name}`);
+	}
+	return definition;
+}
+
+function scalarType(
+	document: DocumentNode,
+	name: string,
+): ScalarTypeDefinitionNode | undefined {
+	const definition = findNamed(document, Kind.SCALAR_TYPE_DEFINITION, name);
+	if (definition === undefined || definition.kind !== "ScalarTypeDefinition") {
+		return undefined;
+	}
+	return definition;
 }
 
 function fieldOf(
@@ -290,6 +320,16 @@ function fieldOf(
 
 function printedType(type: TypeNode): string {
 	return print(type);
+}
+
+function requestHref(input: RequestInfo | URL): string {
+	if (typeof input === "string") {
+		return input;
+	}
+	if (input instanceof URL) {
+		return input.href;
+	}
+	return input.url;
 }
 
 describe("imdb graphql catalog", () => {
@@ -364,5 +404,82 @@ describe("imdb graphql catalog", () => {
 		expect(() => parseCatalog(withoutQuery)).toThrow(
 			"catalog is missing OBJECT Query",
 		);
+	});
+});
+
+describe("imdb graphql cli", () => {
+	it("parses flags and defaults", () => {
+		expect(parseCliArgs([])).toEqual({
+			inPath:
+				"https://raw.githubusercontent.com/MiM-MiM/MyMovieGraphQLPy/refs/heads/master/MyMovieGraphQL/data/INTROSPECTION.json",
+			outPath: "schemas/schema.graphql",
+		});
+		expect(parseCliArgs(["--in", "dump.json", "--out", "out.graphql"])).toEqual(
+			{
+				inPath: "dump.json",
+				outPath: "out.graphql",
+			},
+		);
+		expect(() => parseCliArgs(["--in"])).toThrow("missing value for --in");
+		expect(() => parseCliArgs(["--out"])).toThrow("missing value for --out");
+		expect(() => parseCliArgs(["--wat"])).toThrow("unknown argument: --wat");
+	});
+
+	it("turns relative and absolute paths into file URLs", () => {
+		expect(toFileUrl("file:///tmp/a.json", "/cwd")).toBe("file:///tmp/a.json");
+		expect(toFileUrl("/tmp/a.json", "/cwd")).toBe("file:///tmp/a.json");
+		expect(toFileUrl("dump.json", "/cwd")).toBe("file:///cwd/dump.json");
+	});
+
+	it("loadJson returns JSON and fails on a non-ok fetch", async () => {
+		const originalFetch = globalThis.fetch;
+		const calls: string[] = [];
+		const stub: typeof fetch = async (input) => {
+			const href = requestHref(input);
+			calls.push(href);
+			if (href === "https://example.test/missing.json") {
+				const missing = await Promise.resolve(
+					new Response("", { status: 404 }),
+				);
+				return missing;
+			}
+			return Response.json({ Query: { kind: "OBJECT" } });
+		};
+		globalThis.fetch = stub;
+		try {
+			await expect(
+				loadJson("https://example.test/missing.json", "/"),
+			).rejects.toThrow("failed to fetch introspection JSON (404)");
+			await expect(
+				loadJson("https://example.test/ok.json", "/"),
+			).resolves.toEqual({ Query: { kind: "OBJECT" } });
+			expect(calls).toEqual([
+				"https://example.test/missing.json",
+				"https://example.test/ok.json",
+			]);
+		} finally {
+			globalThis.fetch = originalFetch;
+		}
+	});
+
+	it("writeFormattedSdl throws when oxfmt exits non-zero", async () => {
+		let wrote: { data: string; path: string } | undefined;
+		await expect(
+			writeFormattedSdl(
+				{
+					spawn: () => ({ exited: Promise.resolve(1) }),
+					write: async (path, data) => {
+						wrote = { data, path };
+						await Promise.resolve();
+					},
+				},
+				"out.graphql",
+				"schema { query: Query }",
+			),
+		).rejects.toThrow("oxfmt exited 1");
+		expect(wrote).toEqual({
+			data: "schema { query: Query }",
+			path: "out.graphql",
+		});
 	});
 });
