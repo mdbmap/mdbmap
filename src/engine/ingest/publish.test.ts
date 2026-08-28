@@ -191,8 +191,12 @@ describe("runSingleTargetPublish", () => {
 describe("fetchTargetStream", () => {
 	it("treats non-enumerable services as unavailable", async () => {
 		const emptySimkl: SimklClient = {
-			fetchEntry: async () => {},
-			findByExternalId: async () => {},
+			fetchEntry: async () => {
+				await Promise.resolve();
+			},
+			findByExternalId: async () => {
+				await Promise.resolve();
+			},
 		};
 		const outcome = await fetchTargetStream({
 			clients: buildStructuralDiscoveryClients({ simkl: emptySimkl }),
