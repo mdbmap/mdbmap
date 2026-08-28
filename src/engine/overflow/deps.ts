@@ -317,12 +317,16 @@ const overflowAlign = async (
 	const anchorStream = sharedFetched.enumerated.stream;
 
 	if (mapping.pairs.length > 0) {
+		const mappedAlignment = alignmentFromMappedPairs(
+			anchorStream,
+			targetEnumerated.stream,
+			mapping.pairs,
+		);
+		if (mappedAlignment === undefined) {
+			throw new Error("overflow deps: truncated fetch");
+		}
 		return {
-			alignment: alignmentFromMappedPairs(
-				anchorStream,
-				targetEnumerated.stream,
-				mapping.pairs,
-			),
+			alignment: mappedAlignment,
 			anchorTitleId,
 			discovered: discovered.discovered,
 			enumerated: streams.enumerated,

@@ -154,6 +154,8 @@ const commitPublish = async (
 			reason: "unpublishable",
 		});
 	}
+	const publishGroupId =
+		converge.kind === "merged" ? converge.survivorId : input.groupId;
 
 	const pairings = await pairingsFromAlignment(
 		db,
@@ -163,7 +165,7 @@ const commitPublish = async (
 		input.triedSource,
 	);
 	const recompute = await recomputeGroup(db, {
-		groupId: input.groupId,
+		groupId: publishGroupId,
 		ladderComplete: ladderCompleteFor(input.alignment),
 		pairings,
 		triedSource: input.triedSource,
@@ -174,11 +176,11 @@ const commitPublish = async (
 			reason: "unpublishable",
 		});
 	}
-	await retireBootstrapScaffoldingForGroup(db, input.groupId);
+	await retireBootstrapScaffoldingForGroup(db, publishGroupId);
 
 	return finishPublish(db, {
 		continuity: input.continuity,
-		groupId: input.groupId,
+		groupId: publishGroupId,
 		revision: input.revision,
 		targetService: input.targetService,
 	});
@@ -228,12 +230,19 @@ const publishAlignedTarget = async (
 	const anchorStream = sharedFetched.enumerated.stream;
 
 	if (input.mapping.pairs.length > 0) {
+		const mappedAlignment = alignmentFromMappedPairs(
+			anchorStream,
+			fetched.enumerated.stream,
+			input.mapping.pairs,
+		);
+		if (mappedAlignment === undefined) {
+			return endPublishAttempt(db, input, {
+				kind: "refused",
+				reason: "unpublishable",
+			});
+		}
 		return commitPublish(db, {
-			alignment: alignmentFromMappedPairs(
-				anchorStream,
-				fetched.enumerated.stream,
-				input.mapping.pairs,
-			),
+			alignment: mappedAlignment,
 			anchorTitleId: input.anchorTitleId,
 			continuity: input.continuity,
 			discovered: input.discovered,

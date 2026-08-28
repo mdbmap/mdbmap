@@ -187,7 +187,7 @@ const alignmentFromMappedPairs = (
 		readonly memberLocators: readonly InstalmentLocator[];
 		readonly sharedLocators: readonly InstalmentLocator[];
 	}[],
-): PublishedAlignment =>
+): PublishedAlignment | undefined =>
 	publishedAlignmentFromPairings(
 		shared,
 		member,

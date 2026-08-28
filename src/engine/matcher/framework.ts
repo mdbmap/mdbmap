@@ -199,7 +199,10 @@ const publishedAlignmentFromPairings = (
 		readonly left: readonly InstalmentLocator[];
 		readonly right: readonly InstalmentLocator[];
 	}[],
-): PublishedAlignment => {
+): PublishedAlignment | undefined => {
+	if (left.boundary === "truncated" || right.boundary === "truncated") {
+		return undefined;
+	}
 	const leftPaired = new Set<InstalmentLocator>();
 	const rightPaired = new Set<InstalmentLocator>();
 	const pairs: AlignedPair[] = links.map((link) => {
