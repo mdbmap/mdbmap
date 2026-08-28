@@ -14,6 +14,8 @@ import type {
 	InstalmentStream,
 } from "@/engine/matcher";
 
+import { instalmentEnumerableServices } from "./enumerable-services.ts";
+
 interface StructuralDiscoveryDeps {
 	readonly fetchFn?: typeof fetch;
 	readonly simkl: SimklClient;
@@ -289,6 +291,9 @@ const enumerateTitle = async (
 	title: ServiceRef,
 	fetchFn: typeof fetch,
 ): Promise<EnumeratedTitle> => {
+	if (!instalmentEnumerableServices.has(title.service)) {
+		return skippedEnumerated();
+	}
 	switch (title.service) {
 		case "anilist": {
 			return enumerateAnilist(title.serviceId, fetchFn);
@@ -297,7 +302,9 @@ const enumerateTitle = async (
 			return enumerateMal(title.serviceId, fetchFn);
 		}
 		default: {
-			return skippedEnumerated();
+			throw new Error(
+				`structural discovery: unsupported enumeration service ${title.service}`,
+			);
 		}
 	}
 };

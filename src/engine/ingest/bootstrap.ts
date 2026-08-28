@@ -4,6 +4,7 @@ import type { Db } from "@/db";
 import {
 	contentUnits,
 	instalmentAssertions,
+	pendingGroupCandidates,
 	serviceInstalments,
 	serviceTitles,
 	titleGroups,
@@ -198,6 +199,7 @@ const retireBootstrapScaffolding = async (
 	const bootstrapAssertions = await db
 		.select({
 			id: instalmentAssertions.id,
+			instalmentId: instalmentAssertions.instalmentId,
 			unitId: instalmentAssertions.unitId,
 		})
 		.from(instalmentAssertions)
@@ -213,6 +215,13 @@ const retireBootstrapScaffolding = async (
 	}
 	const assertionIds = bootstrapAssertions.map((row) => row.id);
 	const unitIds = bootstrapAssertions.map((row) => row.unitId);
+	const flagHashes = bootstrapAssertions.map(
+		(row) => `low-confidence-flag:${row.instalmentId}:${row.unitId}`,
+	);
+	await db
+		.delete(pendingGroupCandidates)
+		.where(inArray(pendingGroupCandidates.evidenceHash, flagHashes))
+		.run();
 	await db
 		.delete(instalmentAssertions)
 		.where(inArray(instalmentAssertions.id, assertionIds))
