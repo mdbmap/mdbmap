@@ -15,7 +15,12 @@ import { freshDb } from "@/db/test-helpers";
 import { createEngine } from "@/engine";
 import { publishResearchProposals } from "@/engine/research";
 
-import { continuityKey, parseContinuityKey } from "./keys.ts";
+import {
+	continuityKey,
+	parseContinuityKey,
+	parseWorkPathId,
+	workPathId,
+} from "./keys.ts";
 import {
 	ensureGroupContinuity,
 	retiredContinuityKeys,
@@ -30,12 +35,25 @@ const one = <Row>(rows: readonly Row[]): Row => {
 	return row;
 };
 
+const noopReview = async (): Promise<void> => {
+	await Promise.resolve();
+};
+
 describe("continuity keys", () => {
 	it("constructs and parses canonical keys", () => {
 		expect(continuityKey(12)).toBe("continuity:12");
 		expect(parseContinuityKey("continuity:12")).toBe(12);
 		expect(parseContinuityKey("group:7")).toBeUndefined();
 		expect(parseContinuityKey("continuity:nope")).toBeUndefined();
+	});
+
+	it("parses a numeric work path and not a tagged key", () => {
+		expect(parseWorkPathId("12")).toBe(12);
+		expect(parseWorkPathId("0")).toBeUndefined();
+		expect(parseWorkPathId("continuity:12")).toBeUndefined();
+		expect(workPathId("12")).toBe(12);
+		expect(workPathId("continuity:12")).toBe(12);
+		expect(workPathId("tmdb:tv:77")).toBeUndefined();
 	});
 });
 
@@ -106,9 +124,7 @@ describe("persisted continuity", () => {
 					to: { service: film.service, serviceId: film.serviceId },
 				},
 			],
-			async () => {
-				/* empty */
-			},
+			noopReview,
 		);
 		const continuity = one(await db.select().from(continuities).all());
 		const resolved = await createEngine(db).resolveContinuity(
@@ -459,9 +475,7 @@ describe("persisted continuity", () => {
 					to: { service: "tmdb", serviceId: "movie:2" },
 				},
 			],
-			async () => {
-				/* empty */
-			},
+			noopReview,
 		);
 
 		expect(published).toMatchObject([
