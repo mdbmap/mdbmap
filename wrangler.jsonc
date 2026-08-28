@@ -4,7 +4,17 @@
 	"compatibility_date": "2025-09-02",
 	"compatibility_flags": ["nodejs_compat"],
 	"main": "./src/server.ts",
-	// Set `id` to the real namespace before deploy: `wrangler kv namespace create METADATA_KV`.
+	// Platform bindings (issue #122). Local dev and tests use miniflare bindings;
+	// replace the production placeholders before the first deploy:
+	//   wrangler d1 create mdbmap
+	//   wrangler kv namespace create METADATA_KV
+	//   wrangler ratelimit namespace create API_RATE_LIMIT
+	// Catalogue API keys are deploy-time secrets (never committed):
+	//   wrangler secret put TMDB_API_KEY
+	//   wrangler secret put SIMKL_API_KEY
+	//   wrangler secret put TVDB_API_KEY
+	//   wrangler secret put ANIDB_CLIENT
+	//   wrangler secret put ANIDB_CLIENT_VER
 	"kv_namespaces": [
 		{ "binding": "METADATA_KV", "id": "REPLACE_WITH_METADATA_KV_ID" },
 	],
@@ -16,7 +26,6 @@
 			"name": "overflow-build",
 		},
 	],
-	// Set `database_id` to the real database before deploy: `wrangler d1 create mdbmap`.
 	"d1_databases": [
 		{
 			"binding": "DB",
@@ -24,7 +33,6 @@
 			"database_id": "REPLACE_WITH_D1_DATABASE_ID",
 		},
 	],
-	// Set `namespace_id` to the real namespace before deploy (create via wrangler/dashboard).
 	"ratelimits": [
 		{
 			"name": "API_RATE_LIMIT",
@@ -35,6 +43,33 @@
 			},
 		},
 	],
+	"env": {
+		"production": {
+			"kv_namespaces": [
+				{
+					"binding": "METADATA_KV",
+					"id": "REPLACE_WITH_METADATA_KV_ID",
+				},
+			],
+			"d1_databases": [
+				{
+					"binding": "DB",
+					"database_name": "mdbmap",
+					"database_id": "REPLACE_WITH_D1_DATABASE_ID",
+				},
+			],
+			"ratelimits": [
+				{
+					"name": "API_RATE_LIMIT",
+					"namespace_id": "REPLACE_WITH_API_RATE_LIMIT_NAMESPACE_ID",
+					"simple": {
+						"limit": 60,
+						"period": 60,
+					},
+				},
+			],
+		},
+	},
 	"observability": {
 		"enabled": true,
 	},

@@ -2,6 +2,9 @@ import { WorkflowEntrypoint } from "cloudflare:workers";
 import type { WorkflowEvent, WorkflowStep } from "cloudflare:workers";
 import { NonRetryableError } from "cloudflare:workflows";
 
+import { readCatalogueSecretsSource } from "@/engine/ingest/catalogue-secrets.ts";
+import { createIngestEnvFromSource } from "@/engine/ingest/env.ts";
+
 import { runOverflowBuild } from "./build.ts";
 import type { BuildDeps, DurableStep } from "./build.ts";
 import type { BuildPayload } from "./work.ts";
@@ -16,20 +19,22 @@ const toDurableStep = (step: WorkflowStep): DurableStep => ({
 });
 
 // Wiring the four durable phases to live discovery, target fetching, the matcher
-// and D1 publication needs the provider clients and the D1 binding, neither of
-// which the Worker environment carries yet (no target-service client provisioning
-// is centralised). That integration is
-// tracked separately; until it lands, an overflow instance fails fast rather
+// and D1 publication uses the shared ingest env factory for D1 and catalogue
+// clients. Phase implementations that map BuildWork to BuildDeps are tracked in
+// the live-ingest epic; until they land, an overflow instance fails fast rather
 // than retrying unimplemented work.
 const resolveBuildDeps = (
 	env: Env,
 	payload: BuildPayload,
 ): BuildDeps<never, never, never> => {
-	// `env` will supply the D1 database and the target-service provider clients the
-	// four phases draw on; neither is provisioned for the Worker yet.
+	const ingest = createIngestEnvFromSource(
+		env,
+		readCatalogueSecretsSource(env),
+	);
 	throw new NonRetryableError(
 		`overflow build deps not wired for target ${payload.work.targetService} ` +
-			`(bindings: ${Object.keys(env).toSorted().join(", ")}); pending provider-client and D1 integration`,
+			`(simkl=${ingest.catalogue.simkl === undefined ? "off" : "on"}, ` +
+			`bindings: ${Object.keys(env).toSorted().join(", ")}); pending shared ingest phases`,
 	);
 };
 
