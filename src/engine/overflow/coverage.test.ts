@@ -1,18 +1,18 @@
 import { describe, expect, it } from "vitest";
 
 import { serviceCoverages } from "@/db/engine-schema";
-import type { ContinuityKey } from "@/db/schema.ts";
 import { freshDb } from "@/db/test-helpers";
 
 import {
 	completeCoverage,
 	coverageStateFor,
 	coverageStatesFor,
+	groupCoverageKey,
 	reconcileCoveragesAfterMerge,
 	seedPendingCoverage,
 } from "./coverage.ts";
 
-const continuity: ContinuityKey = "simkl:anime:42";
+const continuity = groupCoverageKey(42);
 const revision = 1;
 
 describe("overflow coverage", () => {
@@ -55,8 +55,8 @@ describe("overflow coverage", () => {
 describe("reconcileCoveragesAfterMerge", () => {
 	it("deletes retired group keys and seeds survivor pending at next revision", async () => {
 		const db = await freshDb();
-		const survivor: ContinuityKey = "group:1";
-		const retired: ContinuityKey = "group:2";
+		const survivor = groupCoverageKey(1);
+		const retired = groupCoverageKey(2);
 		await seedPendingCoverage(db, retired, 1, "tmdb");
 		await completeCoverage(db, retired, 1, "tmdb");
 		await reconcileCoveragesAfterMerge(db, {
@@ -70,8 +70,8 @@ describe("reconcileCoveragesAfterMerge", () => {
 
 	it("avoids UNIQUE collision when survivor and retired share service revision", async () => {
 		const db = await freshDb();
-		const survivor: ContinuityKey = "group:10";
-		const retired: ContinuityKey = "group:11";
+		const survivor = groupCoverageKey(10);
+		const retired = groupCoverageKey(11);
 		await seedPendingCoverage(db, survivor, 1, "mal");
 		await completeCoverage(db, survivor, 1, "mal");
 		await seedPendingCoverage(db, retired, 1, "mal");

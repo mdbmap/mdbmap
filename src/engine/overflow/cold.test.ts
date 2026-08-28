@@ -4,6 +4,7 @@ import type { Identity } from "@/engine/identity.ts";
 
 import { createOverflowColdLookup, createWorkflowDispatcher } from "./cold.ts";
 import type { BuildDispatcher, ColdEstimate, DispatchHandle } from "./cold.ts";
+import { groupCoverageKey } from "./coverage.ts";
 import { overflowInstanceId } from "./work.ts";
 import type { BuildPayload, BuildWork } from "./work.ts";
 
@@ -12,9 +13,17 @@ const identity: Identity = {
 	title: { id: "1", service: "mal" },
 };
 
+const profile = "anime" as const;
+
+const payloadFor = (work: BuildWork): BuildPayload => ({
+	identity,
+	profile,
+	work,
+});
+
 const workFor = (targetService: BuildWork["targetService"]): BuildWork => ({
 	baselineRevision: 1,
-	continuity: "simkl:anime:42",
+	continuity: groupCoverageKey(42),
 	targetService,
 });
 
@@ -64,7 +73,7 @@ describe("createOverflowColdLookup", () => {
 			estimate: () => estimate,
 		});
 
-		const result = await cold.begin(identity, "anime");
+		const result = await cold.begin(identity, profile);
 
 		expect(result.kind).toBe("started");
 		if (result.kind === "started") {
@@ -83,7 +92,7 @@ describe("createOverflowColdLookup", () => {
 			estimate: () => ({ builds: [workFor("mal")], input: overBudget }),
 		});
 
-		await cold.begin(identity, "anime");
+		await cold.begin(identity, profile);
 
 		expect(created.size).toBe(1);
 	});
@@ -95,7 +104,7 @@ describe("createOverflowColdLookup", () => {
 			estimate: () => ({ builds: [workFor("mal")], input: withinBudget }),
 		});
 
-		expect(await cold.begin(identity, "anime")).toEqual({ kind: "miss" });
+		expect(await cold.begin(identity, profile)).toEqual({ kind: "miss" });
 		expect(created.size).toBe(0);
 	});
 
@@ -107,7 +116,7 @@ describe("createOverflowColdLookup", () => {
 			estimate: () => missing.get("none"),
 		});
 
-		expect(await cold.begin(identity, "anime")).toEqual({ kind: "miss" });
+		expect(await cold.begin(identity, profile)).toEqual({ kind: "miss" });
 	});
 
 	it("dedupes two concurrent requests for the same work onto one instance", async () => {
@@ -117,8 +126,8 @@ describe("createOverflowColdLookup", () => {
 			estimate: () => ({ builds: [workFor("mal")], input: overBudget }),
 		});
 
-		await cold.begin(identity, "anime");
-		await cold.begin(identity, "anime");
+		await cold.begin(identity, profile);
+		await cold.begin(identity, profile);
 
 		expect(created.size).toBe(1);
 		expect(joins()).toBe(1);
@@ -143,7 +152,7 @@ describe("createWorkflowDispatcher", () => {
 			},
 		};
 		const dispatcher = createWorkflowDispatcher(handle);
-		const payload: BuildPayload = { work: workFor("mal") };
+		const payload = payloadFor(workFor("mal"));
 
 		await dispatcher.ensure("overflow_abc", payload);
 		await dispatcher.ensure("overflow_abc", payload);
@@ -165,8 +174,9 @@ describe("createWorkflowDispatcher", () => {
 		};
 		const dispatcher = createWorkflowDispatcher(handle);
 
-		await expect(
-			dispatcher.ensure("overflow_abc", { work: workFor("mal") }),
-		).rejects.toThrow("boom");
+		const payload = payloadFor(workFor("mal"));
+		await expect(dispatcher.ensure("overflow_abc", payload)).rejects.toThrow(
+			"boom",
+		);
 	});
 });

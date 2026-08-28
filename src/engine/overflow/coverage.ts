@@ -3,12 +3,16 @@ import { and, eq, inArray } from "drizzle-orm";
 import type { Db as CoverageDb } from "@/db";
 import { serviceCoverages } from "@/db/engine-schema";
 import type { CoverageState } from "@/db/engine-schema";
-import type { ContinuityKey } from "@/db/schema.ts";
 import { serviceOrder } from "@/engine/identity.ts";
 import type { Service } from "@/engine/identity.ts";
 
+type GroupCoverageKey = `group:${number}`;
+
+const groupCoverageKey = (groupId: number): GroupCoverageKey =>
+	`group:${groupId}`;
+
 const revisionMatch = (
-	continuity: ContinuityKey,
+	continuity: GroupCoverageKey,
 	service: Service,
 	revision: number,
 ) =>
@@ -23,7 +27,7 @@ const revisionMatch = (
 // request that seeded first leaves the existing row untouched.
 const seedPendingCoverage = async (
 	db: CoverageDb,
-	continuity: ContinuityKey,
+	continuity: GroupCoverageKey,
 	revision: number,
 	service: Service,
 ): Promise<void> => {
@@ -45,7 +49,7 @@ const seedPendingCoverage = async (
 // service's verified mappings.
 const completeCoverage = async (
 	db: CoverageDb,
-	continuity: ContinuityKey,
+	continuity: GroupCoverageKey,
 	revision: number,
 	service: Service,
 ): Promise<void> => {
@@ -70,7 +74,7 @@ const completeCoverage = async (
 
 const coverageStateFor = async (
 	db: CoverageDb,
-	continuity: ContinuityKey,
+	continuity: GroupCoverageKey,
 	revision: number,
 	service: Service,
 ): Promise<CoverageState | undefined> => {
@@ -86,7 +90,7 @@ const coverageStateFor = async (
 // state of each target service. A service still mid-build reads `pending`.
 const coverageStatesFor = async (
 	db: CoverageDb,
-	continuity: ContinuityKey,
+	continuity: GroupCoverageKey,
 	revision: number,
 ): Promise<ReadonlyMap<string, CoverageState>> => {
 	const rows = await db
@@ -106,8 +110,6 @@ interface MergeCoverageInput {
 	readonly retiredGroupIds: readonly number[];
 	readonly survivorGroupId: number;
 }
-
-const groupCoverageKey = (groupId: number): ContinuityKey => `group:${groupId}`;
 
 // After converge retires loser groups, coverage rows keyed by those group
 // continuities would orphan. Do not rename into the survivor (UNIQUE collisions).
@@ -163,7 +165,8 @@ export {
 	completeCoverage,
 	coverageStateFor,
 	coverageStatesFor,
+	groupCoverageKey,
 	reconcileCoveragesAfterMerge,
 	seedPendingCoverage,
 };
-export type { MergeCoverageInput };
+export type { GroupCoverageKey, MergeCoverageInput };

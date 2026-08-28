@@ -59,7 +59,11 @@ const createOverflowColdLookup = (deps: OverflowColdDeps): ColdLookup => {
 			}
 			await Promise.all(
 				estimate.builds.map(async (work) => {
-					await deps.dispatcher.ensure(overflowInstanceId(work), { work });
+					await deps.dispatcher.ensure(overflowInstanceId(work), {
+						identity,
+						profile,
+						work,
+					});
 				}),
 			);
 			return {

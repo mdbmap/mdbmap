@@ -12,10 +12,10 @@ import {
 	titleGroups,
 } from "@/db/engine-schema";
 import type { GroupSource } from "@/db/engine-schema";
-import type { ContinuityKey } from "@/db/schema.ts";
 import { freshDb } from "@/db/test-helpers";
 import {
 	coverageStateFor,
+	groupCoverageKey,
 	seedPendingCoverage,
 } from "@/engine/overflow/coverage.ts";
 import { recomputeGroup } from "@/engine/recompute";
@@ -166,8 +166,8 @@ describe("converge with stored groups", () => {
 		const loser = await seedGroup(db);
 		await seedTitle(db, survivor.id, "tmdb", "1", 0);
 		await seedTitle(db, loser.id, "imdb", "tt2", 0);
-		const survivorKey: ContinuityKey = `group:${survivor.id}`;
-		const retiredKey: ContinuityKey = `group:${loser.id}`;
+		const survivorKey = groupCoverageKey(survivor.id);
+		const retiredKey = groupCoverageKey(loser.id);
 		await seedPendingCoverage(db, survivorKey, 1, "tmdb");
 		await seedPendingCoverage(db, retiredKey, 1, "tmdb");
 

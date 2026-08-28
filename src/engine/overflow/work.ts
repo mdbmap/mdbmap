@@ -1,18 +1,21 @@
-import type { ContinuityKey } from "@/db/schema.ts";
-import type { Service } from "@/engine/identity.ts";
+import type { Identity, Profile, Service } from "@/engine/identity.ts";
+
+import type { GroupCoverageKey } from "./coverage.ts";
 
 // The atomic unit of overflow work (ADR-0002 §overflow): one target-service
 // comparison of one baseline continuity at one revision. A build owns exactly
 // one of these, and its identity is the dedup key concurrent requests share.
 interface BuildWork {
 	readonly baselineRevision: number;
-	readonly continuity: ContinuityKey;
+	readonly continuity: GroupCoverageKey;
 	readonly targetService: Service;
 }
 
 // What a Workflow instance is triggered with. Serializable by construction so it
 // survives the durable-execution boundary.
 interface BuildPayload {
+	readonly identity: Identity;
+	readonly profile: Profile;
 	readonly work: BuildWork;
 }
 
