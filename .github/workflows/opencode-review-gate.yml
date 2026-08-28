@@ -23,6 +23,7 @@ jobs:
               return;
             }
             const pullNumber = pullRequests[0].number;
+            const headSha = context.payload.workflow_run.head_sha;
             const { data: reviews } = await github.rest.pulls.listReviews({
               owner: context.repo.owner,
               repo: context.repo.repo,
@@ -32,10 +33,11 @@ jobs:
               (review) =>
                 review.user?.type === 'Bot' &&
                 review.state === 'CHANGES_REQUESTED' &&
-                review.body?.includes('OpenCode PR Review'),
+                review.body?.includes('OpenCode PR Review') &&
+                review.commit_id === headSha,
             );
             if (opencodeChanges.length > 0) {
               core.setFailed(
-                `OpenCode review requested changes on PR #${pullNumber}. Resolve inline findings before merge.`,
+                `OpenCode review requested changes on PR #${pullNumber} at ${headSha}. Resolve inline findings before merge.`,
               );
             }

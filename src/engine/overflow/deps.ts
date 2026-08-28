@@ -197,15 +197,13 @@ const overflowAlign = async (
 	chain: OverflowChain,
 	streams: OverflowStreams,
 ): Promise<OverflowAlignment> => {
-	if (streams.skip !== undefined) {
-		return skippedAlignment(
-			streams,
-			await anchorTitleIdFor(ctx.db, ctx.groupId, ctx.anchor),
-		);
-	}
 	const { mapping } = streams;
 	const discovered = chain.outcome;
-	if (mapping === undefined || discovered.kind !== "discovered") {
+	if (
+		streams.skip !== undefined ||
+		mapping === undefined ||
+		discovered.kind !== "discovered"
+	) {
 		return skippedAlignment(
 			streams,
 			await anchorTitleIdFor(ctx.db, ctx.groupId, ctx.anchor),
