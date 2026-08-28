@@ -1,4 +1,4 @@
-import { and, eq } from "drizzle-orm";
+import { and, eq, inArray } from "drizzle-orm";
 
 import type { Db } from "@/db";
 import {
@@ -188,5 +188,37 @@ const bootstrapFromIdentity = async (
 	return claimGroup(db, identity.title);
 };
 
-export { bootstrapFromIdentity };
+const retireBootstrapScaffolding = async (
+	db: Db,
+	spokeIds: readonly number[],
+): Promise<void> => {
+	if (spokeIds.length === 0) {
+		return;
+	}
+	const bootstrapAssertions = await db
+		.select({
+			id: instalmentAssertions.id,
+			unitId: instalmentAssertions.unitId,
+		})
+		.from(instalmentAssertions)
+		.where(
+			and(
+				eq(instalmentAssertions.source, "bootstrap"),
+				inArray(instalmentAssertions.instalmentId, [...spokeIds]),
+			),
+		)
+		.all();
+	if (bootstrapAssertions.length === 0) {
+		return;
+	}
+	const assertionIds = bootstrapAssertions.map((row) => row.id);
+	const unitIds = bootstrapAssertions.map((row) => row.unitId);
+	await db
+		.delete(instalmentAssertions)
+		.where(inArray(instalmentAssertions.id, assertionIds))
+		.run();
+	await db.delete(contentUnits).where(inArray(contentUnits.id, unitIds)).run();
+};
+
+export { bootstrapFromIdentity, retireBootstrapScaffolding };
 export type { BootstrappedGroup, BootstrapRefusalReason, BootstrapResult };

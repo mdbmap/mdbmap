@@ -24,6 +24,8 @@ import type {
 	TierId,
 } from "@/engine/matcher";
 
+import { instalmentEnumerableServices } from "./enumerable-services.ts";
+
 interface DiscoverInput {
 	readonly anchor: TitleIdentity;
 	readonly budget: number;
@@ -90,8 +92,6 @@ interface FetchTargetInput {
 type FetchTargetOutcome =
 	| { readonly enumerated: EnumeratedTitle; readonly kind: "fetched" }
 	| { readonly kind: "unavailable" };
-
-const instalmentEnumerableServices = new Set<string>(["anilist", "mal"]);
 
 const fetchTargetStream = async (
 	input: FetchTargetInput,

@@ -161,7 +161,11 @@ const isGroupCurated = async (
 					.from(instalmentAssertions)
 					.where(inArray(instalmentAssertions.instalmentId, spokeIds))
 					.all();
-	if (spokeAssertions.some((row) => isCuratedSource(row.source))) {
+	if (
+		spokeAssertions.some(
+			(row) => isCuratedSource(row.source) && row.source !== "bootstrap",
+		)
+	) {
 		return true;
 	}
 	const titles = [...memberTitleIds];

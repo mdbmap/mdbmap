@@ -19,6 +19,7 @@ import type { FreshPairing } from "@/engine/recompute/recompute.ts";
 
 import { queueStructuralAlignmentConflict } from "./alignment-conflict.ts";
 import type { BootstrappedGroup } from "./bootstrap.ts";
+import { retireBootstrapScaffolding } from "./bootstrap.ts";
 import {
 	alignTarget,
 	anchorStreamFromDb,
@@ -156,6 +157,7 @@ const commitPublish = async (
 		input.triedSource,
 	);
 	if (pairings.length > 0) {
+		const pairingSpokeIds = pairings.flatMap((pairing) => pairing.spokeIds);
 		const recompute = await recomputeGroup(db, {
 			groupId: input.groupId,
 			ladderComplete: ladderCompleteFor(input.alignment),
@@ -168,6 +170,7 @@ const commitPublish = async (
 				reason: "unpublishable",
 			});
 		}
+		await retireBootstrapScaffolding(db, pairingSpokeIds);
 	}
 
 	return finishPublish(db, {
