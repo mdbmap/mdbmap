@@ -22,6 +22,8 @@ interface StructuralDiscoveryDeps {
 	readonly simkl?: SimklClient;
 }
 
+const MAX_ENUMERATION_PAGES = 100;
+
 const anilistStartDateSchema = z.object({
 	day: z.number().nullable().optional(),
 	month: z.number().nullable().optional(),
@@ -183,7 +185,10 @@ const collectAnilistEpisodes = async (
 			airDate === undefined ? { title } : { airDate, title };
 		entries.push([locator, fact]);
 	}
-	if (episodePage?.pageInfo?.hasNextPage === true) {
+	if (
+		episodePage?.pageInfo?.hasNextPage === true &&
+		page < MAX_ENUMERATION_PAGES
+	) {
 		await collectAnilistEpisodes(
 			serviceId,
 			page + 1,
@@ -308,7 +313,7 @@ const paginateMalEpisodes = async (
 	fetchFn: typeof fetch,
 ): Promise<void> => {
 	const hasNext = await collectMalEpisodes(serviceId, page, entries, fetchFn);
-	if (hasNext) {
+	if (hasNext && page < MAX_ENUMERATION_PAGES) {
 		await paginateMalEpisodes(serviceId, page + 1, entries, fetchFn);
 	}
 };

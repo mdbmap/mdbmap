@@ -439,13 +439,17 @@ const createBuildDeps = (
 		discover: async () => overflowDiscover(ctx),
 		fetchTarget: async (chain) => overflowFetch(ctx, chain),
 		publish: async (alignment) => overflowPublish(ctx, alignment),
-		seedPending: async () =>
-			seedPendingCoverage(
+		seedPending: async () => {
+			if (!instalmentEnumerableServices.has(ctx.targetService)) {
+				return;
+			}
+			await seedPendingCoverage(
 				ctx.db,
 				ctx.continuity,
 				ctx.revision,
 				ctx.targetService,
-			),
+			);
+		},
 	};
 };
 

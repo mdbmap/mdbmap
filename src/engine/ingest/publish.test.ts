@@ -185,7 +185,7 @@ describe("runSingleTargetPublish", () => {
 		expect(await db.select().from(serviceCoverages).all()).toHaveLength(1);
 	});
 
-	it("leaves coverage pending when the target is not enumerable", async () => {
+	it("refuses without coverage when the target is not enumerable", async () => {
 		const db = await freshDb();
 		const bootstrapped = await bootstrapFromIdentity(db, knownIdentity);
 		if (bootstrapped.kind !== "bootstrapped") {
@@ -209,7 +209,7 @@ describe("runSingleTargetPublish", () => {
 			1,
 			"tmdb",
 		);
-		expect(coverage).toBe("pending");
+		expect(coverage).toBeUndefined();
 	});
 });
 

@@ -2,6 +2,7 @@ import { eq } from "drizzle-orm";
 import { describe, expect, it } from "vitest";
 
 import {
+	contentUnits,
 	instalmentAssertions,
 	pendingGroupCandidates,
 	serviceInstalments,
@@ -69,17 +70,22 @@ describe("queueAlignmentCrossingConflicts", () => {
 		const s1e2 = spokes.find(
 			(row) => row.locator === "s1e2" && row.titleId === anchorTitleId,
 		);
-		expect(conflicts[0]?.evidence).toMatchObject({
+		const evidence = conflicts[0]?.evidence;
+		expect(evidence).toMatchObject({
 			instalmentId: s1e2?.id,
 			kind: "instalment-assertion-conflict",
 			proposed: {
 				source: "t3-episode",
-				unitId: "alignment:s1e1|s1e2",
 			},
 			published: {
 				source: "bootstrap",
 			},
 		});
+		if (evidence?.kind !== "instalment-assertion-conflict") {
+			throw new Error("expected instalment-assertion-conflict evidence");
+		}
+		const units = await db.select().from(contentUnits).all();
+		expect(units.map((row) => row.id)).toContain(evidence.proposed.unitId);
 	});
 
 	it("queues with published null when the earlier spoke has no assertion", async () => {

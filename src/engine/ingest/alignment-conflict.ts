@@ -4,6 +4,7 @@ import { z } from "zod";
 import type { Db } from "@/db";
 import {
 	candidateSubjectKey,
+	contentUnits,
 	instalmentAssertions,
 	pendingGroupCandidates,
 } from "@/db/engine-schema";
@@ -12,6 +13,7 @@ import type {
 	CandidateEvidence,
 	CandidateSubject,
 } from "@/db/engine-schema";
+import { one } from "@/db/one";
 import type { InstalmentLocator } from "@/db/schema";
 import type { Crossing } from "@/engine/matcher";
 
@@ -64,7 +66,10 @@ const queueCrossingConflict = async (
 		instalmentBId: laterSpokeId,
 		subjectType: "instalment-pair",
 	};
-	const proposedUnitId = proposedUnitIdFor(laterLocators, laterTargetLocators);
+	const proposalDigest = proposedUnitIdFor(laterLocators, laterTargetLocators);
+	const proposedUnitId = one(
+		await db.insert(contentUnits).values({}).returning().all(),
+	).id;
 	const published: InstalmentConflictSide | null =
 		publishedRow === undefined
 			? z.null().parse(JSON.parse("null"))
@@ -83,8 +88,8 @@ const queueCrossingConflict = async (
 		},
 		published,
 	};
-	const evidenceHash = `${input.evidenceHashPrefix}:instalment-assertion-conflict:${primaryInstalmentId}:${proposedUnitId}`;
-	await db
+	const evidenceHash = `${input.evidenceHashPrefix}:instalment-assertion-conflict:${primaryInstalmentId}:${proposalDigest}`;
+	const inserted = await db
 		.insert(pendingGroupCandidates)
 		.values({
 			evidence,
@@ -94,7 +99,14 @@ const queueCrossingConflict = async (
 			subjectKey: candidateSubjectKey(subject),
 		})
 		.onConflictDoNothing()
-		.run();
+		.returning()
+		.all();
+	if (inserted.length === 0) {
+		await db
+			.delete(contentUnits)
+			.where(eq(contentUnits.id, proposedUnitId))
+			.run();
+	}
 	return true;
 };
 

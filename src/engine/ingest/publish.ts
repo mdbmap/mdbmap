@@ -332,15 +332,14 @@ const runSingleTargetPublish = async (
 	const revision = input.revision ?? DEFAULT_REVISION;
 	const continuity = groupCoverageKey(input.group.groupId);
 
-	await seedPendingCoverage(db, continuity, revision, input.targetService);
-
 	if (!instalmentEnumerableServices.has(input.targetService)) {
-		return endPublishAttempt(
-			db,
-			{ continuity, revision, targetService: input.targetService },
-			{ kind: "refused", reason: "not-enumerable" },
-		);
+		return {
+			kind: "refused",
+			reason: "not-enumerable",
+		};
 	}
+
+	await seedPendingCoverage(db, continuity, revision, input.targetService);
 
 	const discovered = await discoverGroup({
 		anchor: input.anchor,
