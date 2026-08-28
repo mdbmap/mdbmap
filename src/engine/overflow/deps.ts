@@ -69,7 +69,6 @@ interface OverflowAlignment {
 	readonly anchorTitleId: number;
 	readonly discovered?: DiscoveredGroup;
 	readonly enumerated: SerializableEnumerated;
-	readonly leavePending?: boolean;
 	readonly sharedEnumerated?: SerializableEnumerated;
 	readonly mapping?: MemberMapping;
 	readonly publishContext: {
@@ -158,13 +157,6 @@ const recordAlignmentConflict = async (
 		readonly triedSource: TierId;
 	},
 ): Promise<void> => {
-	await writeCoverageState(
-		ctx.db,
-		ctx.continuity,
-		ctx.revision,
-		ctx.targetService,
-		"conflict",
-	);
 	const targetTitleId = await ensureTitle(
 		ctx.db,
 		ctx.groupId,
@@ -179,13 +171,25 @@ const recordAlignmentConflict = async (
 		targetTitleId,
 		deserializeEnumerated(input.enumerated),
 	);
-	await queueAlignmentCrossingConflicts(ctx.db, {
+	const queued = await queueAlignmentCrossingConflicts(ctx.db, {
 		anchorTitleId: input.anchorTitleId,
 		crossings: input.crossings,
 		evidenceHashPrefix: "overflow-alignment-conflict",
 		targetTitleId,
 		triedSource: input.triedSource,
 	});
+	if (!queued) {
+		throw new Error(
+			"overflow deps: alignment conflict without queueable spokes",
+		);
+	}
+	await writeCoverageState(
+		ctx.db,
+		ctx.continuity,
+		ctx.revision,
+		ctx.targetService,
+		"conflict",
+	);
 };
 
 const discoveryClientsFor = (ctx: OverflowContext): DiscoveryClients =>
@@ -353,9 +357,6 @@ const overflowPublish = async (
 	alignment: OverflowAlignment,
 ): Promise<void> => {
 	if (alignment.skip || alignment.mapping === undefined) {
-		if (alignment.leavePending) {
-			return;
-		}
 		const result = await finishPublish(ctx.db, alignment.publishContext);
 		if (result.kind !== "published") {
 			throw new Error(`overflow publish refused: ${result.kind}`);

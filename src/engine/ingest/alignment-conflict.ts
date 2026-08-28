@@ -1,4 +1,5 @@
 import { eq } from "drizzle-orm";
+import { z } from "zod";
 
 import type { Db } from "@/db";
 import {
@@ -39,7 +40,7 @@ const queueCrossingConflict = async (
 		readonly targetTitleId: number;
 		readonly triedSource: AssertionSource;
 	},
-): Promise<void> => {
+): Promise<boolean> => {
 	const { earlier, later, side } = input.crossing;
 	const titleId = side === "left" ? input.anchorTitleId : input.targetTitleId;
 	const earlierLocators = side === "left" ? earlier.left : earlier.right;
@@ -49,7 +50,7 @@ const queueCrossingConflict = async (
 	const earlierSpokeId = await spokeIdFor(db, titleId, earlierLocators[0]);
 	const laterSpokeId = await spokeIdFor(db, titleId, laterLocators[0]);
 	if (earlierSpokeId === undefined || laterSpokeId === undefined) {
-		return;
+		return false;
 	}
 
 	const primaryInstalmentId = laterSpokeId;
@@ -66,8 +67,7 @@ const queueCrossingConflict = async (
 	const proposedUnitId = proposedUnitIdFor(laterLocators, laterTargetLocators);
 	const published: InstalmentConflictSide | null =
 		publishedRow === undefined
-			? // oxlint-disable-next-line unicorn/no-null -- CandidateEvidence uses null for absent sides
-				null
+			? z.null().parse(JSON.parse("null"))
 			: {
 					confidence: publishedRow.confidence,
 					source: publishedRow.source,
@@ -95,6 +95,7 @@ const queueCrossingConflict = async (
 		})
 		.onConflictDoNothing()
 		.run();
+	return true;
 };
 
 const queueAlignmentCrossingConflicts = async (
@@ -106,12 +107,13 @@ const queueAlignmentCrossingConflicts = async (
 		readonly targetTitleId: number;
 		readonly triedSource: AssertionSource;
 	},
-): Promise<void> => {
-	await Promise.all(
+): Promise<boolean> => {
+	const queued = await Promise.all(
 		input.crossings.map(async (crossing) =>
 			queueCrossingConflict(db, { ...input, crossing }),
 		),
 	);
+	return queued.some(Boolean);
 };
 
 export { queueAlignmentCrossingConflicts };

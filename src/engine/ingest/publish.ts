@@ -267,13 +267,19 @@ const publishAlignedTarget = async (
 				await ensureSpokes(db, input.anchorTitleId, sharedFetched.enumerated);
 			}
 			await ensureSpokes(db, targetTitleId, fetched.enumerated);
-			await queueAlignmentCrossingConflicts(db, {
+			const queued = await queueAlignmentCrossingConflicts(db, {
 				anchorTitleId: input.anchorTitleId,
 				crossings: alignment.crossings,
 				evidenceHashPrefix: "publish-alignment-conflict",
 				targetTitleId,
 				triedSource: highestTriedTier(aligned.ladder),
 			});
+			if (!queued) {
+				return endPublishAttempt(db, input, {
+					kind: "refused",
+					reason: "unpublishable",
+				});
+			}
 			return endPublishAttempt(db, input, {
 				kind: "conflict",
 				reason: "alignment-conflict",
