@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import { freshDb } from "@/db/test-helpers";
 import type {
@@ -15,6 +15,7 @@ import {
 } from "@/engine/overflow/coverage.ts";
 
 import { runOverflowBuild } from "./build.ts";
+import type { DurableStep } from "./build.ts";
 import { createBuildDeps } from "./deps.ts";
 import type { BuildPayload } from "./work.ts";
 
@@ -84,6 +85,10 @@ const publishClients = (): DiscoveryClients => ({
 	},
 });
 
+const recordingStep: DurableStep = {
+	do: async (_name, _policy, run) => run(),
+};
+
 describe("createBuildDeps", () => {
 	it("runs all five durable steps and marks coverage complete for one target", async () => {
 		const db = await freshDb();
@@ -111,9 +116,7 @@ describe("createBuildDeps", () => {
 			payload,
 		);
 
-		const outcome = await runOverflowBuild(payload.work, deps, {
-			do: async (_name, _policy, run) => run(),
-		});
+		const outcome = await runOverflowBuild(payload.work, deps, recordingStep);
 
 		expect(outcome).toEqual({ targetService: "anilist" });
 		const coverage = await coverageStateFor(
@@ -123,5 +126,88 @@ describe("createBuildDeps", () => {
 			"anilist",
 		);
 		expect(coverage).toBe("complete");
+	});
+});
+
+describe("createBuildDeps review regressions", () => {
+	it("leaves coverage pending when structural discovery clients are missing", async () => {
+		const db = await freshDb();
+		const bootstrapped = await bootstrapFromIdentity(db, knownIdentity);
+		if (bootstrapped.kind !== "bootstrapped") {
+			throw new Error(`expected bootstrapped, got ${bootstrapped.kind}`);
+		}
+		const payload: BuildPayload = {
+			identity: knownIdentity,
+			profile: "anime",
+			work: {
+				baselineRevision: 1,
+				continuity: groupCoverageKey(bootstrapped.group.groupId),
+				targetService: "anilist",
+			},
+		};
+		const deps = createBuildDeps(
+			{
+				catalogue: { simkl: undefined, verification: {} },
+				db,
+				dispatcher: undefined,
+				structuralDiscovery: undefined,
+			},
+			payload,
+		);
+
+		await expect(
+			runOverflowBuild(payload.work, deps, recordingStep),
+		).rejects.toThrow(/structural discovery clients missing/u);
+
+		const coverage = await coverageStateFor(
+			db,
+			groupCoverageKey(bootstrapped.group.groupId),
+			1,
+			"anilist",
+		);
+		expect(coverage).toBe("pending");
+	});
+
+	it("leaves coverage pending when discovery is refused", async () => {
+		const phasesModule = await import("@/engine/ingest/phases.ts");
+		vi.spyOn(phasesModule, "discoverGroup").mockResolvedValueOnce({
+			kind: "refused",
+			reason: "over-budget",
+		});
+		const db = await freshDb();
+		const bootstrapped = await bootstrapFromIdentity(db, knownIdentity);
+		if (bootstrapped.kind !== "bootstrapped") {
+			throw new Error(`expected bootstrapped, got ${bootstrapped.kind}`);
+		}
+		const payload: BuildPayload = {
+			identity: knownIdentity,
+			profile: "anime",
+			work: {
+				baselineRevision: 1,
+				continuity: groupCoverageKey(bootstrapped.group.groupId),
+				targetService: "anilist",
+			},
+		};
+		const deps = createBuildDeps(
+			{
+				catalogue: { simkl: undefined, verification: {} },
+				db,
+				dispatcher: undefined,
+				structuralDiscovery: publishClients(),
+			},
+			payload,
+		);
+
+		await expect(
+			runOverflowBuild(payload.work, deps, recordingStep),
+		).rejects.toThrow(/discovery refused \(over-budget\)/u);
+
+		const coverage = await coverageStateFor(
+			db,
+			groupCoverageKey(bootstrapped.group.groupId),
+			1,
+			"anilist",
+		);
+		expect(coverage).toBe("pending");
 	});
 });

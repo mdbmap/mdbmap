@@ -248,7 +248,7 @@ const runSingleTargetPublish = async (
 	});
 };
 
-export { commitPublish, finishPublish, runSingleTargetPublish };
+export { DEFAULT_BUDGET, commitPublish, finishPublish, runSingleTargetPublish };
 export type {
 	PublishClients,
 	PublishConflictReason,

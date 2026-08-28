@@ -1,5 +1,6 @@
 import { WorkflowEntrypoint } from "cloudflare:workers";
 import type { WorkflowEvent, WorkflowStep } from "cloudflare:workers";
+import { NonRetryableError } from "cloudflare:workflows";
 
 import { readCatalogueSecretsSource } from "@/engine/ingest/catalogue-secrets.ts";
 import { createIngestEnvFromSource } from "@/engine/ingest/env.ts";
@@ -23,6 +24,11 @@ const resolveBuildDeps = (env: Env, payload: BuildPayload) => {
 		env,
 		readCatalogueSecretsSource(env),
 	);
+	if (ingest.structuralDiscovery === undefined) {
+		throw new NonRetryableError(
+			`overflow build deps: structural discovery clients not configured for target ${payload.work.targetService}`,
+		);
+	}
 	return createBuildDeps(ingest, payload);
 };
 
