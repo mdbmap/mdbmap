@@ -2,6 +2,7 @@
 // Workers-only `cloudflare:workers` runtime and is loaded solely by the worker
 // entry, never pulled into the general (or client) import graph.
 export { defaultStepPolicies, runOverflowBuild } from "./build.ts";
+export { createBuildDeps } from "./deps.ts";
 export type {
 	BuildDeps,
 	BuildOutcome,

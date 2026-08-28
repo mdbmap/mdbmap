@@ -1,6 +1,7 @@
 import { createDb } from "@/db";
 import type { Db } from "@/db";
 import type { SimklClient, VerificationClients } from "@/engine/discovery";
+import type { DiscoveryClients } from "@/engine/discovery/structural.ts";
 import { createWorkflowDispatcher } from "@/engine/overflow/cold.ts";
 import type { BuildDispatcher } from "@/engine/overflow/cold.ts";
 
@@ -20,6 +21,7 @@ type IngestBindings = Pick<
 >;
 
 interface IngestEnvOverrides {
+	readonly structuralDiscovery?: DiscoveryClients;
 	readonly catalogue?: Partial<{
 		readonly simkl: SimklClient;
 		readonly verification: VerificationClients;
@@ -28,6 +30,7 @@ interface IngestEnvOverrides {
 }
 
 interface IngestEnv {
+	readonly structuralDiscovery: DiscoveryClients | undefined;
 	readonly catalogue: {
 		readonly simkl: SimklClient | undefined;
 		readonly verification: VerificationClients;
@@ -55,6 +58,7 @@ const createIngestEnv = (input: CreateIngestEnvInput): IngestEnv => {
 			bindings.OVERFLOW_BUILD === undefined
 				? undefined
 				: createWorkflowDispatcher(bindings.OVERFLOW_BUILD),
+		structuralDiscovery: overrides?.structuralDiscovery,
 	};
 };
 
