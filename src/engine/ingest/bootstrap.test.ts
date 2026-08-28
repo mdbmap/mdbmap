@@ -1,0 +1,177 @@
+import { eq } from "drizzle-orm";
+import { describe, expect, it } from "vitest";
+
+import {
+	continuities,
+	continuitySegments,
+	contentUnits,
+	instalmentAssertions,
+	serviceInstalments,
+	serviceTitles,
+	titleGroups,
+} from "@/db/engine-schema";
+import { freshDb } from "@/db/test-helpers";
+import { continuityKey } from "@/engine/continuity/keys.ts";
+import type { SimklClient, SimklService } from "@/engine/discovery/simkl.ts";
+import { anime } from "@/engine/discovery/test-fixtures.ts";
+import type { CatalogueClient } from "@/engine/discovery/verify.ts";
+
+import { bootstrapFromIdentity } from "./bootstrap.ts";
+import { probeUpstream } from "./probe.ts";
+
+const knownMal = { id: "50265", service: "mal" as const };
+const knownIdentity = { kind: "title" as const, title: knownMal };
+const unknownMal = { id: "99999999", service: "mal" as const };
+
+const simklWith = (entries: ReturnType<typeof anime>[]): SimklClient => {
+	const shaped = entries;
+	const byExternal = (service: SimklService, serviceId: string) =>
+		shaped.find((entry) => entry.externalIds[service] === serviceId);
+	return {
+		fetchEntry: async (simklId) => {
+			await Promise.resolve();
+			return shaped.find((entry) => entry.id === simklId);
+		},
+		findByExternalId: async (service, serviceId) => {
+			await Promise.resolve();
+			return byExternal(service, serviceId);
+		},
+	};
+};
+
+const kitsuClient = (knownIds: ReadonlySet<string>): CatalogueClient => ({
+	fetchTitle: async (serviceId) => {
+		await Promise.resolve();
+		return knownIds.has(serviceId)
+			? {
+					format: "TV",
+					instalmentCount: 12,
+					releaseDate: undefined,
+					title: "Fixture",
+				}
+			: undefined;
+	},
+});
+
+describe("probeUpstream", () => {
+	it("confirms a SIMKL-backed identity that exists upstream", async () => {
+		const simkl = simklWith([anime("1", { mal: knownMal.id }, [])]);
+
+		const result = await probeUpstream(knownMal, { simkl });
+
+		expect(result).toEqual({ kind: "confirmed" });
+	});
+
+	it("refuses an unknown upstream identity without writing to D1", async () => {
+		const db = await freshDb();
+		const groupsBefore = await db.select().from(titleGroups).all();
+		const simkl = simklWith([]);
+
+		const result = await probeUpstream(unknownMal, { simkl });
+
+		expect(result).toEqual({ kind: "refused", reason: "no-record" });
+		expect(await db.select().from(titleGroups).all()).toEqual(groupsBefore);
+	});
+
+	it("confirms a non-SIMKL identity through the catalogue client", async () => {
+		const result = await probeUpstream(
+			{ id: "42", service: "kitsu" },
+			{ catalogues: { kitsu: kitsuClient(new Set(["42"])) } },
+		);
+
+		expect(result).toEqual({ kind: "confirmed" });
+	});
+});
+
+describe("bootstrapFromIdentity", () => {
+	it("creates hub spokes and continuity from an empty database", async () => {
+		const db = await freshDb();
+
+		const result = await bootstrapFromIdentity(db, knownIdentity);
+
+		if (result.kind !== "bootstrapped") {
+			throw new Error(`expected bootstrapped, got ${result.kind}`);
+		}
+		expect(result.group.baselineContinuity).toBe(
+			`group:${result.group.groupId}`,
+		);
+		expect(continuityKey(result.group.continuityId)).toBe(
+			`continuity:${result.group.continuityId}`,
+		);
+
+		const groups = await db.select().from(titleGroups).all();
+		expect(groups).toHaveLength(1);
+		expect(groups[0]?.source).toBe("release");
+
+		const titles = await db.select().from(serviceTitles).all();
+		expect(titles).toHaveLength(1);
+		expect(titles[0]).toMatchObject({ service: "mal", serviceId: knownMal.id });
+
+		const units = await db.select().from(contentUnits).all();
+		expect(units).toHaveLength(1);
+
+		const spokes = await db.select().from(serviceInstalments).all();
+		expect(spokes).toHaveLength(1);
+		expect(spokes[0]).toMatchObject({
+			locator: "s1e1",
+			locatorKind: "position",
+		});
+
+		const assertions = await db.select().from(instalmentAssertions).all();
+		expect(assertions).toHaveLength(1);
+
+		const segments = await db
+			.select()
+			.from(continuitySegments)
+			.where(eq(continuitySegments.continuityId, result.group.continuityId))
+			.all();
+		expect(segments).toHaveLength(1);
+		expect(segments[0]?.titleId).toBe(result.group.requestedTitleId);
+
+		const continuityRows = await db.select().from(continuities).all();
+		expect(continuityRows).toHaveLength(1);
+	});
+
+	it("refuses instalment identities", async () => {
+		const db = await freshDb();
+
+		const result = await bootstrapFromIdentity(db, {
+			kind: "instalment",
+			locator: { episode: 1, season: 1 },
+			title: knownMal,
+		});
+
+		expect(result).toEqual({ kind: "refused", reason: "unsupported-identity" });
+		expect(await db.select().from(titleGroups).all()).toHaveLength(0);
+	});
+
+	it("joins concurrent claims on the existing service_titles row", async () => {
+		const db = await freshDb();
+
+		const [first, second] = await Promise.all([
+			bootstrapFromIdentity(db, knownIdentity),
+			bootstrapFromIdentity(db, knownIdentity),
+		]);
+
+		if (first.kind !== "bootstrapped" || second.kind !== "bootstrapped") {
+			throw new Error("expected both claims to bootstrap");
+		}
+		expect(first.group.groupId).toBe(second.group.groupId);
+		expect(first.group.requestedTitleId).toBe(second.group.requestedTitleId);
+
+		expect(await db.select().from(titleGroups).all()).toHaveLength(1);
+		expect(await db.select().from(serviceTitles).all()).toHaveLength(1);
+	});
+
+	it("is idempotent when the service_titles row already exists", async () => {
+		const db = await freshDb();
+		const first = await bootstrapFromIdentity(db, knownIdentity);
+		const second = await bootstrapFromIdentity(db, knownIdentity);
+
+		if (first.kind !== "bootstrapped" || second.kind !== "bootstrapped") {
+			throw new Error("expected both claims to bootstrap");
+		}
+		expect(second.group).toEqual(first.group);
+		expect(await db.select().from(titleGroups).all()).toHaveLength(1);
+	});
+});
