@@ -51,7 +51,11 @@ interface OverflowChain {
 	readonly targetService: Service;
 }
 
-type OverflowFetchSkip = "no-group" | "no-mapping" | "refused";
+type OverflowFetchSkip =
+	| "no-group"
+	| "no-mapping"
+	| "refused"
+	| "unavailable-target";
 
 interface OverflowStreams {
 	readonly chain: OverflowChain;
@@ -235,7 +239,7 @@ const overflowFetch = async (
 			chain,
 			enumerated: emptyEnumerated(),
 			mapping,
-			skip: "no-mapping",
+			skip: "unavailable-target",
 		};
 	}
 	return {
@@ -265,7 +269,9 @@ const overflowAlign = async (
 		);
 		return {
 			...skippedAlignment(streams, anchorTitleId),
-			...(streams.skip === "refused" ? { leavePending: true } : {}),
+			...(streams.skip === "refused" || streams.skip === "unavailable-target"
+				? { leavePending: true }
+				: {}),
 		};
 	}
 	const anchorTitleId = await anchorTitleIdFor(ctx.db, ctx.groupId, ctx.anchor);

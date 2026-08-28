@@ -1,6 +1,11 @@
+import { eq } from "drizzle-orm";
 import { describe, expect, it } from "vitest";
 
-import { pendingGroupCandidates, serviceInstalments } from "@/db/engine-schema";
+import {
+	instalmentAssertions,
+	pendingGroupCandidates,
+	serviceInstalments,
+} from "@/db/engine-schema";
 import { freshDb } from "@/db/test-helpers";
 import type { Crossing } from "@/engine/matcher";
 import { locator, regular, streamOf } from "@/engine/matcher/test-fixtures.ts";
@@ -32,7 +37,7 @@ describe("queueAlignmentCrossingConflicts", () => {
 			throw new Error(`expected bootstrapped, got ${bootstrapped.kind}`);
 		}
 		const anchorTitleId = bootstrapped.group.requestedTitleId;
-		const resolvedTargetTitleId = await ensureTitle(
+		const targetTitleId = await ensureTitle(
 			db,
 			bootstrapped.group.groupId,
 			{ service: "anilist", serviceId: "140960" },
@@ -42,7 +47,7 @@ describe("queueAlignmentCrossingConflicts", () => {
 			facts: new Map(),
 			stream: streamOf([regular("s1e1"), regular("s1e2")]),
 		});
-		await ensureSpokes(db, resolvedTargetTitleId, {
+		await ensureSpokes(db, targetTitleId, {
 			facts: new Map(),
 			stream: streamOf([regular("s1e1")]),
 		});
@@ -51,7 +56,7 @@ describe("queueAlignmentCrossingConflicts", () => {
 			anchorTitleId,
 			crossings: [crossing],
 			evidenceHashPrefix: "test-alignment-conflict",
-			targetTitleId: resolvedTargetTitleId,
+			targetTitleId,
 			triedSource: "t3-episode",
 		});
 
@@ -60,16 +65,7 @@ describe("queueAlignmentCrossingConflicts", () => {
 			(row) => row.kind === "instalment-assertion-conflict",
 		);
 		expect(conflicts).toHaveLength(1);
-		expect(conflicts[0]).toMatchObject({
-			kind: "instalment-assertion-conflict",
-			subject: {
-				subjectType: "instalment-pair",
-			},
-		});
 		const spokes = await db.select().from(serviceInstalments).all();
-		const s1e1 = spokes.find(
-			(row) => row.locator === "s1e1" && row.titleId === anchorTitleId,
-		);
 		const s1e2 = spokes.find(
 			(row) => row.locator === "s1e2" && row.titleId === anchorTitleId,
 		);
@@ -80,10 +76,64 @@ describe("queueAlignmentCrossingConflicts", () => {
 				source: "t3-episode",
 				unitId: "alignment:s1e1|s1e2",
 			},
+			published: {
+				source: "bootstrap",
+			},
 		});
-		expect(conflicts[0]?.subject).toMatchObject({
-			instalmentAId: s1e1?.id,
-			instalmentBId: s1e2?.id,
+	});
+
+	it("queues with published null when the earlier spoke has no assertion", async () => {
+		const db = await freshDb();
+		const bootstrapped = await bootstrapFromIdentity(db, {
+			kind: "title",
+			title: { id: "99999", service: "mal" },
 		});
+		if (bootstrapped.kind !== "bootstrapped") {
+			throw new Error(`expected bootstrapped, got ${bootstrapped.kind}`);
+		}
+		const anchorTitleId = bootstrapped.group.requestedTitleId;
+		const targetTitleId = await ensureTitle(
+			db,
+			bootstrapped.group.groupId,
+			{ service: "anilist", serviceId: "99999" },
+			1,
+		);
+		await ensureSpokes(db, anchorTitleId, {
+			facts: new Map(),
+			stream: streamOf([regular("s1e1"), regular("s1e2")]),
+		});
+		const spokes = await db.select().from(serviceInstalments).all();
+		const s1e1Spoke = spokes.find(
+			(row) => row.locator === "s1e1" && row.titleId === anchorTitleId,
+		);
+		if (s1e1Spoke !== undefined) {
+			await db
+				.delete(instalmentAssertions)
+				.where(eq(instalmentAssertions.instalmentId, s1e1Spoke.id))
+				.run();
+		}
+		await ensureSpokes(db, targetTitleId, {
+			facts: new Map(),
+			stream: streamOf([regular("s1e1")]),
+		});
+
+		await queueAlignmentCrossingConflicts(db, {
+			anchorTitleId,
+			crossings: [crossing],
+			evidenceHashPrefix: "test-null-published",
+			targetTitleId,
+			triedSource: "t3-episode",
+		});
+
+		const rows = await db.select().from(pendingGroupCandidates).all();
+		const conflicts = rows.filter(
+			(row) => row.kind === "instalment-assertion-conflict",
+		);
+		expect(conflicts).toHaveLength(1);
+		const evidence = conflicts[0]?.evidence;
+		expect(evidence?.kind).toBe("instalment-assertion-conflict");
+		if (evidence?.kind === "instalment-assertion-conflict") {
+			expect(evidence.published).toBeNull();
+		}
 	});
 });

@@ -92,7 +92,7 @@ const factsOf = (
 
 const skippedEnumerated = (): EnumeratedTitle => ({
 	facts: factsOf([]),
-	stream: instalmentStream([], "airing"),
+	stream: instalmentStream([], "truncated"),
 });
 
 const optionalAirDate = (

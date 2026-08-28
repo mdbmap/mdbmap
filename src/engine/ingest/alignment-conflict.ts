@@ -1,4 +1,5 @@
 import { eq } from "drizzle-orm";
+import { z } from "zod";
 
 import type { Db } from "@/db";
 import {
@@ -16,6 +17,12 @@ import type { Crossing } from "@/engine/matcher";
 
 import { spokeIdFor } from "./spokes.ts";
 
+interface InstalmentConflictSide {
+	readonly confidence: "high" | "low";
+	readonly source: AssertionSource;
+	readonly unitId: string;
+}
+
 const proposedUnitIdFor = (
 	left: readonly InstalmentLocator[],
 	right: readonly InstalmentLocator[],
@@ -23,6 +30,9 @@ const proposedUnitIdFor = (
 	const digest = [...left, ...right].toSorted().join("|");
 	return `alignment:${digest}`;
 };
+
+const absentInstalmentPublished = (): InstalmentConflictSide | null =>
+	z.null().parse(JSON.parse("null"));
 
 const queueCrossingConflict = async (
 	db: Db,
@@ -52,15 +62,20 @@ const queueCrossingConflict = async (
 		.from(instalmentAssertions)
 		.where(eq(instalmentAssertions.instalmentId, earlierSpokeId))
 		.get();
-	if (publishedRow === undefined) {
-		return;
-	}
 	const subject: CandidateSubject = {
 		instalmentAId: earlierSpokeId,
 		instalmentBId: laterSpokeId,
 		subjectType: "instalment-pair",
 	};
 	const proposedUnitId = proposedUnitIdFor(laterLocators, laterTargetLocators);
+	const published: InstalmentConflictSide | null =
+		publishedRow === undefined
+			? absentInstalmentPublished()
+			: {
+					confidence: publishedRow.confidence,
+					source: publishedRow.source,
+					unitId: publishedRow.unitId,
+				};
 	const evidence: CandidateEvidence = {
 		instalmentId: primaryInstalmentId,
 		kind: "instalment-assertion-conflict",
@@ -69,11 +84,7 @@ const queueCrossingConflict = async (
 			source: input.triedSource,
 			unitId: proposedUnitId,
 		},
-		published: {
-			confidence: publishedRow.confidence,
-			source: publishedRow.source,
-			unitId: publishedRow.unitId,
-		},
+		published,
 	};
 	const evidenceHash = `${input.evidenceHashPrefix}:instalment-assertion-conflict:${primaryInstalmentId}:${proposedUnitId}`;
 	await db

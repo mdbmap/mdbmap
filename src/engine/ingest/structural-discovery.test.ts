@@ -150,6 +150,6 @@ describe("buildStructuralDiscoveryClients", () => {
 		});
 
 		expect(enumerated.stream.instalments).toHaveLength(0);
-		expect(enumerated.stream.boundary).toBe("airing");
+		expect(enumerated.stream.boundary).toBe("truncated");
 	});
 });

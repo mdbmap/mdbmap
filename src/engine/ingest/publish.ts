@@ -201,11 +201,9 @@ const publishAlignedTarget = async (
 		target: input.mapping.member,
 	});
 	if (fetched.kind === "unavailable") {
-		return finishPublish(db, {
-			continuity: input.continuity,
-			groupId: input.groupId,
-			revision: input.revision,
-			targetService: input.targetService,
+		return endPublishAttempt(db, input, {
+			kind: "refused",
+			reason: "unavailable-target",
 		});
 	}
 
