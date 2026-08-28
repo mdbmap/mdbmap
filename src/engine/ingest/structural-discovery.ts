@@ -19,6 +19,8 @@ interface StructuralDiscoveryDeps {
 	readonly simkl: SimklClient;
 }
 
+const enumeratableServices = new Set(["anilist", "mal"]);
+
 const anilistStartDateSchema = z.object({
 	day: z.number().nullable().optional(),
 	month: z.number().nullable().optional(),
@@ -57,6 +59,14 @@ const jikanEpisodesSchema = z.object({
 	pagination: z.object({ has_next_page: z.boolean().optional() }).optional(),
 });
 
+const jikanAnimeSchema = z.object({
+	data: z.object({
+		airing: z.boolean().optional(),
+		episodes: z.number().nullable().optional(),
+		status: z.string().optional(),
+	}),
+});
+
 const instalmentLocator = (raw: string): InstalmentLocator => raw;
 
 const instalmentStream = (
@@ -79,6 +89,11 @@ const factsOf = (
 	}
 	return map;
 };
+
+const skippedEnumerated = (): EnumeratedTitle => ({
+	facts: factsOf([]),
+	stream: instalmentStream([], "complete"),
+});
 
 const optionalAirDate = (
 	year: number | null | undefined,
@@ -184,6 +199,30 @@ const enumerateAnilist = async (
 	};
 };
 
+const fetchMalAnimeMeta = async (
+	serviceId: string,
+	fetchFn: typeof fetch,
+): Promise<z.infer<typeof jikanAnimeSchema>["data"] | undefined> => {
+	const response = await fetchFn(`https://api.jikan.moe/v4/anime/${serviceId}`);
+	if (!response.ok) {
+		throw new Error(`jikan: ${response.status} for mal:${serviceId}`);
+	}
+	const parsed = jikanAnimeSchema.safeParse(await response.json());
+	return parsed.success ? parsed.data.data : undefined;
+};
+
+const malBoundaryFromMeta = (
+	meta: z.infer<typeof jikanAnimeSchema>["data"] | undefined,
+): InstalmentStream["boundary"] => {
+	if (meta?.airing === true || meta?.status === "Currently Airing") {
+		return "airing";
+	}
+	if (meta?.episodes === undefined || meta?.episodes === null) {
+		return "airing";
+	}
+	return "complete";
+};
+
 const collectMalEpisodes = async (
 	serviceId: string,
 	page: number,
@@ -224,12 +263,14 @@ const enumerateMal = async (
 	serviceId: string,
 	fetchFn: typeof fetch,
 ): Promise<EnumeratedTitle> => {
+	const meta = await fetchMalAnimeMeta(serviceId, fetchFn);
+	const boundary = malBoundaryFromMeta(meta);
 	const entries: (readonly [InstalmentLocator, InstalmentFacts])[] = [];
 	await paginateMalEpisodes(serviceId, 1, entries, fetchFn);
 	const locators = entries.map(([locator]) => locator);
 	return {
 		facts: factsOf(entries),
-		stream: instalmentStream(locators, "complete"),
+		stream: instalmentStream(locators, boundary),
 	};
 };
 
@@ -237,6 +278,9 @@ const enumerateTitle = async (
 	title: ServiceRef,
 	fetchFn: typeof fetch,
 ): Promise<EnumeratedTitle> => {
+	if (!enumeratableServices.has(title.service)) {
+		return skippedEnumerated();
+	}
 	switch (title.service) {
 		case "anilist": {
 			return enumerateAnilist(title.serviceId, fetchFn);
@@ -245,9 +289,7 @@ const enumerateTitle = async (
 			return enumerateMal(title.serviceId, fetchFn);
 		}
 		default: {
-			throw new Error(
-				`structural discovery: unsupported enumeration service ${title.service}`,
-			);
+			return skippedEnumerated();
 		}
 	}
 };
@@ -280,7 +322,7 @@ const buildStructuralDiscoveryClients = (
 				}
 				return {
 					externalIds: simklRefsOf(entry),
-					firstAirDate: undefined,
+					firstAirDate: entry.firstAirDate,
 				};
 			},
 		},

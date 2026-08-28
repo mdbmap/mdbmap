@@ -1,16 +1,22 @@
 import { and, eq } from "drizzle-orm";
 
-import { serviceTitles } from "@/db/engine-schema";
+import {
+	candidateSubjectKey,
+	pendingGroupCandidates,
+	serviceTitles,
+} from "@/db/engine-schema";
 import type {
 	DiscoveryClients,
 	MemberMapping,
 } from "@/engine/discovery/structural.ts";
 import { toGraphMember } from "@/engine/gateway/keys.ts";
+import { serviceOrder } from "@/engine/identity.ts";
 import type { Service, TitleIdentity } from "@/engine/identity.ts";
 import type { IngestEnv } from "@/engine/ingest/env.ts";
 import {
 	alignTarget,
 	anchorStreamFromDb,
+	convergeMembersOf,
 	discoverGroup,
 	fetchTargetStream,
 	highestTriedTier,
@@ -28,7 +34,7 @@ import {
 import type { PublishedAlignment, TierId } from "@/engine/matcher";
 
 import type { BuildDeps } from "./build.ts";
-import { seedPendingCoverage } from "./coverage.ts";
+import { seedPendingCoverage, writeCoverageState } from "./coverage.ts";
 import type { GroupCoverageKey } from "./coverage.ts";
 import {
 	deserializeEnumerated,
@@ -118,7 +124,7 @@ interface OverflowContext {
 	readonly budget: number;
 	readonly continuity: GroupCoverageKey;
 	readonly db: IngestEnv["db"];
-	readonly discovery: DiscoveryClients;
+	readonly discovery: DiscoveryClients | undefined;
 	readonly groupId: number;
 	readonly revision: number;
 	readonly targetService: Service;
@@ -137,9 +143,52 @@ const skippedAlignment = (
 	triedSource: "t3-episode",
 });
 
+const recordAlignmentConflict = async (
+	ctx: OverflowContext,
+	discovered: DiscoveredGroup,
+	anchorTitleId: number,
+): Promise<void> => {
+	await writeCoverageState(
+		ctx.db,
+		ctx.continuity,
+		ctx.revision,
+		ctx.targetService,
+		"conflict",
+	);
+	const subject = { subjectType: "title" as const, titleId: anchorTitleId };
+	const proposedMembers = convergeMembersOf(discovered).flatMap((member) => {
+		const service = serviceOrder.find(
+			(candidate) => candidate === member.service,
+		);
+		return service === undefined
+			? []
+			: [{ service, serviceId: member.serviceId }];
+	});
+	const evidence = {
+		competingGroupIds: [ctx.groupId],
+		kind: "structural" as const,
+		proposedMembers,
+	};
+	const evidenceHash = `overflow-alignment-conflict:${ctx.groupId}:${anchorTitleId}`;
+	await ctx.db
+		.insert(pendingGroupCandidates)
+		.values({
+			evidence,
+			evidenceHash,
+			kind: "structural",
+			subject,
+			subjectKey: candidateSubjectKey(subject),
+		})
+		.onConflictDoNothing()
+		.run();
+};
+
 const overflowDiscover = async (
 	ctx: OverflowContext,
 ): Promise<OverflowChain> => {
+	if (ctx.discovery === undefined) {
+		throw new Error("overflow deps: structural discovery not configured");
+	}
 	const outcome = await discoverGroup({
 		anchor: ctx.anchor,
 		budget: ctx.budget,
@@ -170,6 +219,9 @@ const overflowFetch = async (
 	const mapping = targetMappingFor(chain.outcome.discovered, ctx.targetService);
 	if (mapping === undefined) {
 		return { chain, enumerated: emptyEnumerated(), skip: "no-mapping" };
+	}
+	if (ctx.discovery === undefined) {
+		throw new Error("overflow deps: structural discovery not configured");
 	}
 	const fetched = await fetchTargetStream({
 		clients: ctx.discovery,
@@ -217,6 +269,7 @@ const overflowAlign = async (
 		aligned.alignment.status !== "published"
 	) {
 		if (aligned.alignment?.status === "conflict") {
+			await recordAlignmentConflict(ctx, discovered.discovered, anchorTitleId);
 			throw new Error("overflow deps: alignment conflict");
 		}
 		throw new Error("overflow deps: unpublishable alignment");
@@ -273,9 +326,6 @@ const createBuildDeps = (
 	const { identity, work } = payload;
 	if (identity.kind !== "title") {
 		throw new Error("overflow deps: instalment identities are not supported");
-	}
-	if (ingest.structuralDiscovery === undefined) {
-		throw new Error("overflow deps: structural discovery not configured");
 	}
 	const ctx: OverflowContext = {
 		anchor: identity.title,

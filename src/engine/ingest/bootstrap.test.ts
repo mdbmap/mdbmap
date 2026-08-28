@@ -207,7 +207,7 @@ describe("bootstrapFromIdentity", () => {
 		expect(assertions).toHaveLength(1);
 		expect(assertions[0]).toMatchObject({
 			confidence: "low",
-			source: "t3-episode",
+			source: "bootstrap",
 		});
 
 		const segments = await db

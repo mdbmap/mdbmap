@@ -49,6 +49,7 @@ interface SimklRelation {
 
 interface SimklEntry {
 	externalIds: SimklExternalIds;
+	firstAirDate?: string | undefined;
 	id: string;
 	relations: readonly SimklRelation[];
 	title: string;
@@ -91,6 +92,7 @@ const relationSchema = z.object({
 });
 
 const entrySchema = z.object({
+	first_aired: z.string().optional(),
 	ids: idsSchema,
 	relations: z.array(relationSchema).optional(),
 	title: z.string().optional(),
@@ -127,8 +129,12 @@ const shapeOf = (type: string | undefined): SimklEntry["type"] => {
 	return type === "anime" ? "anime" : "show";
 };
 
+const firstAirDateOf = (raw: string | undefined): string | undefined =>
+	raw === undefined || raw === "" ? undefined : raw.slice(0, 10);
+
 const normalise = (raw: RawEntry): SimklEntry => ({
 	externalIds: externalIdsOf(raw.ids),
+	firstAirDate: firstAirDateOf(raw.first_aired),
 	id: String(raw.ids.simkl),
 	relations: (raw.relations ?? []).map((relation) => ({
 		kind: relationKindOf(relation.relation_type),
