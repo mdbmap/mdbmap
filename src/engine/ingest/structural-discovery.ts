@@ -208,7 +208,10 @@ const fetchMalAnimeMeta = async (
 		throw new Error(`jikan: ${response.status} for mal:${serviceId}`);
 	}
 	const parsed = jikanAnimeSchema.safeParse(await response.json());
-	return parsed.success ? parsed.data.data : undefined;
+	if (!parsed.success) {
+		throw new Error(`jikan: malformed anime payload for mal:${serviceId}`);
+	}
+	return parsed.data.data;
 };
 
 const malBoundaryFromMeta = (
@@ -236,7 +239,12 @@ const collectMalEpisodes = async (
 		throw new Error(`jikan: ${response.status} for mal:${serviceId}`);
 	}
 	const parsed = jikanEpisodesSchema.safeParse(await response.json());
-	const data = parsed.success ? parsed.data.data : [];
+	if (!parsed.success) {
+		throw new Error(
+			`jikan: malformed episodes payload for mal:${serviceId} page ${page}`,
+		);
+	}
+	const { data } = parsed.data;
 	for (const row of data) {
 		const episode = row.episode ?? entries.length + 1;
 		entries.push([
@@ -244,7 +252,7 @@ const collectMalEpisodes = async (
 			{ title: row.title ?? "" },
 		]);
 	}
-	return parsed.success && parsed.data.pagination?.has_next_page === true;
+	return parsed.data.pagination?.has_next_page === true;
 };
 
 const paginateMalEpisodes = async (

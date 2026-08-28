@@ -97,6 +97,29 @@ describe("buildStructuralDiscoveryClients", () => {
 		).toBe(true);
 	});
 
+	it("throws when Jikan episode payload is malformed", async () => {
+		const fetchFn = vi.fn(
+			async (input: RequestInfo | URL): Promise<Response> => {
+				await Promise.resolve();
+				const url = urlOf(input);
+				if (url.includes("/episodes")) {
+					return Response.json({ not: "episodes" });
+				}
+				return Response.json({
+					data: { airing: false, episodes: 12, status: "Finished Airing" },
+				});
+			},
+		);
+
+		const clients = buildStructuralDiscoveryClients({
+			fetchFn,
+			simkl: emptySimkl,
+		});
+
+		await expect(
+			clients.instalments.enumerate({ service: "mal", serviceId: "77" }),
+		).rejects.toThrow(/malformed episodes payload/u);
+	});
 	it("skips unsupported enumeration services without throwing", async () => {
 		const clients = buildStructuralDiscoveryClients({ simkl: emptySimkl });
 
