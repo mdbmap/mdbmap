@@ -4,9 +4,9 @@
 	"type": "module",
 	"scripts": {
 		"build": "vite build",
+		"cf-typegen": "wrangler types",
 		"codegen": "graphql-codegen --config codegen.ts",
 		"codegen:watch": "graphql-codegen --config codegen.ts --watch",
-		"cf-typegen": "wrangler types",
 		"db:generate": "drizzle-kit generate",
 		"db:migrate": "drizzle-kit migrate",
 		"db:pull": "drizzle-kit pull",
@@ -20,8 +20,9 @@
 		"lint:ci": "oxlint --format=github",
 		"lint:style": "stylelint --fix",
 		"lint:style:ci": "stylelint --custom-formatter @csstools/stylelint-formatter-github .",
-		"preview": "vite preview",
 		"prepare": "husky",
+		"preview": "vite preview",
+		"schema:imdb": "bun imdb-graphql.cli.ts",
 		"test": "vitest run",
 		"test:coverage": "vitest run --coverage"
 	},
