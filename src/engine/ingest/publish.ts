@@ -325,22 +325,20 @@ const runSingleTargetPublish = async (
 		);
 	}
 	if (discovered.kind === "no-group") {
-		return finishPublish(db, {
-			continuity,
-			groupId: input.group.groupId,
-			revision,
-			targetService: input.targetService,
-		});
+		return endPublishAttempt(
+			db,
+			{ continuity, revision, targetService: input.targetService },
+			{ kind: "refused", reason: "unavailable-target" },
+		);
 	}
 
 	const mapping = targetMappingFor(discovered.discovered, input.targetService);
 	if (mapping === undefined) {
-		return finishPublish(db, {
-			continuity,
-			groupId: input.group.groupId,
-			revision,
-			targetService: input.targetService,
-		});
+		return endPublishAttempt(
+			db,
+			{ continuity, revision, targetService: input.targetService },
+			{ kind: "refused", reason: "unavailable-target" },
+		);
 	}
 
 	return publishAlignedTarget(db, {

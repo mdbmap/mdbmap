@@ -42,6 +42,7 @@ const anilistMediaSchema = z.object({
 	episodes: z.number().nullable().optional(),
 	episodesList: anilistEpisodesPageSchema.optional(),
 	startDate: anilistStartDateSchema.optional(),
+	status: z.string().nullable().optional(),
 	title: z.object({ romaji: z.string().nullable().optional() }).optional(),
 });
 
@@ -92,7 +93,7 @@ const factsOf = (
 
 const skippedEnumerated = (): EnumeratedTitle => ({
 	facts: factsOf([]),
-	stream: instalmentStream([], "truncated"),
+	stream: instalmentStream([], "airing"),
 });
 
 const optionalAirDate = (
@@ -123,7 +124,7 @@ const fetchAnilistPage = async (
 	const response = await fetchFn("https://graphql.anilist.co", {
 		body: JSON.stringify({
 			query:
-				"query ($id: Int, $page: Int) { Media(id: $id, type: ANIME) { episodes episodesList(page: $page, perPage: 50) { pageInfo { hasNextPage } episodes { episode airingAt title { romaji } } } startDate { year month day } title { romaji } } }",
+				"query ($id: Int, $page: Int) { Media(id: $id, type: ANIME) { episodes status episodesList(page: $page, perPage: 50) { pageInfo { hasNextPage } episodes { episode airingAt title { romaji } } } startDate { year month day } title { romaji } } }",
 			variables: { id: Number(serviceId), page },
 		}),
 		headers: { "Content-Type": "application/json" },
@@ -172,16 +173,25 @@ const collectAnilistEpisodes = async (
 	}
 };
 
+const anilistBoundaryFromMedia = (
+	media: z.infer<typeof anilistMediaSchema> | null | undefined,
+): InstalmentStream["boundary"] => {
+	if (media?.status === "RELEASING" || media?.status === "NOT_YET_RELEASED") {
+		return "airing";
+	}
+	if (media?.episodes === undefined || media?.episodes === null) {
+		return "airing";
+	}
+	return "complete";
+};
+
 const enumerateAnilist = async (
 	serviceId: string,
 	fetchFn: typeof fetch,
 ): Promise<EnumeratedTitle> => {
 	const head = await fetchAnilistPage(serviceId, 1, fetchFn);
 	const totalEpisodes = head?.episodes;
-	const boundary: InstalmentStream["boundary"] =
-		totalEpisodes === undefined || totalEpisodes === null
-			? "airing"
-			: "complete";
+	let boundary = anilistBoundaryFromMedia(head);
 	const fallbackTitle = head?.title?.romaji ?? "";
 	const fallbackAirDate = optionalAirDate(
 		head?.startDate?.year,
@@ -198,6 +208,14 @@ const enumerateAnilist = async (
 		fetchFn,
 	);
 	const locators = entries.map(([locator]) => locator);
+	if (
+		totalEpisodes !== undefined &&
+		totalEpisodes !== null &&
+		entries.length < totalEpisodes &&
+		boundary === "complete"
+	) {
+		boundary = "truncated";
+	}
 	return {
 		facts: factsOf(entries),
 		stream: instalmentStream(locators, boundary),

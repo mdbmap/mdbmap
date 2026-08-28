@@ -127,7 +127,7 @@ describe("runSingleTargetPublish", () => {
 		}
 	});
 
-	it("marks a target with no discovered counterpart as known-no-counterpart", async () => {
+	it("leaves coverage pending when the target has no discovered counterpart", async () => {
 		const db = await freshDb();
 		const bootstrapped = await bootstrapFromIdentity(db, knownIdentity);
 		if (bootstrapped.kind !== "bootstrapped") {
@@ -151,15 +151,18 @@ describe("runSingleTargetPublish", () => {
 			targetService: "imdb",
 		});
 
-		expect(result.kind).toBe("published");
-
-		const graph = await readGraph(db, knownIdentity);
-		if (!graph.found) {
-			throw new Error("expected graph read after publish");
-		}
-		expect(graph.answer.links.get("imdb")).toEqual({
-			status: "known-no-counterpart",
+		expect(result).toEqual({
+			kind: "refused",
+			reason: "unavailable-target",
 		});
+
+		const coverage = await coverageStateFor(
+			db,
+			groupCoverageKey(bootstrapped.group.groupId),
+			1,
+			"imdb",
+		);
+		expect(coverage).toBe("pending");
 	});
 
 	it("is idempotent when publish is retried", async () => {
