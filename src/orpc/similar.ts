@@ -99,14 +99,19 @@ const resolveSimilar = async (
 			}),
 		),
 	];
-	const continuityByGroup = new Map(
-		await Promise.all(
-			uniqueGroupIds.map(async (groupId) => {
-				const id = continuityKey(await ensureGroupContinuity(db, groupId));
-				return [groupId, id] as const;
-			}),
-		),
-	);
+	const continuityByGroup = new Map<number, `continuity:${number}`>();
+	const ensureContinuities = async (index: number): Promise<void> => {
+		const groupId = uniqueGroupIds[index];
+		if (groupId === undefined) {
+			return;
+		}
+		continuityByGroup.set(
+			groupId,
+			continuityKey(await ensureGroupContinuity(db, groupId)),
+		);
+		await ensureContinuities(index + 1);
+	};
+	await ensureContinuities(0);
 	return items.map((item, index) => {
 		const ref = refs[index];
 		if (ref === undefined) {
