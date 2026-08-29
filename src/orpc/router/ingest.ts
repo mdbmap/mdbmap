@@ -73,6 +73,12 @@ const start = admin
 		if (coldOutcome !== undefined) {
 			return coldOutcome;
 		}
+		if (warm.found) {
+			return {
+				kind: "retryable",
+				retryAfterSeconds: WARM_RETRY_AFTER_SECONDS,
+			};
+		}
 		return { kind: "unknown" };
 	});
 

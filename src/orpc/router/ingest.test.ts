@@ -169,6 +169,22 @@ describe("admin ingest.start", () => {
 		});
 		expect(result.kind).not.toBe("complete");
 	});
+
+	it("returns retryable when a known title's upstream probe fails", async () => {
+		const ingest = await ingestEnv(false);
+		const bootstrap = await bootstrapFromIdentity(ingest.db, identity);
+		if (bootstrap.kind !== "bootstrapped") {
+			throw new Error("expected bootstrap");
+		}
+		const client = clientFor({ id: "admin-1", role: "admin" }, ingest);
+
+		const result = await client.ingest.start({ identity, profile: "movie" });
+		expect(result).toEqual({
+			kind: "retryable",
+			retryAfterSeconds: 5,
+		});
+		expect(bootstrap.group.groupId).toBeGreaterThan(0);
+	});
 });
 
 describe("admin ingest.start input validation", () => {

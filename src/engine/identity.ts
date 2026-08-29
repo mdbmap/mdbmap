@@ -101,6 +101,12 @@ const profiles = {
 	series: { admits: ["imdb"], atomicOnly: false, tmdbNamespace: "tv" },
 } satisfies Record<Profile, ProfileSpec>;
 
+const profileOrder = [
+	"anime",
+	"movie",
+	"series",
+] as const satisfies readonly Profile[];
+
 interface Failure {
 	readonly error: ParseError;
 	readonly ok: false;
@@ -321,7 +327,15 @@ const formatId = (identity: Identity): string => {
 	return `${head}:${locator.season}:${locator.episode}`;
 };
 
-export { FormatError, formatId, isTitleAdmitted, parseId, serviceOrder };
+export {
+	FormatError,
+	formatId,
+	isTitleAdmitted,
+	parseId,
+	profileOrder,
+	serviceOrder,
+};
+
 export type {
 	Identity,
 	Locator,

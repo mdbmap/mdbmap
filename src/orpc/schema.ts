@@ -4,6 +4,7 @@ import { presentationOrderSlugs } from "@/db/engine-schema";
 import type { ApiKeyPlan, RateableUnitKind, WatchStatus } from "@/db/schema";
 import { apiKeyPlans, researchTimings, watchStatuses } from "@/db/schema";
 import type { MediaKind } from "@/engine";
+import { profileOrder } from "@/engine/identity.ts";
 import { isIngestPlannable } from "@/engine/ingest/plannable.ts";
 import type { ProviderListItem } from "@/lib/provider-config/store.ts";
 import {
@@ -126,7 +127,7 @@ const IngestStartIdentityInput = z.object({
 const IngestStartInput = z
 	.object({
 		identity: IngestStartIdentityInput,
-		profile: z.enum(["anime", "movie", "series"]),
+		profile: z.enum(profileOrder),
 	})
 	.superRefine((input, ctx) => {
 		if (!isIngestPlannable(input.identity, input.profile)) {
@@ -173,6 +174,7 @@ type AdminIngestStartResult =
 			readonly retryAfterSeconds: number;
 			readonly statusUrl: string;
 	  }
+	| { readonly kind: "retryable"; readonly retryAfterSeconds: number }
 	| { readonly kind: "unknown" };
 
 interface CommunityScore {
