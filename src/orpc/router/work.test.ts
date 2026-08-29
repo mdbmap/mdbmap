@@ -5,14 +5,17 @@ import { describe, expect, it } from "vitest";
 import { continuitySegments } from "@/db/engine-schema";
 import { freshDb } from "@/db/test-helpers";
 import { createEngine } from "@/engine";
-import { parseContinuityKey } from "@/engine/continuity/keys";
+import { parseContinuityKey, workPathId } from "@/engine/continuity/keys";
 import { persistWatchOrder } from "@/engine/continuity/orders";
 import {
 	seedCrossGroupContinuity,
 	seedSpyXFamily,
+	seedTmdbContinuity,
 } from "@/engine/test-continuity";
 import type { ORPCContext, SessionUser } from "@/orpc/context";
-import type { WorkBlock } from "@/orpc/schema";
+import { defaultProviders } from "@/orpc/providers";
+import type { Providers, WorkMetadata } from "@/orpc/providers";
+import type { Similar, WorkBlock } from "@/orpc/schema";
 import { WorkGetInput } from "@/orpc/schema";
 
 import { router } from "./index.ts";
@@ -20,10 +23,12 @@ import { router } from "./index.ts";
 const clientFor = (
 	db: Awaited<ReturnType<typeof freshDb>>,
 	user?: SessionUser,
+	providers = defaultProviders,
 ) =>
 	createRouterClient(router, {
 		context: {
 			db,
+			providers,
 			resolveSession: () => user,
 		} satisfies ORPCContext,
 	});
@@ -52,6 +57,71 @@ const firstLocator = (part: WorkBlock) =>
 	part.kind === "film"
 		? part.instalmentLocator
 		: part.episodes[0]?.instalmentLocator;
+
+const metadataFor = (ifYouLiked: readonly Similar[]): WorkMetadata => ({
+	backdropRef: undefined,
+	cast: [],
+	coverRef: undefined,
+	ifYouLiked,
+	nativeTitle: undefined,
+	segments: [],
+	span: "",
+	staff: [],
+	studios: [],
+	synopsis: "",
+	title: "Test work",
+});
+
+const similar = (continuityId: string, title: string): Similar => ({
+	continuityId,
+	coverRef: undefined,
+	title,
+});
+
+describe("work.get similar links", () => {
+	it("resolves seeded TMDB and AniDB refs while preserving unresolved refs", async () => {
+		const db = await freshDb();
+		const source = await seedTmdbContinuity(db, "tv", "10");
+		const target = await seedCrossGroupContinuity(db);
+		const providers: Providers = {
+			...defaultProviders,
+			metadata: {
+				...defaultProviders.metadata,
+				tmdb: {
+					fetchWork: () =>
+						metadataFor([
+							similar("tmdb:tv:3001", "Seeded series"),
+							similar("tmdb:movie:3002", "Seeded film"),
+							similar("anidb:1002", "Seeded anime"),
+							similar("tmdb:tv:999", "Missing work"),
+							similar("imdb:tt999", "Unsupported work"),
+						]),
+				},
+			},
+		};
+
+		const view = await clientFor(db, undefined, providers).work.get({
+			continuityId: source.continuityId,
+		});
+
+		const workHref = `/work/${workPathId(target.continuityId)}`;
+		expect(view.ifYouLiked).toEqual([
+			similar(target.continuityId, "Seeded series"),
+			similar(target.continuityId, "Seeded film"),
+			similar(target.continuityId, "Seeded anime"),
+			similar("tmdb:tv:999", "Missing work"),
+			similar("imdb:tt999", "Unsupported work"),
+		]);
+		expect(
+			view.ifYouLiked
+				.slice(0, 3)
+				.map((item) => `/work/${workPathId(item.continuityId)}`),
+		).toEqual([workHref, workHref, workHref]);
+		for (const item of view.ifYouLiked.slice(3)) {
+			expect(workPathId(item.continuityId)).toBeUndefined();
+		}
+	});
+});
 
 describe("work.get presentation orders", () => {
 	it("rejects matching-order slugs at the input boundary", () => {
