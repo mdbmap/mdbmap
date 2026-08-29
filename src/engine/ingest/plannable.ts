@@ -1,0 +1,32 @@
+import type { Identity, Profile, Service } from "@/engine/identity.ts";
+
+type TargetPlan =
+	| { readonly kind: "atomic"; readonly service: Service }
+	| { readonly kind: "enumerated"; readonly service: Service };
+
+const targetPlansFor = (
+	identity: Identity,
+	profile: Profile,
+): readonly TargetPlan[] => {
+	if (identity.kind !== "title") {
+		return [];
+	}
+	if (profile === "anime") {
+		return (["anilist", "mal"] as const)
+			.filter((service) => service !== identity.title.service)
+			.map((service) => ({ kind: "enumerated", service }));
+	}
+	if (identity.title.service === "tmdb") {
+		return [{ kind: "atomic", service: "imdb" }];
+	}
+	if (identity.title.service === "imdb") {
+		return [{ kind: "atomic", service: "tmdb" }];
+	}
+	return [];
+};
+
+const isIngestPlannable = (identity: Identity, profile: Profile): boolean =>
+	identity.kind === "title" && targetPlansFor(identity, profile).length > 0;
+
+export { isIngestPlannable, targetPlansFor };
+export type { TargetPlan };

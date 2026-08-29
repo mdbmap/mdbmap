@@ -4,7 +4,7 @@ import { presentationOrderSlugs } from "@/db/engine-schema";
 import type { ApiKeyPlan, RateableUnitKind, WatchStatus } from "@/db/schema";
 import { apiKeyPlans, researchTimings, watchStatuses } from "@/db/schema";
 import type { MediaKind } from "@/engine";
-import { isIngestPlannable } from "@/engine/ingest";
+import { isIngestPlannable } from "@/engine/ingest/plannable.ts";
 import type { ProviderListItem } from "@/lib/provider-config/store.ts";
 import {
 	ProviderConfigSchema,
