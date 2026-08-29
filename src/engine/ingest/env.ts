@@ -5,8 +5,10 @@ import type { DiscoveryClients } from "@/engine/discovery/structural.ts";
 import { createWorkflowDispatcher } from "@/engine/overflow/cold.ts";
 import type { BuildDispatcher } from "@/engine/overflow/cold.ts";
 
-import type { AfterPublishScheduler } from "./after-publish.ts";
-import type { AfterPublishConfig } from "./after-publish.ts";
+import type {
+	AfterPublishConfig,
+	AfterPublishScheduler,
+} from "./after-publish.ts";
 import {
 	parseCatalogueSecrets,
 	readCatalogueSecretsSource,
@@ -66,8 +68,7 @@ const createIngestEnv = (input: CreateIngestEnvInput): IngestEnv => {
 		simkl: overrides?.catalogue?.simkl ?? built.simkl,
 		verification: overrides?.catalogue?.verification ?? built.verification,
 	};
-	const scheduler =
-		overrides?.afterPublish?.scheduler ?? defaultScheduler;
+	const scheduler = overrides?.afterPublish?.scheduler ?? defaultScheduler;
 	const resolvedAfterPublish =
 		scheduler === undefined
 			? undefined
