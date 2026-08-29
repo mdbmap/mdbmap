@@ -8,3 +8,4 @@ export type { GraphRead } from "./read.ts";
 export { resolveMapping } from "./resolve.ts";
 export type { MappingOutcome } from "./resolve.ts";
 export { toResponse } from "./respond.ts";
+export { runIngestStatus } from "./status.ts";
