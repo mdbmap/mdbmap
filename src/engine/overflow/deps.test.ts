@@ -226,7 +226,7 @@ describe("createBuildDeps review regressions", () => {
 		expect(coverage).toBe("pending");
 	});
 
-	it("leaves no coverage when the target is not enumerable", async () => {
+	it("keeps non-enumerable targets pending and retries", async () => {
 		const db = await freshDb();
 		const bootstrapped = await bootstrapFromIdentity(db, knownIdentity);
 		if (bootstrapped.kind !== "bootstrapped") {
@@ -251,7 +251,7 @@ describe("createBuildDeps review regressions", () => {
 			payload,
 		);
 
-		await runOverflowBuild(payload.work, deps, recordingStep);
+		await expectOverflowPending(payload.work, deps);
 
 		const coverage = await coverageStateFor(
 			db,
@@ -259,6 +259,6 @@ describe("createBuildDeps review regressions", () => {
 			1,
 			"tmdb",
 		);
-		expect(coverage).toBeUndefined();
+		expect(coverage).toBe("pending");
 	});
 });

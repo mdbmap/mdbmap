@@ -45,13 +45,24 @@ const queueCrossingConflict = async (
 ): Promise<boolean> => {
 	const { earlier, later, side } = input.crossing;
 	const titleId = side === "left" ? input.anchorTitleId : input.targetTitleId;
+	const counterpartTitleId =
+		side === "left" ? input.targetTitleId : input.anchorTitleId;
 	const earlierLocators = side === "left" ? earlier.left : earlier.right;
 	const laterLocators = side === "left" ? later.left : later.right;
 	const laterTargetLocators = side === "left" ? later.right : later.left;
 
 	const earlierSpokeId = await spokeIdFor(db, titleId, earlierLocators[0]);
 	const laterSpokeId = await spokeIdFor(db, titleId, laterLocators[0]);
-	if (earlierSpokeId === undefined || laterSpokeId === undefined) {
+	const counterpartSpokeId = await spokeIdFor(
+		db,
+		counterpartTitleId,
+		laterTargetLocators[0],
+	);
+	if (
+		earlierSpokeId === undefined ||
+		laterSpokeId === undefined ||
+		counterpartSpokeId === undefined
+	) {
 		return false;
 	}
 
@@ -79,10 +90,11 @@ const queueCrossingConflict = async (
 					unitId: publishedRow.unitId,
 				};
 	const evidence: CandidateEvidence = {
+		counterpartInstalmentId: counterpartSpokeId,
 		instalmentId: primaryInstalmentId,
 		kind: "instalment-assertion-conflict",
 		proposed: {
-			confidence: "high",
+			confidence: input.crossing.confidence,
 			source: input.triedSource,
 			unitId: proposedUnitId,
 		},

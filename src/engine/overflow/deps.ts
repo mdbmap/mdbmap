@@ -299,14 +299,6 @@ const overflowAlign = async (
 			return skippedAlignment(streams, anchorTitleId);
 		}
 		if (streams.skip === "refused") {
-			if (!instalmentEnumerableServices.has(ctx.targetService)) {
-				const anchorTitleId = await anchorTitleIdFor(
-					ctx.db,
-					ctx.groupId,
-					ctx.anchor,
-				);
-				return skippedAlignment(streams, anchorTitleId);
-			}
 			throw overflowPendingError(ctx.targetService);
 		}
 		const anchorTitleId = await anchorTitleIdFor(
@@ -323,9 +315,6 @@ const overflowAlign = async (
 		target: discovered.discovered.shared,
 	});
 	if (sharedFetched.kind !== "fetched") {
-		if (sharedFetched.reason === "not-enumerable") {
-			return skippedAlignment(streams, anchorTitleId);
-		}
 		throw overflowPendingError(ctx.targetService);
 	}
 	const anchorStream = sharedFetched.enumerated.stream;
@@ -454,9 +443,6 @@ const createBuildDeps = (
 		fetchTarget: async (chain) => overflowFetch(ctx, chain),
 		publish: async (alignment) => overflowPublish(ctx, alignment),
 		seedPending: async () => {
-			if (!instalmentEnumerableServices.has(ctx.targetService)) {
-				return;
-			}
 			await seedPendingCoverage(
 				ctx.db,
 				ctx.continuity,

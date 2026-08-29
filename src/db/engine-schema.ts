@@ -152,6 +152,7 @@ type CandidateEvidence =
 			queries: FuzzySearchQuery[];
 	  }
 	| {
+			counterpartInstalmentId?: number;
 			instalmentId: number;
 			kind: "instalment-assertion-conflict";
 			proposed: InstalmentConflictSide;

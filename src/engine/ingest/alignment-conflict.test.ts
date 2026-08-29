@@ -19,6 +19,7 @@ const knownMal = { id: "50265", service: "mal" as const };
 const knownIdentity = { kind: "title" as const, title: knownMal };
 
 const crossing: Crossing = {
+	confidence: "low",
 	earlier: {
 		left: [locator("s1e1")],
 		right: [locator("s1e1")],
@@ -75,6 +76,7 @@ describe("queueAlignmentCrossingConflicts", () => {
 			instalmentId: s1e2?.id,
 			kind: "instalment-assertion-conflict",
 			proposed: {
+				confidence: "low",
 				source: "t3-episode",
 			},
 			published: {
@@ -84,6 +86,11 @@ describe("queueAlignmentCrossingConflicts", () => {
 		if (evidence?.kind !== "instalment-assertion-conflict") {
 			throw new Error("expected instalment-assertion-conflict evidence");
 		}
+		expect(evidence.counterpartInstalmentId).toBe(
+			spokes.find(
+				(row) => row.locator === "s1e1" && row.titleId === targetTitleId,
+			)?.id,
+		);
 		const units = await db.select().from(contentUnits).all();
 		expect(units.map((row) => row.id)).toContain(evidence.proposed.unitId);
 	});
