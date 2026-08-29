@@ -1,10 +1,12 @@
-import { readGraph } from "@/engine/gateway";
+import {
+	readGraph,
+	statusUrlFor,
+	WARM_RETRY_AFTER_SECONDS,
+} from "@/engine/gateway";
 import { createLiveColdLookup, resolveIngestEnv } from "@/engine/ingest";
 import { admin } from "@/orpc/base";
 import type { AdminIngestStartResult } from "@/orpc/schema";
 import { IngestStartInput } from "@/orpc/schema";
-
-const RETRY_AFTER_SECONDS = 5;
 
 const pending = (
 	statusUrl: string,
@@ -21,11 +23,20 @@ const outcomeFor = (
 	if (!graph.found) {
 		return;
 	}
-	if (graph.pendingRef !== undefined) {
-		return pending(
-			`/api/engine/status/${graph.pendingRef}`,
-			RETRY_AFTER_SECONDS,
+	const statuses = [...graph.answer.links.values()].map((link) => link.status);
+	const usable =
+		graph.answer.links.size === 0 ||
+		statuses.some(
+			(status) => status === "matched" || status === "known-no-counterpart",
 		);
+	if (usable) {
+		return { kind: "complete" };
+	}
+	if (graph.pendingRef !== undefined) {
+		return pending(statusUrlFor(graph.pendingRef), WARM_RETRY_AFTER_SECONDS);
+	}
+	if (graph.reviewRef !== undefined) {
+		return { kind: "conflict", review: graph.reviewRef };
 	}
 	return { kind: "complete" };
 };

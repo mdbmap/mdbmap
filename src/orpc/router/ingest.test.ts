@@ -123,6 +123,27 @@ describe("admin ingest.start", () => {
 		const result = await client.ingest.start({ identity, profile: "movie" });
 		expect(result.kind).toBe("pending");
 	});
+
+	it("returns conflict for warm graph coverage in conflict", async () => {
+		const ingest = await ingestEnv(false);
+		const bootstrap = await bootstrapFromIdentity(ingest.db, identity);
+		if (bootstrap.kind !== "bootstrapped") {
+			throw new Error("expected bootstrap");
+		}
+		await ingest.db.insert(serviceCoverages).values({
+			baselineContinuity: `group:${bootstrap.group.groupId}`,
+			revision: 1,
+			state: "conflict",
+			targetService: "imdb",
+		});
+		const client = clientFor({ id: "admin-1", role: "admin" }, ingest);
+
+		const result = await client.ingest.start({ identity, profile: "movie" });
+		expect(result.kind).toBe("conflict");
+		if (result.kind === "conflict") {
+			expect(result.review).toMatch(/^review:[0-9a-z]+$/u);
+		}
+	});
 });
 
 describe("admin ingest.start input validation", () => {
@@ -164,6 +185,22 @@ describe("admin ingest.start input validation", () => {
 				title: { id: "603", namespace: "movie", service: "tmdb" },
 			},
 			profile: "series",
+		});
+		expect(result.success).toBe(false);
+	});
+
+	it("rejects a non-canonical imdb id", () => {
+		const result = IngestStartInput.safeParse({
+			identity: { kind: "title", title: { id: "0133093", service: "imdb" } },
+			profile: "movie",
+		});
+		expect(result.success).toBe(false);
+	});
+
+	it("rejects a non-numeric service id", () => {
+		const result = IngestStartInput.safeParse({
+			identity: { kind: "title", title: { id: "abc", service: "anilist" } },
+			profile: "anime",
 		});
 		expect(result.success).toBe(false);
 	});

@@ -102,33 +102,20 @@ const SetResearchTimingInput = z.object({
 	timing: ResearchTimingSchema,
 });
 
+const numericCatalogueId = z.string().regex(/^\d+$/u);
+const imdbCatalogueId = z.string().regex(/^tt\d+$/u);
+
 const CatalogueTitleInput = z.discriminatedUnion("service", [
 	z.object({
-		id: z.string().min(1),
+		id: numericCatalogueId,
 		namespace: z.enum(["movie", "tv"]),
 		service: z.literal("tmdb"),
 	}),
-	z.object({ id: z.string().min(1), service: z.literal("anilist") }),
-	z.object({ id: z.string().min(1), service: z.literal("imdb") }),
-	z.object({ id: z.string().min(1), service: z.literal("kitsu") }),
-	z.object({ id: z.string().min(1), service: z.literal("mal") }),
-	z.object({ id: z.string().min(1), service: z.literal("tvdb") }),
-]);
-
-const NonNegativeInt = z.number().int().min(0);
-
-const InstalmentLocatorInput = z.object({
-	episode: NonNegativeInt,
-	season: NonNegativeInt,
-});
-
-const CatalogueIdentityInput = z.discriminatedUnion("kind", [
-	z.object({ kind: z.literal("title"), title: CatalogueTitleInput }),
-	z.object({
-		kind: z.literal("instalment"),
-		locator: InstalmentLocatorInput,
-		title: CatalogueTitleInput,
-	}),
+	z.object({ id: numericCatalogueId, service: z.literal("anilist") }),
+	z.object({ id: imdbCatalogueId, service: z.literal("imdb") }),
+	z.object({ id: numericCatalogueId, service: z.literal("kitsu") }),
+	z.object({ id: numericCatalogueId, service: z.literal("mal") }),
+	z.object({ id: numericCatalogueId, service: z.literal("tvdb") }),
 ]);
 
 const IngestStartIdentityInput = z.object({
@@ -180,6 +167,7 @@ interface ServiceRating {
 
 type AdminIngestStartResult =
 	| { readonly kind: "complete" }
+	| { readonly kind: "conflict"; readonly review: string }
 	| {
 			readonly kind: "pending";
 			readonly retryAfterSeconds: number;
@@ -301,7 +289,6 @@ interface RatingResult {
 export {
 	ApiKeyPlanSchema,
 	CandidateIdInput,
-	CatalogueIdentityInput,
 	CreateProviderInput,
 	IngestStartInput,
 	ManualPairInput,

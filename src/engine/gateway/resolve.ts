@@ -6,10 +6,7 @@ import type { MappingResponse } from "@/engine/serializer.ts";
 
 import type { ColdLookup } from "./cold-lookup.ts";
 import { readGraph } from "./read.ts";
-
-// The default poll delay a warm pending build advertises. A cold build sets its
-// own; this only covers the seeded-pending path where no build handle exists yet.
-const WARM_RETRY_AFTER_SECONDS = 5;
+import { WARM_RETRY_AFTER_SECONDS, statusUrlFor } from "./refs.ts";
 
 // The engine's decision for one request, before it becomes an HTTP response.
 type MappingOutcome =
@@ -27,8 +24,6 @@ type MappingOutcome =
 	  }
 	| { readonly expected: string; readonly kind: "malformed" }
 	| { readonly kind: "unknown" };
-
-const statusUrlFor = (ref: string): string => `/api/engine/status/${ref}`;
 
 const resolveMapping = async (
 	db: GatewayDb,
