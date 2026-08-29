@@ -11,6 +11,7 @@ import type { SimklClient } from "@/engine/discovery";
 import type { DiscoveryClients } from "@/engine/discovery/structural.ts";
 import { runMapping } from "@/engine/gateway";
 import type { ColdLookup, ColdResult } from "@/engine/gateway";
+import type { BuildDispatcher } from "@/engine/overflow";
 
 import { createLiveColdLookup } from "./cold-lookup.ts";
 import type { IngestEnv } from "./env.ts";
@@ -75,13 +76,14 @@ const failingMovieDiscovery = (): DiscoveryClients => ({
 const ingestEnv = async (
 	discovery: DiscoveryClients,
 	probeExists = true,
+	dispatcher?: BuildDispatcher,
 ): Promise<IngestEnv> => ({
 	catalogue: {
 		simkl: movieSimkl(probeExists),
 		verification: {},
 	},
 	db: await freshDb(),
-	dispatcher: undefined,
+	dispatcher,
 	structuralDiscovery: discovery,
 });
 
@@ -199,21 +201,6 @@ describe("warm movie lookup", () => {
 });
 
 describe("pending movie cold lookup", () => {
-	it("returns pending with the seeded coverage row when work exceeds budget", async () => {
-		const ingest = await ingestEnv(movieDiscovery(51));
-		await occupyCoverageIds(ingest);
-		const { coldResultKind, response } = await runObservedLiveLookup(ingest);
-
-		expect(response.status).toBe(202);
-		expect(coldResultKind).toBe("updated");
-		const coverages = await ingest.db.select().from(serviceCoverages).all();
-		const coverage = coverages.find((row) => row.state === "pending");
-		expect(coverage?.state).toBe("pending");
-		await expect(response.json()).resolves.toMatchObject({
-			statusUrl: `/api/engine/status/pending:${coverage?.id.toString(36)}`,
-		});
-	});
-
 	it("leaves coverage pending when discovery finds no counterpart", async () => {
 		const ingest = await ingestEnv(movieDiscovery(0));
 		const response = await runMapping("movie", "tmdb:603", {
@@ -229,7 +216,71 @@ describe("pending movie cold lookup", () => {
 			0,
 		);
 	});
+});
 
+describe("live movie over-budget dispatch", () => {
+	it("returns pending with the seeded coverage row when work exceeds budget", async () => {
+		const dispatched: Parameters<BuildDispatcher["ensure"]>[] = [];
+		const dispatcher: BuildDispatcher = {
+			ensure: async (...args) => {
+				await Promise.resolve();
+				dispatched.push(args);
+			},
+		};
+		const ingest = await ingestEnv(movieDiscovery(51), true, dispatcher);
+		await occupyCoverageIds(ingest);
+		const { coldResultKind, response } = await runObservedLiveLookup(ingest);
+
+		expect(response.status).toBe(202);
+		expect(coldResultKind).toBe("updated");
+		expect(dispatched).toHaveLength(1);
+		const coverages = await ingest.db.select().from(serviceCoverages).all();
+		const coverage = coverages.find((row) => row.state === "pending");
+		expect(coverage?.state).toBe("pending");
+		expect(dispatched[0]?.[1]).toMatchObject({
+			identity: {
+				kind: "title",
+				title: { id: "603", service: "tmdb" },
+			},
+			profile: "movie",
+			work: {
+				baselineRevision: 1,
+				targetService: "imdb",
+			},
+		});
+		await expect(response.json()).resolves.toMatchObject({
+			statusUrl: `/api/engine/status/pending:${coverage?.id.toString(36)}`,
+		});
+	});
+});
+
+describe("live movie overflow idempotency", () => {
+	it("derives one deterministic workflow id for concurrent over-budget begins", async () => {
+		const instanceIds: string[] = [];
+		const ingest = await ingestEnv(movieDiscovery(51), true, {
+			ensure: async (instanceId) => {
+				await Promise.resolve();
+				instanceIds.push(instanceId);
+			},
+		});
+		const coldLookup = createLiveColdLookup({ resolveIngest: () => ingest });
+		const identity = {
+			kind: "title",
+			title: { id: "603", namespace: "movie", service: "tmdb" },
+		} as const;
+
+		const [first, second] = await Promise.all([
+			coldLookup.begin(identity, "movie"),
+			coldLookup.begin(identity, "movie"),
+		]);
+
+		expect([first, second]).toEqual([{ kind: "updated" }, { kind: "updated" }]);
+		expect(instanceIds).toHaveLength(2);
+		expect(new Set(instanceIds).size).toBe(1);
+	});
+});
+
+describe("live movie cold lookup misses", () => {
 	it("returns unknown without writing when the catalogue rejects the id", async () => {
 		const ingest = await ingestEnv(movieDiscovery(), false);
 		const response = await runMapping("movie", "tmdb:999", {
