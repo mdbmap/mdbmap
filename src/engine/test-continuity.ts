@@ -146,6 +146,40 @@ const seedSpyXFamily = async (
 	};
 };
 
+// A minimal TMDB-only group with titles but no continuity row yet.
+const seedTmdbGroup = async (
+	db: Db,
+	namespace: "movie" | "tv",
+	tmdbId: string,
+	locators: readonly string[] = ["s1e1"],
+): Promise<{
+	readonly groupId: number;
+	readonly providerRef: `tmdb:${"movie" | "tv"}:${string}`;
+}> => {
+	const groupRows = await db
+		.insert(titleGroups)
+		.values({ source: "release" })
+		.returning()
+		.all();
+	const groupId = one(groupRows).id;
+	const unitRows = await db.insert(contentUnits).values({}).returning().all();
+	const unitId = one(unitRows).id;
+	const titleId = await insertTitle(
+		db,
+		groupId,
+		"tmdb",
+		`${namespace}:${tmdbId}`,
+		0,
+	);
+	await Promise.all(
+		locators.map(async (locator) => {
+			const spokeId = await insertSpoke(db, titleId, locator);
+			await coverUnit(db, spokeId, unitId);
+		}),
+	);
+	return { groupId, providerRef: `tmdb:${namespace}:${tmdbId}` };
+};
+
 // A minimal TMDB-only continuity: one namespaced spoke over one content unit, so
 // the adapter's film/tv routing resolves from a real group.
 const seedTmdbContinuity = async (
@@ -507,5 +541,6 @@ export {
 	seedMonogatari,
 	seedSpyXFamily,
 	seedTmdbContinuity,
+	seedTmdbGroup,
 };
 export type { SeededFranchise };

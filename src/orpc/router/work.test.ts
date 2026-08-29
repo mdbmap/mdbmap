@@ -11,6 +11,7 @@ import {
 	seedCrossGroupContinuity,
 	seedSpyXFamily,
 	seedTmdbContinuity,
+	seedTmdbGroup,
 } from "@/engine/test-continuity";
 import type { ORPCContext, SessionUser } from "@/orpc/context";
 import { defaultProviders } from "@/orpc/providers";
@@ -111,19 +112,42 @@ describe("work.get similar links", () => {
 		const workHref = `/work/${workPathId(target.continuityId)}`;
 		expect(view.ifYouLiked).toEqual([
 			similar(target.continuityId, "Seeded series"),
-			similar(target.continuityId, "Seeded film"),
-			similar(target.continuityId, "Seeded anime"),
 			similar("tmdb:tv:999", "Missing work"),
 			similar("imdb:tt999", "Unsupported work"),
 		]);
 		expect(
 			view.ifYouLiked
-				.slice(0, 3)
+				.slice(0, 1)
 				.map((item) => `/work/${workPathId(item.continuityId)}`),
-		).toEqual([workHref, workHref, workHref]);
-		for (const item of view.ifYouLiked.slice(3)) {
+		).toEqual([workHref]);
+		for (const item of view.ifYouLiked.slice(1)) {
 			expect(workPathId(item.continuityId)).toBeUndefined();
 		}
+	});
+
+	it("materialises continuity when the matched group has titles but none yet", async () => {
+		const db = await freshDb();
+		const source = await seedTmdbContinuity(db, "tv", "10");
+		const target = await seedTmdbGroup(db, "tv", "4001");
+		const providers: Providers = {
+			...defaultProviders,
+			metadata: {
+				...defaultProviders.metadata,
+				tmdb: {
+					fetchWork: () =>
+						metadataFor([similar(target.providerRef, "Unmaterialised work")]),
+				},
+			},
+		};
+
+		const view = await clientFor(db, undefined, providers).work.get({
+			continuityId: source.continuityId,
+		});
+
+		expect(view.ifYouLiked).toHaveLength(1);
+		expect(view.ifYouLiked[0]?.title).toBe("Unmaterialised work");
+		expect(view.ifYouLiked[0]?.continuityId).toMatch(/^continuity:\d+$/u);
+		expect(workPathId(view.ifYouLiked[0]?.continuityId ?? "")).toBeDefined();
 	});
 });
 

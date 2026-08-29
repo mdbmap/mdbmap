@@ -105,14 +105,18 @@ const resolveSimilar = async (
 		if (groupId === undefined) {
 			return;
 		}
-		continuityByGroup.set(
-			groupId,
-			continuityKey(await ensureGroupContinuity(db, groupId)),
-		);
+		try {
+			continuityByGroup.set(
+				groupId,
+				continuityKey(await ensureGroupContinuity(db, groupId)),
+			);
+		} catch {
+			// leave items for this group on their provider ref
+		}
 		await ensureContinuities(index + 1);
 	};
 	await ensureContinuities(0);
-	return items.map((item, index) => {
+	const resolved = items.map((item, index) => {
 		const ref = refs[index];
 		if (ref === undefined) {
 			return item;
@@ -126,6 +130,17 @@ const resolveSimilar = async (
 			return item;
 		}
 		return { ...item, continuityId: resolvedId };
+	});
+	const seenContinuity = new Set<string>();
+	return resolved.filter((item) => {
+		if (!item.continuityId.startsWith("continuity:")) {
+			return true;
+		}
+		if (seenContinuity.has(item.continuityId)) {
+			return false;
+		}
+		seenContinuity.add(item.continuityId);
+		return true;
 	});
 };
 
