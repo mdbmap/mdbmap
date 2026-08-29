@@ -616,6 +616,66 @@ describe("tmdb metadata provider", () => {
 		expect(meta.segments[2]?.label).toBe("Season 2");
 	});
 
+	it("pads empty segments when a TV series has fewer seasons than the run", async () => {
+		const shortSeriesJson = {
+			...seriesJson,
+			seasons: [
+				{ air_date: "2019-12-01", name: "Specials", season_number: 0 },
+				{ air_date: "2020-04-01", name: "Season 1", season_number: 1 },
+			],
+		};
+		const shortTvResolved: ResolveResult = {
+			continuityId: "continuity:short-tv",
+			mediaKind: "tv",
+			segments: [
+				{
+					instalments: ["tmdb:999#1"],
+					kind: "episodic",
+					members: { tmdb: SERIES_ID },
+				},
+				{
+					instalments: ["tmdb:999#2"],
+					kind: "episodic",
+					members: { tmdb: SERIES_ID },
+				},
+				{
+					instalments: ["tmdb:200#1"],
+					kind: "episodic",
+					members: { tmdb: SECOND_SERIES_ID },
+				},
+			],
+		};
+		const fetchFn = vi.fn(
+			async (input: RequestInfo | URL): Promise<Response> => {
+				await Promise.resolve();
+				const url = urlOf(input);
+				if (url.includes(`/tv/${SERIES_ID}`)) {
+					return Response.json(shortSeriesJson);
+				}
+				return responseFor(urlOf(input));
+			},
+		);
+		const { kv } = makeKv();
+		const provider = createTmdbProvider({
+			apiKey: "test-key",
+			fetchFn,
+			resolveKv: () => kv,
+		});
+
+		const meta = await provider.fetchWork(shortTvResolved);
+
+		expect(meta.segments).toHaveLength(3);
+		expect(meta.segments[0]?.label).toBe("Season 1");
+		expect(meta.segments[1]).toStrictEqual({
+			airedFrom: undefined,
+			airedTo: undefined,
+			episodes: [],
+			label: undefined,
+			year: undefined,
+		});
+		expect(meta.segments[2]?.label).toBe("Season 1");
+	});
+
 	it("spans years across a multi-movie atomic run", async () => {
 		const fetchFn = makeFetch();
 		const { kv, store } = makeKv();

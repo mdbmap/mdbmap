@@ -705,7 +705,7 @@ const createTmdbProvider = (deps: TmdbProviderDeps): MetadataProvider => {
 				coverRef: undefined,
 				ifYouLiked: [],
 				nativeTitle: undefined,
-				segments: resolved.segments.map(() => emptySegment()),
+				segments: segmentsAlignedWithResolved(resolved, [], []),
 				span: "",
 				staff: [],
 				studios: [],
