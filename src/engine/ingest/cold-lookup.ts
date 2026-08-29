@@ -159,18 +159,35 @@ const dispatchOverflow = async (input: {
 };
 
 const settleInlinePublish = async (
-	input: InlinePublishInput,
+	input: LiveIngestInput,
+	work: ColdEstimate,
 ): Promise<void> => {
 	const result = await publishInline(input);
-	if (result?.kind === "refused" && result.reason !== "unavailable-target") {
-		await writeCoverageState(
-			input.ingest.db,
-			input.continuity,
-			BASELINE_REVISION,
-			input.target.service,
-			"conflict",
-		);
+	if (result?.kind !== "refused") {
+		return;
 	}
+	if (
+		result.reason === "unavailable-target" ||
+		result.reason === "not-enumerable"
+	) {
+		return;
+	}
+	if (result.reason === "fetch-failed") {
+		await dispatchOverflow({
+			dispatcher: input.ingest.dispatcher,
+			identity: { kind: "title", title: input.anchor },
+			profile: input.profile,
+			work,
+		});
+		return;
+	}
+	await writeCoverageState(
+		input.ingest.db,
+		input.continuity,
+		BASELINE_REVISION,
+		input.target.service,
+		"conflict",
+	);
 };
 
 const seedPendingTargets = async (
@@ -202,7 +219,7 @@ const executeIngestWork = async (input: LiveIngestInput): Promise<void> => {
 			});
 			return;
 		}
-		await settleInlinePublish(input);
+		await settleInlinePublish(input, work);
 	} catch (error) {
 		await writeCoverageState(
 			input.ingest.db,

@@ -57,6 +57,7 @@ interface SingleTargetPublishInput {
 }
 
 type PublishRefusalReason =
+	| "fetch-failed"
 	| "not-enumerable"
 	| "over-budget"
 	| "unavailable-target"
@@ -304,14 +305,7 @@ const publishAlignedTarget = async (
 	});
 	if (fetched.kind === "unavailable") {
 		if (fetched.reason === "fetch-failed") {
-			await writeCoverageState(
-				db,
-				input.continuity,
-				input.revision,
-				input.targetService,
-				"conflict",
-			);
-			return { kind: "refused", reason: "unavailable-target" };
+			return { kind: "refused", reason: "fetch-failed" };
 		}
 		return endPublishAttempt(db, input, {
 			kind: "refused",
@@ -328,14 +322,7 @@ const publishAlignedTarget = async (
 	});
 	if (sharedFetched.kind !== "fetched") {
 		if (sharedFetched.reason === "fetch-failed") {
-			await writeCoverageState(
-				db,
-				input.continuity,
-				input.revision,
-				input.targetService,
-				"conflict",
-			);
-			return { kind: "refused", reason: "unavailable-target" };
+			return { kind: "refused", reason: "fetch-failed" };
 		}
 		return endPublishAttempt(db, input, {
 			kind: "refused",
