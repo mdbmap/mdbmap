@@ -12,10 +12,18 @@ import type {
 } from "./serializer.ts";
 import { serialize, toCompact } from "./serializer.ts";
 
-const gameOfThrones: TitleIdentity = { id: "1399", namespace: "tv", service: "tmdb" };
+const gameOfThrones: TitleIdentity = {
+	id: "1399",
+	namespace: "tv",
+	service: "tmdb",
+};
 const imdbTitle: TitleIdentity = { id: "tt0944947", service: "imdb" };
 
-const episode = (title: TitleIdentity, season: number, ep: number): Identity => ({
+const episode = (
+	title: TitleIdentity,
+	season: number,
+	ep: number,
+): Identity => ({
 	kind: "instalment",
 	locator: { episode: ep, season },
 	title,
@@ -38,12 +46,20 @@ const splitAnswer: InstalmentAnswer = {
 					{
 						assertionPath: [{ confidence: "high", source: "t3-episode" }],
 						confidence: "high",
-						identity: episode({ id: "1396", namespace: "tv", service: "tmdb" }, 2, 5),
+						identity: episode(
+							{ id: "1396", namespace: "tv", service: "tmdb" },
+							2,
+							5,
+						),
 					},
 					{
 						assertionPath: [{ confidence: "low", source: "t2-pattern" }],
 						confidence: "low",
-						identity: episode({ id: "1396", namespace: "tv", service: "tmdb" }, 2, 6),
+						identity: episode(
+							{ id: "1396", namespace: "tv", service: "tmdb" },
+							2,
+							6,
+						),
 					},
 				],
 				status: "matched",
@@ -103,10 +119,9 @@ const noCounterpart = (status: CompletionStatus): InstalmentAnswer => ({
 describe("split/merge instalments", () => {
 	it("serialises every counterpart spoke as an array of valid input ids", () => {
 		const link = serialize(splitAnswer).mappings.tmdb;
-		expect(link?.counterparts.map((counterpart) => counterpart.id)).toStrictEqual([
-			"tmdb:1396:2:5",
-			"tmdb:1396:2:6",
-		]);
+		expect(
+			link?.counterparts.map((counterpart) => counterpart.id),
+		).toStrictEqual(["tmdb:1396:2:5", "tmdb:1396:2:6"]);
 		for (const counterpart of link?.counterparts ?? []) {
 			expect(parseId("series", counterpart.id).ok).toBe(true);
 		}
@@ -122,7 +137,10 @@ describe("split/merge instalments", () => {
 describe("ADR canonical mapping", () => {
 	// tmdb:603 -> tt0133093 at exact confidence, from ADR-0001's response example.
 	const matrix: InstalmentAnswer = {
-		input: { kind: "title", title: { id: "603", namespace: "movie", service: "tmdb" } },
+		input: {
+			kind: "title",
+			title: { id: "603", namespace: "movie", service: "tmdb" },
+		},
 		kind: "instalment",
 		links: new Map<Service, ResolvedLink>([
 			[
@@ -132,7 +150,10 @@ describe("ADR canonical mapping", () => {
 						{
 							assertionPath: [{ confidence: "high", source: "community" }],
 							confidence: "exact",
-							identity: { kind: "title", title: { id: "tt0133093", service: "imdb" } },
+							identity: {
+								kind: "title",
+								title: { id: "tt0133093", service: "imdb" },
+							},
 						},
 					],
 					status: "matched",
@@ -146,7 +167,9 @@ describe("ADR canonical mapping", () => {
 		expect(response.input).toBe("tmdb:603");
 		const link = response.mappings.imdb;
 		expectMatched(link);
-		expect(link.counterparts.map((counterpart) => counterpart.id)).toStrictEqual(["tt0133093"]);
+		expect(
+			link.counterparts.map((counterpart) => counterpart.id),
+		).toStrictEqual(["tt0133093"]);
 		expect(link.confidence).toBe("exact");
 	});
 
@@ -171,8 +194,15 @@ describe("supporting instalment", () => {
 						{
 							assertionPath: [{ confidence: "high", source: "manual" }],
 							confidence: "high",
-							identity: { kind: "title", title: { id: "603", namespace: "movie", service: "tmdb" } },
-							supportingInstalment: episode({ id: "1400", service: "anilist" }, 1, 2),
+							identity: {
+								kind: "title",
+								title: { id: "603", namespace: "movie", service: "tmdb" },
+							},
+							supportingInstalment: episode(
+								{ id: "1400", service: "anilist" },
+								1,
+								2,
+							),
 						},
 					],
 					status: "matched",
@@ -220,7 +250,9 @@ describe("unrepresentable counterpart", () => {
 	it("keeps formattable spokes and surfaces the bad one as a link error", () => {
 		const link = serialize(mixed).mappings.anilist;
 		expectMatched(link);
-		expect(link.counterparts.map((counterpart) => counterpart.id)).toStrictEqual(["anilist:1400:3"]);
+		expect(
+			link.counterparts.map((counterpart) => counterpart.id),
+		).toStrictEqual(["anilist:1400:3"]);
 		expect(link.errors).toHaveLength(1);
 		expect(link.errors[0]?.reason).toContain("season 2");
 	});
@@ -256,7 +288,9 @@ describe("request-side instalment guard", () => {
 			},
 			{
 				input: episode(flatTitle, 2, 4),
-				links: new Map<Service, ResolvedLink>([["imdb", { status: "unmatched" }]]),
+				links: new Map<Service, ResolvedLink>([
+					["imdb", { status: "unmatched" }],
+				]),
 				source: "release",
 			},
 		],
@@ -280,9 +314,9 @@ describe("request-side instalment guard", () => {
 
 	it("skips the unrepresentable instalment and keeps the rest of the response", () => {
 		const response = serialize(answer);
-		expect(response.instalments?.map((instalment) => instalment.input)).toStrictEqual([
-			"anilist:1400:1",
-		]);
+		expect(
+			response.instalments?.map((instalment) => instalment.input),
+		).toStrictEqual(["anilist:1400:1"]);
 		expect(response.instalmentErrors).toHaveLength(1);
 		expect(response.instalmentErrors?.[0]?.reason).toContain("season 2");
 		expect(response.instalmentErrors?.[0]?.source).toBe("release");
@@ -291,12 +325,22 @@ describe("request-side instalment guard", () => {
 });
 
 describe("title vs instalment level", () => {
+	it("includes a known continuity id", () => {
+		expect(serialize(splitAnswer, { continuityId: 42 }).continuityId).toBe(42);
+	});
+
+	it("omits an unknown continuity id", () => {
+		expect("continuityId" in serialize(splitAnswer)).toBe(false);
+	});
+
 	it("a title-level answer carries its instalments array", () => {
 		const response = serialize(titleAnswer);
-		expect(response.instalments?.map((instalment) => instalment.input)).toStrictEqual([
-			"tmdb:1399:1:1",
-		]);
-		expect(response.instalments?.[0]?.mappings.imdb?.counterparts[0]?.id).toBe("tt0944947:1:1");
+		expect(
+			response.instalments?.map((instalment) => instalment.input),
+		).toStrictEqual(["tmdb:1399:1:1"]);
+		expect(response.instalments?.[0]?.mappings.imdb?.counterparts[0]?.id).toBe(
+			"tt0944947:1:1",
+		);
 	});
 
 	it("an instalment-level answer omits the instalments array", () => {
@@ -327,7 +371,11 @@ describe("source precedence", () => {
 									{ confidence: "high", source: "community" },
 								],
 								confidence: "high",
-								identity: episode({ id: "1396", namespace: "tv", service: "tmdb" }, 1, 1),
+								identity: episode(
+									{ id: "1396", namespace: "tv", service: "tmdb" },
+									1,
+									1,
+								),
 							},
 						],
 						status: "matched",
@@ -349,19 +397,27 @@ describe("no-counterpart status", () => {
 	});
 
 	it("is unmatched when the ladder is incomplete", () => {
-		expect(serialize(noCounterpart("unmatched")).mappings.tmdb?.status).toBe("unmatched");
+		expect(serialize(noCounterpart("unmatched")).mappings.tmdb?.status).toBe(
+			"unmatched",
+		);
 	});
 
 	it("surfaces pending and conflict targets", () => {
-		expect(serialize(noCounterpart("pending")).mappings.tmdb?.status).toBe("pending");
-		expect(serialize(noCounterpart("conflict")).mappings.tmdb?.status).toBe("conflict");
+		expect(serialize(noCounterpart("pending")).mappings.tmdb?.status).toBe(
+			"pending",
+		);
+		expect(serialize(noCounterpart("conflict")).mappings.tmdb?.status).toBe(
+			"conflict",
+		);
 	});
 });
 
 describe("compact legacy shape", () => {
 	it("strips evidence to bare counterpart ids", () => {
 		const compact = toCompact(serialize(splitAnswer));
-		expect(compact.mappings).toStrictEqual({ tmdb: ["tmdb:1396:2:5", "tmdb:1396:2:6"] });
+		expect(compact.mappings).toStrictEqual({
+			tmdb: ["tmdb:1396:2:5", "tmdb:1396:2:6"],
+		});
 		expect(compact.confidence).toBe("high");
 		expect(compact.status).toBe("matched");
 		expect(compact.source).toBe("t3-episode");
@@ -386,7 +442,10 @@ describe("compact legacy shape", () => {
 							{
 								assertionPath: [{ confidence: "high", source: "community" }],
 								confidence: "exact",
-								identity: { kind: "title", title: { id: "603", namespace: "movie", service: "tmdb" } },
+								identity: {
+									kind: "title",
+									title: { id: "603", namespace: "movie", service: "tmdb" },
+								},
 							},
 						],
 						status: "matched",
