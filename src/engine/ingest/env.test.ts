@@ -52,6 +52,9 @@ describe("createIngestEnvFromSource", () => {
 			{ ...env, PROVIDER_CONFIG_MASTER_KEY: masterKey },
 			{},
 			{ db: await freshDb() },
+			(task) => {
+				void task;
+			},
 		);
 
 		expect(ingest.afterPublish?.research?.deps.masterKey).toBe(masterKey);
