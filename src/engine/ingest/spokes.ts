@@ -1,6 +1,7 @@
 import { and, eq } from "drizzle-orm";
 
 import type { Db } from "@/db";
+import type { InstalmentLocatorKind } from "@/db/engine-schema";
 import { serviceInstalments, serviceTitles } from "@/db/engine-schema";
 import type { InstalmentLocator } from "@/db/schema";
 import type {
@@ -9,6 +10,9 @@ import type {
 } from "@/engine/discovery/structural.ts";
 import type { PublishedAlignment } from "@/engine/matcher";
 import type { FreshPairing } from "@/engine/recompute/recompute.ts";
+
+const locatorKindFor = (locator: InstalmentLocator): InstalmentLocatorKind =>
+	/^s\d+e\d+/u.test(locator) ? "position" : "service-id";
 
 const findTitleId = async (
 	db: Db,
@@ -61,6 +65,18 @@ const ensureTitle = async (
 	return raced;
 };
 
+const setTitleOrdinal = async (
+	db: Db,
+	titleId: number,
+	ordinal: number,
+): Promise<void> => {
+	await db
+		.update(serviceTitles)
+		.set({ ordinal })
+		.where(eq(serviceTitles.id, titleId))
+		.run();
+};
+
 const spokeIdFor = async (
 	db: Db,
 	titleId: number,
@@ -90,10 +106,15 @@ const ensureSpokes = async (
 				.insert(serviceInstalments)
 				.values({
 					locator: instalment.locator,
-					locatorKind: "position",
+					locatorKind: locatorKindFor(instalment.locator),
 					titleId,
 				})
-				.onConflictDoNothing()
+				.onConflictDoUpdate({
+					set: {
+						locatorKind: locatorKindFor(instalment.locator),
+					},
+					target: [serviceInstalments.titleId, serviceInstalments.locator],
+				})
 				.run();
 		}),
 	);
@@ -133,4 +154,10 @@ const pairingsFromAlignment = async (
 	return nested.flat();
 };
 
-export { ensureSpokes, ensureTitle, pairingsFromAlignment };
+export {
+	ensureSpokes,
+	ensureTitle,
+	pairingsFromAlignment,
+	setTitleOrdinal,
+	spokeIdFor,
+};

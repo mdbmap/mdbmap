@@ -26,10 +26,12 @@ import type { TierId } from "@/engine/matcher";
 const algorithmicSources: ReadonlySet<AssertionSource> =
 	new Set<AssertionSource>(tierIds);
 
+const scaffoldingSources: ReadonlySet<AssertionSource> = new Set(["bootstrap"]);
+
 // Every provenance the deterministic matcher does not itself produce. A recompute
 // re-derives the algorithmic links and merges around these (ADR-0002).
 const isCuratedSource = (source: AssertionSource): boolean =>
-	!algorithmicSources.has(source);
+	!algorithmicSources.has(source) && !scaffoldingSources.has(source);
 
 // One fresh pairing the matcher re-derived: the spokes that cover a single shared
 // content unit, with the tier and grade that placed them. A regular pairing names
@@ -143,7 +145,9 @@ const readGroupState = async (
 					.where(inArray(instalmentAssertions.instalmentId, spokeIds))
 					.all();
 	const curated = assertions.filter((row) => isCuratedSource(row.source));
-	const algorithmic = assertions.filter((row) => !isCuratedSource(row.source));
+	const algorithmic = assertions.filter((row) =>
+		algorithmicSources.has(row.source),
+	);
 	const coveredUnitIds = [...new Set(assertions.map((row) => row.unitId))];
 	const absences =
 		coveredUnitIds.length === 0
@@ -158,7 +162,11 @@ const readGroupState = async (
 		.map((row) => row.id)
 		.toSorted(ascending);
 	return {
-		curatedSpokeIds: new Set(curated.map((row) => row.instalmentId)),
+		curatedSpokeIds: new Set(
+			curated
+				.filter((row) => row.source !== "bootstrap")
+				.map((row) => row.instalmentId),
+		),
 		precondition: {
 			algorithmicAssertionIds: algorithmic
 				.map((row) => row.id)
@@ -256,7 +264,7 @@ const commitRecompute = async (
 						SELECT count(*) FROM instalment_assertions AS assertions
 						JOIN service_instalments AS instalments ON instalments.id = assertions.instalment_id
 						JOIN service_titles AS titles ON titles.id = instalments.title_id
-						WHERE titles.group_id = groups.id AND assertions.source NOT IN (${sources})
+						WHERE titles.group_id = groups.id AND assertions.source NOT IN (${sources}) AND assertions.source <> 'bootstrap'
 					) = json_array_length(?)
 					AND NOT EXISTS (
 						SELECT 1 FROM json_each(?) AS expected
@@ -265,7 +273,7 @@ const commitRecompute = async (
 							JOIN service_instalments AS instalments ON instalments.id = assertions.instalment_id
 							JOIN service_titles AS titles ON titles.id = instalments.title_id
 							WHERE titles.group_id = groups.id AND assertions.id = expected.value
-							AND assertions.source NOT IN (${sources})
+							AND assertions.source NOT IN (${sources}) AND assertions.source <> 'bootstrap'
 						)
 					)
 					AND (

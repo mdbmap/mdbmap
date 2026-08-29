@@ -4,6 +4,13 @@ const anime = (
 	id: string,
 	externalIds: SimklExternalIds,
 	relations: readonly SimklRelation[],
-): SimklEntry => ({ externalIds, id, relations, title: id, type: "anime" });
+): SimklEntry => ({
+	externalIds,
+	firstAirDate: undefined,
+	id,
+	relations,
+	title: id,
+	type: "anime",
+});
 
 export { anime };

@@ -10,6 +10,7 @@ import {
 	groupCoverageKey,
 	reconcileCoveragesAfterMerge,
 	seedPendingCoverage,
+	writeCoverageState,
 } from "./coverage.ts";
 
 const continuity = groupCoverageKey(42);
@@ -33,6 +34,15 @@ describe("overflow coverage", () => {
 		expect(await db.select().from(serviceCoverages).all()).toHaveLength(1);
 		expect(await coverageStateFor(db, continuity, revision, "mal")).toBe(
 			"complete",
+		);
+	});
+
+	it("flips a seeded service to open atomically", async () => {
+		const db = await freshDb();
+		await seedPendingCoverage(db, continuity, revision, "mal");
+		await writeCoverageState(db, continuity, revision, "mal", "open");
+		expect(await coverageStateFor(db, continuity, revision, "mal")).toBe(
+			"open",
 		);
 	});
 

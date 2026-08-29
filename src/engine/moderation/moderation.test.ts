@@ -38,7 +38,11 @@ const makeGroup = async (
 	db: GatewayDb,
 	source = "t1-structure" as const,
 ): Promise<number> => {
-	const rows = await db.insert(titleGroups).values({ source }).returning().all();
+	const rows = await db
+		.insert(titleGroups)
+		.values({ source })
+		.returning()
+		.all();
 	return first(rows).id;
 };
 
@@ -75,9 +79,16 @@ const makeUnit = async (db: GatewayDb): Promise<string> => {
 	return first(rows).id;
 };
 
-const groupSourceOf = async (db: GatewayDb, groupId: number): Promise<string> => {
+const groupSourceOf = async (
+	db: GatewayDb,
+	groupId: number,
+): Promise<string> => {
 	const group = first(
-		await db.select().from(titleGroups).where(eq(titleGroups.id, groupId)).all(),
+		await db
+			.select()
+			.from(titleGroups)
+			.where(eq(titleGroups.id, groupId))
+			.all(),
 	);
 	return group.source;
 };
@@ -97,8 +108,16 @@ describe("moderation queue", () => {
 		const evidence: CandidateEvidence = {
 			instalmentId: spokeId,
 			kind: "instalment-assertion-conflict",
-			proposed: { confidence: "high", source: "t3-episode", unitId: proposedUnit },
-			published: { confidence: "high", source: "t1-structure", unitId: publishedUnit },
+			proposed: {
+				confidence: "high",
+				source: "t3-episode",
+				unitId: proposedUnit,
+			},
+			published: {
+				confidence: "high",
+				source: "t1-structure",
+				unitId: publishedUnit,
+			},
 		};
 		const queued = await queueAssertionConflict(db, { evidence, subject });
 		expect(queued.kind).toBe("queued");
@@ -127,13 +146,22 @@ describe("moderation queue", () => {
 		const groupId = await makeGroup(db, "t1-structure");
 		const subjectTitleId = await makeTitle(db, groupId, "tmdb", "1396");
 
-		const subject: CandidateSubject = { subjectType: "title", titleId: subjectTitleId };
+		const subject: CandidateSubject = {
+			subjectType: "title",
+			titleId: subjectTitleId,
+		};
 		const evidence: CandidateEvidence = {
 			alsoConsidered: [],
 			kind: "fuzzy-group",
 			overCap: [],
 			proposedMembers: [
-				{ score: 0.95, service: "imdb", serviceId: "tt0903747", title: "Breaking Bad", year: 2008 },
+				{
+					score: 0.95,
+					service: "imdb",
+					serviceId: "tt0903747",
+					title: "Breaking Bad",
+					year: 2008,
+				},
 			],
 			queries: [{ service: "imdb", title: "Breaking Bad", year: 2008 }],
 		};
@@ -162,7 +190,13 @@ describe("moderation queue", () => {
 		expect(attached).toHaveLength(1);
 		expect(first(attached).groupId).toBe(groupId);
 
-		const group = first(await db.select().from(titleGroups).where(eq(titleGroups.id, groupId)).all());
+		const group = first(
+			await db
+				.select()
+				.from(titleGroups)
+				.where(eq(titleGroups.id, groupId))
+				.all(),
+		);
 		expect(group.source).toBe("manual");
 		expect(await openRows(db)).toHaveLength(0);
 	});
@@ -176,7 +210,10 @@ describe("moderation queue", () => {
 		const survivor = Math.min(groupA, groupB);
 		const retired = Math.max(groupA, groupB);
 
-		const subject: CandidateSubject = { subjectType: "title", titleId: Math.min(titleA, titleB) };
+		const subject: CandidateSubject = {
+			subjectType: "title",
+			titleId: Math.min(titleA, titleB),
+		};
 		const evidence: CandidateEvidence = {
 			competingGroupIds: [groupA, groupB],
 			kind: "structural",
@@ -222,7 +259,12 @@ describe("moderation queue", () => {
 		const assertionId = first(
 			await db
 				.insert(instalmentAssertions)
-				.values({ confidence: "low", instalmentId: spokeId, source: "t3-episode", unitId })
+				.values({
+					confidence: "low",
+					instalmentId: spokeId,
+					source: "t3-episode",
+					unitId,
+				})
 				.returning()
 				.all(),
 		).id;
@@ -304,15 +346,25 @@ describe("moderation queue", () => {
 		const spokeId = await makeSpoke(db, titleId, "1:1");
 		const manualUnit = await makeUnit(db);
 		const competingUnit = await makeUnit(db);
-		await db.insert(instalmentAssertions)
-			.values({ confidence: "high", instalmentId: spokeId, source: "manual", unitId: manualUnit })
+		await db
+			.insert(instalmentAssertions)
+			.values({
+				confidence: "high",
+				instalmentId: spokeId,
+				source: "manual",
+				unitId: manualUnit,
+			})
 			.run();
 
 		const subject: CandidateSubject = { subjectType: "title", titleId };
 		const evidence: CandidateEvidence = {
 			instalmentId: spokeId,
 			kind: "instalment-assertion-conflict",
-			proposed: { confidence: "high", source: "t3-episode", unitId: competingUnit },
+			proposed: {
+				confidence: "high",
+				source: "t3-episode",
+				unitId: competingUnit,
+			},
 			published: { confidence: "high", source: "manual", unitId: manualUnit },
 		};
 		const outcome = await queueAssertionConflict(db, { evidence, subject });
@@ -320,6 +372,54 @@ describe("moderation queue", () => {
 		expect(await openRows(db)).toHaveLength(0);
 		const status = await publicationStatus(db, groupId);
 		expect(status.blocked).toBe(false);
+	});
+
+	it("settles an instalment conflict by publishing both sides onto the proposed unit", async () => {
+		const db = await freshDb();
+		const groupId = await makeGroup(db);
+		const titleId = await makeTitle(db, groupId, "tmdb", "1396");
+		const counterpartTitleId = await makeTitle(
+			db,
+			groupId,
+			"imdb",
+			"tt0903747",
+			1,
+		);
+		const spokeId = await makeSpoke(db, titleId, "1:1");
+		const counterpartSpokeId = await makeSpoke(db, counterpartTitleId, "1:1");
+		const proposedUnit = await makeUnit(db);
+
+		const subject: CandidateSubject = { subjectType: "title", titleId };
+		const evidence: CandidateEvidence = {
+			counterpartInstalmentId: counterpartSpokeId,
+			instalmentId: spokeId,
+			kind: "instalment-assertion-conflict",
+			proposed: {
+				confidence: "low",
+				source: "t3-episode",
+				unitId: proposedUnit,
+			},
+			published: {
+				confidence: "high",
+				source: "t1-structure",
+				unitId: await makeUnit(db),
+			},
+		};
+		const queued = await queueAssertionConflict(db, { evidence, subject });
+		const candidateId = queued.candidateId ?? 0;
+
+		const settled = await settleConflict(db, { accept: true, candidateId });
+		expect(settled.kind).toBe("settled");
+		const links = await db.select().from(instalmentAssertions).all();
+		expect(
+			links.filter(
+				(link) => link.source === "manual" && link.unitId === proposedUnit,
+			),
+		).toHaveLength(2);
+		expect(new Set(links.map((link) => link.instalmentId))).toEqual(
+			new Set([spokeId, counterpartSpokeId]),
+		);
+		expect(await openRows(db)).toHaveLength(0);
 	});
 
 	it("settles an instalment conflict by publishing the proposed side as manual", async () => {
@@ -333,8 +433,16 @@ describe("moderation queue", () => {
 		const evidence: CandidateEvidence = {
 			instalmentId: spokeId,
 			kind: "instalment-assertion-conflict",
-			proposed: { confidence: "high", source: "t3-episode", unitId: proposedUnit },
-			published: { confidence: "high", source: "t1-structure", unitId: await makeUnit(db) },
+			proposed: {
+				confidence: "high",
+				source: "t3-episode",
+				unitId: proposedUnit,
+			},
+			published: {
+				confidence: "high",
+				source: "t1-structure",
+				unitId: await makeUnit(db),
+			},
 		};
 		const queued = await queueAssertionConflict(db, { evidence, subject });
 		const candidateId = queued.candidateId ?? 0;
@@ -346,7 +454,11 @@ describe("moderation queue", () => {
 			.from(instalmentAssertions)
 			.where(eq(instalmentAssertions.instalmentId, spokeId))
 			.all();
-		expect(links.some((link) => link.source === "manual" && link.unitId === proposedUnit)).toBe(true);
+		expect(
+			links.some(
+				(link) => link.source === "manual" && link.unitId === proposedUnit,
+			),
+		).toBe(true);
 		expect(await openRows(db)).toHaveLength(0);
 	});
 
@@ -358,16 +470,30 @@ describe("moderation queue", () => {
 		const proposedUnit = await makeUnit(db);
 		// A non-manual assertion already occupies the proposed edge, so the accept
 		// insert collides on instalment_assertions_instalment_unit_idx.
-		await db.insert(instalmentAssertions)
-			.values({ confidence: "high", instalmentId: spokeId, source: "t3-episode", unitId: proposedUnit })
+		await db
+			.insert(instalmentAssertions)
+			.values({
+				confidence: "high",
+				instalmentId: spokeId,
+				source: "t3-episode",
+				unitId: proposedUnit,
+			})
 			.run();
 
 		const subject: CandidateSubject = { subjectType: "title", titleId };
 		const evidence: CandidateEvidence = {
 			instalmentId: spokeId,
 			kind: "instalment-assertion-conflict",
-			proposed: { confidence: "high", source: "t3-episode", unitId: proposedUnit },
-			published: { confidence: "high", source: "t1-structure", unitId: await makeUnit(db) },
+			proposed: {
+				confidence: "high",
+				source: "t3-episode",
+				unitId: proposedUnit,
+			},
+			published: {
+				confidence: "high",
+				source: "t1-structure",
+				unitId: await makeUnit(db),
+			},
 		};
 		const queued = await queueAssertionConflict(db, { evidence, subject });
 		const candidateId = queued.candidateId ?? 0;
@@ -385,7 +511,9 @@ describe("moderation queue", () => {
 		const spokeA = await makeSpoke(db, titleA, "1:1");
 		const spokeB = await makeSpoke(db, titleB, "1:1");
 
-		const outcome = await manualPairing(db, { instalmentIds: [spokeA, spokeB] });
+		const outcome = await manualPairing(db, {
+			instalmentIds: [spokeA, spokeB],
+		});
 		expect(outcome.kind).toBe("paired");
 		const links = await db.select().from(instalmentAssertions).all();
 		expect(links).toHaveLength(2);

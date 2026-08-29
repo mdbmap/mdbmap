@@ -1,3 +1,4 @@
+import type { AssertionConfidence } from "@/db/columns";
 import type { InstalmentLocator } from "@/db/schema";
 
 import type { InstalmentStream } from "./instalment.ts";
@@ -8,6 +9,7 @@ type NonEmptyArray<Element> = readonly [Element, ...(readonly Element[])];
 // shared content unit. A regular 1:1 link is `[a]`/`[b]`; a merge is several on
 // one side, a split several on the other.
 interface CandidatePairing {
+	readonly confidence?: AssertionConfidence;
 	readonly left: NonEmptyArray<InstalmentLocator>;
 	readonly right: NonEmptyArray<InstalmentLocator>;
 }
@@ -79,10 +81,14 @@ const touchesMainSequence = (
 	pairing.right.some((locator) => rightIndex.regular.has(locator));
 
 interface Crossing {
+	readonly confidence: AssertionConfidence;
 	readonly earlier: CandidatePairing;
 	readonly later: CandidatePairing;
 	readonly side: "left" | "right";
 }
+
+const pairingConfidence = (pairing: CandidatePairing): AssertionConfidence =>
+	pairing.confidence ?? "high";
 
 type MonotonicVerdict =
 	| { readonly crossings: readonly Crossing[]; readonly ok: false }
@@ -130,6 +136,7 @@ const collectCrossing = (
 
 	if (leftOrder === "overlap") {
 		crossings.push({
+			confidence: pairingConfidence(second.pairing),
 			earlier: first.pairing,
 			later: second.pairing,
 			side: "left",
@@ -137,6 +144,7 @@ const collectCrossing = (
 	}
 	if (rightOrder === "overlap") {
 		crossings.push({
+			confidence: pairingConfidence(second.pairing),
 			earlier: first.pairing,
 			later: second.pairing,
 			side: "right",
@@ -153,7 +161,12 @@ const collectCrossing = (
 			leftOrder === "before"
 				? [first.pairing, second.pairing]
 				: [second.pairing, first.pairing];
-		crossings.push({ earlier, later, side: "right" });
+		crossings.push({
+			confidence: pairingConfidence(later),
+			earlier,
+			later,
+			side: "right",
+		});
 	}
 };
 

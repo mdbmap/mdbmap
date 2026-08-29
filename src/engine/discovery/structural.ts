@@ -2,11 +2,12 @@ import type { Promisable } from "type-fest";
 
 import type { AssertionConfidence } from "@/db/columns";
 import type { InstalmentLocator } from "@/db/schema";
+import { isNotEnumerableServiceError } from "@/engine/ingest/not-enumerable.ts";
 import { createBudget, createTier3, runLadder } from "@/engine/matcher";
 import type {
 	FactsByLocator,
-	InstalmentFacts,
 	InstalmentStream,
+	InstalmentFacts,
 	LadderResult,
 	Tier,
 	TierId,
@@ -302,24 +303,62 @@ interface EnumerateInput {
 
 // Fetch the shared title and every member once, charging each fetch to the one
 // shared budget, and refuse before any fetch when the group will not fit.
+type EnumerateOutcome =
+	| { readonly enumeration: Enumeration; readonly kind: "enumerated" }
+	| { readonly kind: "not-enumerable" }
+	| { readonly kind: "over-budget" };
+
+const enumerateOne = async (
+	clients: DiscoveryClients,
+	title: ServiceRef,
+): Promise<EnumeratedTitle | "not-enumerable"> => {
+	try {
+		return await clients.instalments.enumerate(title);
+	} catch (error) {
+		if (!isNotEnumerableServiceError(error)) {
+			throw error;
+		}
+		return "not-enumerable";
+	}
+};
+
 const enumerateGroup = async (
 	input: EnumerateInput,
-): Promise<Enumeration | undefined> => {
+): Promise<EnumerateOutcome> => {
 	const budget = createBudget(input.budget);
 	if (!budget.spend(input.members.length + 1)) {
-		return undefined;
+		return { kind: "over-budget" };
 	}
 	const [shared, members] = await Promise.all([
-		input.clients.instalments.enumerate(input.shared),
+		enumerateOne(input.clients, input.shared),
 		Promise.all(
-			input.members.map(async (target) => ({
-				enumerated: await input.clients.instalments.enumerate(target.ref),
-				ordinal: target.ordinal,
-				ref: target.ref,
-			})),
+			input.members.map(async (target) => {
+				const enumerated = await enumerateOne(input.clients, target.ref);
+				if (enumerated === "not-enumerable") {
+					return "not-enumerable" as const;
+				}
+				return {
+					enumerated,
+					ordinal: target.ordinal,
+					ref: target.ref,
+				};
+			}),
 		),
 	]);
-	return { members, shared };
+	if (shared === "not-enumerable") {
+		return { kind: "not-enumerable" };
+	}
+	const enumeratedMembers: EnumeratedMember[] = [];
+	for (const member of members) {
+		if (member === "not-enumerable") {
+			return { kind: "not-enumerable" };
+		}
+		enumeratedMembers.push(member);
+	}
+	return {
+		enumeration: { members: enumeratedMembers, shared },
+		kind: "enumerated",
+	};
 };
 
 type MapResult =
@@ -373,10 +412,13 @@ const discoverStructuralGroup = async (
 		members: ordered.members,
 		shared: input.shared,
 	});
-	if (enumeration === undefined) {
+	if (enumeration.kind === "over-budget") {
 		return { kind: "refused", reason: "over-budget" };
 	}
-	const mapped = mapMembers(enumeration);
+	if (enumeration.kind === "not-enumerable") {
+		return { kind: "refused", reason: "unmappable-member" };
+	}
+	const mapped = mapMembers(enumeration.enumeration);
 	if (mapped.kind === "unmappable") {
 		return { kind: "refused", reason: "unmappable-member" };
 	}

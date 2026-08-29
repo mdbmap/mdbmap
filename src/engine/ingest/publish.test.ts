@@ -13,10 +13,12 @@ import { locator, regular, streamOf } from "@/engine/matcher/test-fixtures.ts";
 import {
 	coverageStateFor,
 	groupCoverageKey,
+	seedPendingCoverage,
 } from "@/engine/overflow/coverage.ts";
 
 import { bootstrapFromIdentity } from "./bootstrap.ts";
-import { runSingleTargetPublish } from "./publish.ts";
+import { fetchTargetStream } from "./phases.ts";
+import { finishPublish, runSingleTargetPublish } from "./publish.ts";
 
 const knownMal = { id: "50265", service: "mal" as const };
 const knownIdentity = { kind: "title" as const, title: knownMal };
@@ -126,7 +128,7 @@ describe("runSingleTargetPublish", () => {
 		}
 	});
 
-	it("marks a target with no discovered counterpart as known-no-counterpart", async () => {
+	it("marks coverage complete when the target has no discovered counterpart", async () => {
 		const db = await freshDb();
 		const bootstrapped = await bootstrapFromIdentity(db, knownIdentity);
 		if (bootstrapped.kind !== "bootstrapped") {
@@ -147,18 +149,21 @@ describe("runSingleTargetPublish", () => {
 			anchor: knownMal,
 			clients: { discovery: isolatedClients },
 			group: bootstrapped.group,
-			targetService: "imdb",
+			targetService: "anilist",
 		});
 
-		expect(result.kind).toBe("published");
-
-		const graph = await readGraph(db, knownIdentity);
-		if (!graph.found) {
-			throw new Error("expected graph read after publish");
-		}
-		expect(graph.answer.links.get("imdb")).toEqual({
-			status: "known-no-counterpart",
+		expect(result).toEqual({
+			kind: "refused",
+			reason: "unavailable-target",
 		});
+
+		const coverage = await coverageStateFor(
+			db,
+			groupCoverageKey(bootstrapped.group.groupId),
+			1,
+			"anilist",
+		);
+		expect(coverage).toBe("complete");
 	});
 
 	it("is idempotent when publish is retried", async () => {
@@ -179,5 +184,87 @@ describe("runSingleTargetPublish", () => {
 
 		expect(first).toEqual(second);
 		expect(await db.select().from(serviceCoverages).all()).toHaveLength(1);
+	});
+
+	it("marks coverage open when the published ladder still has pending tails", async () => {
+		const db = await freshDb();
+		const bootstrapped = await bootstrapFromIdentity(db, knownIdentity);
+		if (bootstrapped.kind !== "bootstrapped") {
+			throw new Error(`expected bootstrapped, got ${bootstrapped.kind}`);
+		}
+		const continuity = groupCoverageKey(bootstrapped.group.groupId);
+		await seedPendingCoverage(db, continuity, 1, "anilist");
+
+		const result = await finishPublish(db, {
+			continuity,
+			groupId: bootstrapped.group.groupId,
+			ladderComplete: false,
+			revision: 1,
+			targetService: "anilist",
+		});
+
+		expect(result).toEqual({
+			groupId: bootstrapped.group.groupId,
+			kind: "published",
+		});
+		expect(await coverageStateFor(db, continuity, 1, "anilist")).toBe("open");
+	});
+
+	it("refuses without coverage when the target is not enumerable", async () => {
+		const db = await freshDb();
+		const bootstrapped = await bootstrapFromIdentity(db, knownIdentity);
+		if (bootstrapped.kind !== "bootstrapped") {
+			throw new Error(`expected bootstrapped, got ${bootstrapped.kind}`);
+		}
+
+		const result = await runSingleTargetPublish(db, {
+			anchor: knownMal,
+			clients: { discovery: publishClients() },
+			group: bootstrapped.group,
+			targetService: "tmdb",
+		});
+
+		expect(result).toEqual({
+			kind: "refused",
+			reason: "not-enumerable",
+		});
+		const coverage = await coverageStateFor(
+			db,
+			groupCoverageKey(bootstrapped.group.groupId),
+			1,
+			"tmdb",
+		);
+		expect(coverage).toBeUndefined();
+	});
+});
+
+describe("fetchTargetStream", () => {
+	it("treats non-enumerable services as unavailable", async () => {
+		const { NotEnumerableServiceError } = await import("./not-enumerable.ts");
+		const outcome = await fetchTargetStream({
+			clients: {
+				externalIds: {
+					describe: async () => {
+						await Promise.resolve();
+						return { externalIds: [], firstAirDate: undefined };
+					},
+				},
+				find: {
+					find: async () => {
+						await Promise.resolve();
+						return [];
+					},
+				},
+				instalments: {
+					enumerate: async (title) => {
+						await Promise.resolve();
+						throw new NotEnumerableServiceError(title.service);
+					},
+				},
+			},
+			target: { service: "tmdb", serviceId: "123" },
+		});
+
+		expect(outcome).toEqual({ kind: "unavailable", reason: "not-enumerable" });
 	});
 });

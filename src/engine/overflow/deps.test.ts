@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { freshDb } from "@/db/test-helpers";
 import type {
@@ -15,8 +15,13 @@ import {
 } from "@/engine/overflow/coverage.ts";
 
 import { runOverflowBuild } from "./build.ts";
+import type { DurableStep } from "./build.ts";
 import { createBuildDeps } from "./deps.ts";
 import type { BuildPayload } from "./work.ts";
+
+afterEach(() => {
+	vi.restoreAllMocks();
+});
 
 const knownMal = { id: "50265", service: "mal" as const };
 const knownIdentity = { kind: "title" as const, title: knownMal };
@@ -84,6 +89,19 @@ const publishClients = (): DiscoveryClients => ({
 	},
 });
 
+const recordingStep: DurableStep = {
+	do: async (_name, _policy, run) => run(),
+};
+
+const expectOverflowPending = async (
+	work: BuildPayload["work"],
+	deps: ReturnType<typeof createBuildDeps>,
+): Promise<void> => {
+	await expect(runOverflowBuild(work, deps, recordingStep)).rejects.toThrow(
+		"coverage pending",
+	);
+};
+
 describe("createBuildDeps", () => {
 	it("runs all five durable steps and marks coverage complete for one target", async () => {
 		const db = await freshDb();
@@ -111,9 +129,7 @@ describe("createBuildDeps", () => {
 			payload,
 		);
 
-		const outcome = await runOverflowBuild(payload.work, deps, {
-			do: async (_name, _policy, run) => run(),
-		});
+		const outcome = await runOverflowBuild(payload.work, deps, recordingStep);
 
 		expect(outcome).toEqual({ targetService: "anilist" });
 		const coverage = await coverageStateFor(
@@ -123,5 +139,126 @@ describe("createBuildDeps", () => {
 			"anilist",
 		);
 		expect(coverage).toBe("complete");
+	});
+});
+
+describe("createBuildDeps review regressions", () => {
+	it("falls back to direct discovery when structural discovery override is absent", async () => {
+		const structuralModule =
+			await import("@/engine/ingest/structural-discovery.ts");
+		vi.spyOn(
+			structuralModule,
+			"buildStructuralDiscoveryClients",
+		).mockReturnValue(publishClients());
+		const db = await freshDb();
+		const bootstrapped = await bootstrapFromIdentity(db, knownIdentity);
+		if (bootstrapped.kind !== "bootstrapped") {
+			throw new Error(`expected bootstrapped, got ${bootstrapped.kind}`);
+		}
+		const payload: BuildPayload = {
+			identity: knownIdentity,
+			profile: "anime",
+			work: {
+				baselineRevision: 1,
+				continuity: groupCoverageKey(bootstrapped.group.groupId),
+				targetService: "anilist",
+			},
+		};
+		const deps = createBuildDeps(
+			{
+				catalogue: { simkl: undefined, verification: {} },
+				db,
+				dispatcher: undefined,
+				structuralDiscovery: undefined,
+			},
+			payload,
+		);
+		const outcome = await runOverflowBuild(payload.work, deps, recordingStep);
+
+		expect(outcome).toEqual({ targetService: "anilist" });
+		const coverage = await coverageStateFor(
+			db,
+			groupCoverageKey(bootstrapped.group.groupId),
+			1,
+			"anilist",
+		);
+		expect(coverage).toBe("complete");
+	});
+
+	it("leaves coverage pending when discovery is refused", async () => {
+		const phasesModule = await import("@/engine/ingest/phases.ts");
+		vi.spyOn(phasesModule, "discoverGroup").mockResolvedValueOnce({
+			kind: "refused",
+			reason: "over-budget",
+		});
+		const db = await freshDb();
+		const bootstrapped = await bootstrapFromIdentity(db, knownIdentity);
+		if (bootstrapped.kind !== "bootstrapped") {
+			throw new Error(`expected bootstrapped, got ${bootstrapped.kind}`);
+		}
+		const payload: BuildPayload = {
+			identity: knownIdentity,
+			profile: "anime",
+			work: {
+				baselineRevision: 1,
+				continuity: groupCoverageKey(bootstrapped.group.groupId),
+				targetService: "anilist",
+			},
+		};
+		const deps = createBuildDeps(
+			{
+				catalogue: { simkl: undefined, verification: {} },
+				db,
+				dispatcher: undefined,
+				structuralDiscovery: publishClients(),
+			},
+			payload,
+		);
+
+		await expectOverflowPending(payload.work, deps);
+
+		const coverage = await coverageStateFor(
+			db,
+			groupCoverageKey(bootstrapped.group.groupId),
+			1,
+			"anilist",
+		);
+		expect(coverage).toBe("pending");
+	});
+
+	it("keeps non-enumerable targets pending and retries", async () => {
+		const db = await freshDb();
+		const bootstrapped = await bootstrapFromIdentity(db, knownIdentity);
+		if (bootstrapped.kind !== "bootstrapped") {
+			throw new Error(`expected bootstrapped, got ${bootstrapped.kind}`);
+		}
+		const payload: BuildPayload = {
+			identity: knownIdentity,
+			profile: "anime",
+			work: {
+				baselineRevision: 1,
+				continuity: groupCoverageKey(bootstrapped.group.groupId),
+				targetService: "tmdb",
+			},
+		};
+		const deps = createBuildDeps(
+			{
+				catalogue: { simkl: undefined, verification: {} },
+				db,
+				dispatcher: undefined,
+				structuralDiscovery: publishClients(),
+			},
+			payload,
+		);
+
+		await expectOverflowPending(payload.work, deps);
+
+		const coverage = await coverageStateFor(
+			db,
+			groupCoverageKey(bootstrapped.group.groupId),
+			1,
+			"tmdb",
+		);
+		expect(coverage).toBe("pending");
 	});
 });

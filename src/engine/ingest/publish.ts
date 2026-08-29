@@ -11,15 +11,19 @@ import type { PublishedAlignment } from "@/engine/matcher";
 import {
 	completeCoverage,
 	groupCoverageKey,
+	writeCoverageState,
 	seedPendingCoverage,
 } from "@/engine/overflow/coverage.ts";
 import { recomputeGroup } from "@/engine/recompute/recompute.ts";
 import type { FreshPairing } from "@/engine/recompute/recompute.ts";
 
+import { queueAlignmentCrossingConflicts } from "./alignment-conflict.ts";
 import type { BootstrappedGroup } from "./bootstrap.ts";
+import { retireBootstrapScaffoldingForGroup } from "./bootstrap.ts";
+import { instalmentEnumerableServices } from "./enumerable-services.ts";
 import {
+	alignmentFromMappedPairs,
 	alignTarget,
-	anchorStreamFromDb,
 	convergeMembersOf,
 	discoverGroup,
 	fetchTargetStream,
@@ -27,7 +31,12 @@ import {
 	targetMappingFor,
 } from "./phases.ts";
 import type { DiscoveredGroup } from "./phases.ts";
-import { ensureSpokes, ensureTitle, pairingsFromAlignment } from "./spokes.ts";
+import {
+	ensureSpokes,
+	ensureTitle,
+	pairingsFromAlignment,
+	setTitleOrdinal,
+} from "./spokes.ts";
 
 const DEFAULT_BUDGET = 10;
 const DEFAULT_REVISION = 1;
@@ -46,6 +55,7 @@ interface SingleTargetPublishInput {
 }
 
 type PublishRefusalReason =
+	| "not-enumerable"
 	| "over-budget"
 	| "unavailable-target"
 	| "unmappable-member"
@@ -65,6 +75,7 @@ interface CommitPublishInput {
 	readonly discovered: DiscoveredGroup;
 	readonly enumeration: EnumeratedTitle;
 	readonly groupId: number;
+	readonly sharedEnumeration?: EnumeratedTitle;
 	readonly revision: number;
 	readonly target: ServiceRef;
 	readonly targetOrdinal: number;
@@ -72,27 +83,47 @@ interface CommitPublishInput {
 	readonly triedSource: FreshPairing["source"];
 }
 
+const endPublishAttempt = async (
+	db: Db,
+	input: {
+		readonly continuity: ReturnType<typeof groupCoverageKey>;
+		readonly revision: number;
+		readonly targetService: Service;
+	},
+	result: PublishResult,
+): Promise<PublishResult> => {
+	if (result.kind === "conflict") {
+		await writeCoverageState(
+			db,
+			input.continuity,
+			input.revision,
+			input.targetService,
+			"conflict",
+		);
+	}
+	return result;
+};
+
 const ladderCompleteFor = (alignment: PublishedAlignment): boolean =>
-	alignment.left.pending.length === 0 &&
-	alignment.left.noCounterpart.length === 0 &&
-	alignment.right.pending.length === 0 &&
-	alignment.right.noCounterpart.length === 0;
+	alignment.left.pending.length === 0 && alignment.right.pending.length === 0;
 
 const finishPublish = async (
 	db: Db,
 	input: {
 		readonly continuity: ReturnType<typeof groupCoverageKey>;
 		readonly groupId: number;
+		readonly ladderComplete: boolean;
 		readonly revision: number;
 		readonly targetService: Service;
 	},
 ): Promise<PublishResult> => {
 	await ensureGroupContinuity(db, input.groupId);
-	await completeCoverage(
+	await writeCoverageState(
 		db,
 		input.continuity,
 		input.revision,
 		input.targetService,
+		input.ladderComplete ? "complete" : "open",
 	);
 	return { groupId: input.groupId, kind: "published" };
 };
@@ -107,17 +138,34 @@ const commitPublish = async (
 		input.target,
 		input.targetOrdinal,
 	);
+	await setTitleOrdinal(
+		db,
+		input.anchorTitleId,
+		input.discovered.anchorOrdinal,
+	);
+	await setTitleOrdinal(db, targetTitleId, input.targetOrdinal);
+	if (input.sharedEnumeration !== undefined) {
+		await ensureSpokes(db, input.anchorTitleId, input.sharedEnumeration);
+	}
 	await ensureSpokes(db, targetTitleId, input.enumeration);
 
 	const converge = await convergeGroups(db, {
 		members: convergeMembersOf(input.discovered),
 	});
 	if (converge.kind === "candidate") {
-		return { kind: "conflict", reason: "converge-candidate" };
+		return endPublishAttempt(db, input, {
+			kind: "conflict",
+			reason: "converge-candidate",
+		});
 	}
 	if (converge.kind === "aborted") {
-		return { kind: "refused", reason: "unpublishable" };
+		return endPublishAttempt(db, input, {
+			kind: "refused",
+			reason: "unpublishable",
+		});
 	}
+	const publishGroupId =
+		converge.kind === "merged" ? converge.survivorId : input.groupId;
 
 	const pairings = await pairingsFromAlignment(
 		db,
@@ -127,18 +175,23 @@ const commitPublish = async (
 		input.triedSource,
 	);
 	const recompute = await recomputeGroup(db, {
-		groupId: input.groupId,
+		groupId: publishGroupId,
 		ladderComplete: ladderCompleteFor(input.alignment),
 		pairings,
 		triedSource: input.triedSource,
 	});
 	if (recompute.kind === "aborted") {
-		return { kind: "refused", reason: "unpublishable" };
+		return endPublishAttempt(db, input, {
+			kind: "refused",
+			reason: "unpublishable",
+		});
 	}
+	await retireBootstrapScaffoldingForGroup(db, publishGroupId);
 
 	return finishPublish(db, {
 		continuity: input.continuity,
-		groupId: input.groupId,
+		groupId: publishGroupId,
+		ladderComplete: ladderCompleteFor(input.alignment),
 		revision: input.revision,
 		targetService: input.targetService,
 	});
@@ -163,24 +216,107 @@ const publishAlignedTarget = async (
 		target: input.mapping.member,
 	});
 	if (fetched.kind === "unavailable") {
-		return { kind: "refused", reason: "unavailable-target" };
+		return endPublishAttempt(db, input, {
+			kind: "refused",
+			reason:
+				fetched.reason === "not-enumerable"
+					? "not-enumerable"
+					: "unavailable-target",
+		});
 	}
 
-	const anchorStream = await anchorStreamFromDb(db, input.anchorTitleId);
+	const sharedFetched = await fetchTargetStream({
+		clients: input.clients.discovery,
+		target: input.discovered.shared,
+	});
+	if (sharedFetched.kind !== "fetched") {
+		return endPublishAttempt(db, input, {
+			kind: "refused",
+			reason:
+				sharedFetched.reason === "not-enumerable"
+					? "not-enumerable"
+					: "unavailable-target",
+		});
+	}
+	const anchorStream = sharedFetched.enumerated.stream;
+
+	if (input.mapping.pairs.length > 0) {
+		const mappedAlignment = alignmentFromMappedPairs(
+			anchorStream,
+			fetched.enumerated.stream,
+			input.mapping.pairs,
+		);
+		if (mappedAlignment === undefined) {
+			return endPublishAttempt(db, input, {
+				kind: "refused",
+				reason: "unpublishable",
+			});
+		}
+		return commitPublish(db, {
+			alignment: mappedAlignment,
+			anchorTitleId: input.anchorTitleId,
+			continuity: input.continuity,
+			discovered: input.discovered,
+			enumeration: fetched.enumerated,
+			groupId: input.groupId,
+			revision: input.revision,
+			sharedEnumeration: sharedFetched.enumerated,
+			target: input.mapping.member,
+			targetOrdinal: input.mapping.ordinal,
+			targetService: input.targetService,
+			triedSource: "t3-episode",
+		});
+	}
+
 	const aligned = alignTarget({
 		anchor: anchorStream,
+		...(sharedFetched.kind === "fetched"
+			? { anchorFacts: sharedFetched.enumerated.facts }
+			: {}),
 		budget: input.budget,
 		target: fetched.enumerated,
 	});
 	if (aligned.kind === "over-budget") {
-		return { kind: "refused", reason: "over-budget" };
+		return endPublishAttempt(db, input, {
+			kind: "refused",
+			reason: "over-budget",
+		});
 	}
 	const { alignment } = aligned;
 	if (alignment === undefined || alignment.status !== "published") {
 		if (alignment?.status === "conflict") {
-			return { kind: "conflict", reason: "alignment-conflict" };
+			const targetTitleId = await ensureTitle(
+				db,
+				input.groupId,
+				input.mapping.member,
+				input.mapping.ordinal,
+			);
+			if (sharedFetched.kind === "fetched") {
+				await ensureSpokes(db, input.anchorTitleId, sharedFetched.enumerated);
+			}
+			await ensureSpokes(db, targetTitleId, fetched.enumerated);
+			const queued = await queueAlignmentCrossingConflicts(db, {
+				anchorTitleId: input.anchorTitleId,
+				crossings: alignment.crossings,
+				evidenceHashPrefix: "publish-alignment-conflict",
+				targetTitleId,
+				triedSource: highestTriedTier(aligned.ladder),
+			});
+			if (!queued) {
+				return endPublishAttempt(db, input, {
+					kind: "refused",
+					reason: "unpublishable",
+				});
+			}
+			return endPublishAttempt(db, input, {
+				kind: "conflict",
+				reason: "alignment-conflict",
+			});
 		}
-		return { kind: "refused", reason: "unpublishable" };
+		return endPublishAttempt(db, input, {
+			kind: "refused",
+			reason: "unpublishable",
+		});
 	}
 
 	return commitPublish(db, {
@@ -191,6 +327,7 @@ const publishAlignedTarget = async (
 		enumeration: fetched.enumerated,
 		groupId: input.groupId,
 		revision: input.revision,
+		sharedEnumeration: sharedFetched.enumerated,
 		target: input.mapping.member,
 		targetOrdinal: input.mapping.ordinal,
 		targetService: input.targetService,
@@ -206,6 +343,13 @@ const runSingleTargetPublish = async (
 	const revision = input.revision ?? DEFAULT_REVISION;
 	const continuity = groupCoverageKey(input.group.groupId);
 
+	if (!instalmentEnumerableServices.has(input.targetService)) {
+		return {
+			kind: "refused",
+			reason: "not-enumerable",
+		};
+	}
+
 	await seedPendingCoverage(db, continuity, revision, input.targetService);
 
 	const discovered = await discoverGroup({
@@ -214,25 +358,21 @@ const runSingleTargetPublish = async (
 		clients: input.clients.discovery,
 	});
 	if (discovered.kind === "refused") {
-		return { kind: "refused", reason: discovered.reason };
+		return endPublishAttempt(
+			db,
+			{ continuity, revision, targetService: input.targetService },
+			{ kind: "refused", reason: discovered.reason },
+		);
 	}
 	if (discovered.kind === "no-group") {
-		return finishPublish(db, {
-			continuity,
-			groupId: input.group.groupId,
-			revision,
-			targetService: input.targetService,
-		});
+		await completeCoverage(db, continuity, revision, input.targetService);
+		return { kind: "refused", reason: "unavailable-target" };
 	}
 
 	const mapping = targetMappingFor(discovered.discovered, input.targetService);
 	if (mapping === undefined) {
-		return finishPublish(db, {
-			continuity,
-			groupId: input.group.groupId,
-			revision,
-			targetService: input.targetService,
-		});
+		await completeCoverage(db, continuity, revision, input.targetService);
+		return { kind: "refused", reason: "unavailable-target" };
 	}
 
 	return publishAlignedTarget(db, {
@@ -248,7 +388,7 @@ const runSingleTargetPublish = async (
 	});
 };
 
-export { commitPublish, finishPublish, runSingleTargetPublish };
+export { DEFAULT_BUDGET, commitPublish, finishPublish, runSingleTargetPublish };
 export type {
 	PublishClients,
 	PublishConflictReason,

@@ -1,5 +1,5 @@
-import type { SimklClient, SimklService } from "@/engine/discovery/simkl.ts";
-import { simklServices } from "@/engine/discovery/simkl.ts";
+import type { SimklClient } from "@/engine/discovery/simkl.ts";
+import { isSimklService } from "@/engine/discovery/simkl.ts";
 import type { CatalogueClient } from "@/engine/discovery/verify.ts";
 import { toGraphMember } from "@/engine/gateway/keys.ts";
 import type { Service, TitleIdentity } from "@/engine/identity.ts";
@@ -15,10 +15,18 @@ interface ProbeDeps {
 	readonly simkl?: SimklClient;
 }
 
-const isSimklService = (value: string): value is SimklService =>
-	(simklServices as readonly string[]).includes(value);
-
-const simklLookupId = (title: TitleIdentity): string => title.id;
+const simklTypeMatches = (
+	title: TitleIdentity,
+	entryType: "anime" | "movie" | "show",
+): boolean => {
+	if (title.service !== "tmdb") {
+		return true;
+	}
+	if (title.namespace === "movie") {
+		return entryType === "movie";
+	}
+	return entryType === "show" || entryType === "anime";
+};
 
 const probeUpstream = async (
 	title: TitleIdentity,
@@ -31,13 +39,11 @@ const probeUpstream = async (
 			return { kind: "refused", reason: "unconfigured" };
 		}
 		try {
-			const entry = await simkl.findByExternalId(
-				member.service,
-				simklLookupId(title),
-			);
-			return entry === undefined
-				? { kind: "refused", reason: "no-record" }
-				: { kind: "confirmed" };
+			const entry = await simkl.findByExternalId(member.service, title.id);
+			if (entry === undefined || !simklTypeMatches(title, entry.type)) {
+				return { kind: "refused", reason: "no-record" };
+			}
+			return { kind: "confirmed" };
 		} catch {
 			return { kind: "refused", reason: "request-failed" };
 		}

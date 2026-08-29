@@ -3,7 +3,11 @@ import { describe, expect, it, vi } from "vitest";
 import { createSimklClient } from "./simkl.ts";
 
 const searchJson = [
-	{ ids: { anidb: 2, mal: 200, simkl: 555, tmdb: 999 }, title: "Mid", type: "anime" },
+	{
+		ids: { anidb: 2, mal: 200, simkl: 555, tmdb: 999 },
+		title: "Mid",
+		type: "anime",
+	},
 ];
 
 const entryJson = {
@@ -38,11 +42,23 @@ describe("simkl client", () => {
 
 		expect(entry).toStrictEqual({
 			externalIds: { anidb: "2", mal: "200", tmdb: "999" },
+			firstAirDate: undefined,
 			id: "555",
 			relations: [],
 			title: "Mid",
 			type: "anime",
 		});
+	});
+
+	it("parses first_aired into firstAirDate", async () => {
+		const fetchFn = makeFetch(() =>
+			Response.json({ ...entryJson, first_aired: "2022-04-09T00:00:00.000Z" }),
+		);
+		const client = createSimklClient({ apiKey: "test-key", fetchFn });
+
+		const entry = await client.fetchEntry("555");
+
+		expect(entry?.firstAirDate).toBe("2022-04-09");
 	});
 
 	it("normalises relation kinds and keeps only what the walk reads", async () => {

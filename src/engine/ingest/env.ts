@@ -14,6 +14,7 @@ import type {
 	CatalogueSecretsSource,
 } from "./catalogue-secrets.ts";
 import { buildCatalogueClients } from "./clients.ts";
+import { buildStructuralDiscoveryClients } from "./structural-discovery.ts";
 
 type IngestBindings = Pick<
 	Env,
@@ -58,7 +59,11 @@ const createIngestEnv = (input: CreateIngestEnvInput): IngestEnv => {
 			bindings.OVERFLOW_BUILD === undefined
 				? undefined
 				: createWorkflowDispatcher(bindings.OVERFLOW_BUILD),
-		structuralDiscovery: overrides?.structuralDiscovery,
+		structuralDiscovery:
+			overrides?.structuralDiscovery ??
+			buildStructuralDiscoveryClients(
+				built.simkl === undefined ? {} : { simkl: built.simkl },
+			),
 	};
 };
 

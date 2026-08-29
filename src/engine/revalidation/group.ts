@@ -1,4 +1,5 @@
 import type { Db } from "@/db";
+import { retireBootstrapScaffoldingForGroup } from "@/engine/ingest/bootstrap.ts";
 import { createBudget } from "@/engine/matcher";
 import type { BudgetSnapshot, TierId } from "@/engine/matcher";
 import { recomputeGroup } from "@/engine/recompute/recompute.ts";
@@ -48,6 +49,8 @@ const revalidateGroup = async (
 	if (recompute.kind !== "applied") {
 		return { kind: "recompute-blocked", outcome: recompute };
 	}
+
+	await retireBootstrapScaffoldingForGroup(db, input.groupId);
 
 	const recheck = await sampleResearchRecheck(db, {
 		budget,

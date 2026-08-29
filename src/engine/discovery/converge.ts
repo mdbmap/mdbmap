@@ -161,7 +161,11 @@ const isGroupCurated = async (
 					.from(instalmentAssertions)
 					.where(inArray(instalmentAssertions.instalmentId, spokeIds))
 					.all();
-	if (spokeAssertions.some((row) => isCuratedSource(row.source))) {
+	if (
+		spokeAssertions.some(
+			(row) => isCuratedSource(row.source) && row.source !== "bootstrap",
+		)
+	) {
 		return true;
 	}
 	const titles = [...memberTitleIds];
@@ -387,11 +391,11 @@ const commitMerge = async (
 						SELECT 1 FROM instalment_assertions AS assertions
 						JOIN service_instalments AS instalments ON instalments.id = assertions.instalment_id
 						JOIN service_titles AS titles ON titles.id = instalments.title_id
-						WHERE titles.group_id = groups.id AND assertions.source NOT IN (${tierIds.map(() => "?").join(", ")})
+						WHERE titles.group_id = groups.id AND assertions.source NOT IN (${tierIds.map(() => "?").join(", ")}) AND assertions.source <> 'bootstrap'
 					)
 					OR EXISTS (
 						SELECT 1 FROM title_assertions AS assertions
-						WHERE assertions.source NOT IN (${tierIds.map(() => "?").join(", ")})
+						WHERE assertions.source NOT IN (${tierIds.map(() => "?").join(", ")}) AND assertions.source <> 'bootstrap'
 						AND (assertions.title_a_id IN (SELECT id FROM service_titles WHERE group_id = groups.id)
 							OR assertions.title_b_id IN (SELECT id FROM service_titles WHERE group_id = groups.id))
 					)

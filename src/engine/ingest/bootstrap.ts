@@ -1,9 +1,10 @@
-import { and, eq } from "drizzle-orm";
+import { and, eq, inArray } from "drizzle-orm";
 
 import type { Db } from "@/db";
 import {
 	contentUnits,
 	instalmentAssertions,
+	pendingGroupCandidates,
 	serviceInstalments,
 	serviceTitles,
 	titleGroups,
@@ -13,6 +14,7 @@ import { ensureGroupContinuity } from "@/engine/continuity/persist.ts";
 import { toGraphMember } from "@/engine/gateway/keys.ts";
 import { survivorGroupId } from "@/engine/gateway/read.ts";
 import type { Identity, TitleIdentity } from "@/engine/identity.ts";
+import { queueFlag } from "@/engine/research/low-confidence-flag.ts";
 
 interface BootstrappedGroup {
 	readonly baselineContinuity: `group:${number}`;
@@ -57,41 +59,57 @@ const bootstrapped = async (
 	};
 };
 
-const insertHubSpokes = async (
+const insertHubSpokesForTitle = async (
 	db: Db,
-	groupId: number,
-	title: TitleIdentity,
-): Promise<number> => {
-	const member = toGraphMember(title);
+	titleId: number,
+): Promise<string> => {
 	const unitRows = await db.insert(contentUnits).values({}).returning().all();
 	const unitId = one(unitRows).id;
-	const titleRows = await db
-		.insert(serviceTitles)
-		.values({
-			groupId,
-			ordinal: 0,
-			service: member.service,
-			serviceId: member.serviceId,
-		})
-		.returning()
-		.all();
-	const titleId = one(titleRows).id;
-	const spokeRows = await db
-		.insert(serviceInstalments)
-		.values({ locator: "s1e1", locatorKind: "position", titleId })
-		.returning()
-		.all();
-	const spokeId = one(spokeRows).id;
-	await db
-		.insert(instalmentAssertions)
-		.values({
-			confidence: "high",
-			instalmentId: spokeId,
-			source: "t3-episode",
-			unitId,
-		})
-		.run();
-	return titleId;
+	try {
+		await db
+			.insert(serviceInstalments)
+			.values({ locator: "s1e1", locatorKind: "position", titleId })
+			.onConflictDoNothing()
+			.run();
+		const spoke = await db
+			.select({ id: serviceInstalments.id })
+			.from(serviceInstalments)
+			.where(
+				and(
+					eq(serviceInstalments.titleId, titleId),
+					eq(serviceInstalments.locator, "s1e1"),
+				),
+			)
+			.get();
+		if (spoke === undefined) {
+			throw new Error("bootstrap: hub spoke missing after insert");
+		}
+		await db
+			.insert(instalmentAssertions)
+			.values({
+				confidence: "low",
+				instalmentId: spoke.id,
+				source: "bootstrap",
+				unitId,
+			})
+			.onConflictDoNothing()
+			.run();
+		await queueFlag(db, {
+			evidence: {
+				confidence: "low",
+				instalmentId: spoke.id,
+				kind: "low-confidence-flag",
+				source: "bootstrap",
+				target: "instalment",
+				unitId,
+			},
+			subject: { subjectType: "title", titleId },
+		});
+		return unitId;
+	} catch (error) {
+		await db.delete(contentUnits).where(eq(contentUnits.id, unitId)).run();
+		throw error;
+	}
 };
 
 const claimGroup = async (
@@ -115,16 +133,49 @@ const claimGroup = async (
 		.all();
 	const groupId = one(groupRows).id;
 
+	let claimedUnitId: string | undefined;
 	try {
-		const titleId = await insertHubSpokes(db, groupId, title);
-		return await bootstrapped(db, groupId, titleId);
-	} catch {
-		await db.delete(titleGroups).where(eq(titleGroups.id, groupId)).run();
-		const raced = await findExistingTitle(db, member.service, member.serviceId);
-		if (raced === undefined) {
-			throw new Error("bootstrap: claim raced without a winning service_title");
+		const titleRows = await db
+			.insert(serviceTitles)
+			.values({
+				groupId,
+				ordinal: 0,
+				service: member.service,
+				serviceId: member.serviceId,
+			})
+			.onConflictDoNothing()
+			.returning()
+			.all();
+		const [insertedTitle] = titleRows;
+		if (insertedTitle === undefined) {
+			const raced = await findExistingTitle(
+				db,
+				member.service,
+				member.serviceId,
+			);
+			if (raced === undefined) {
+				throw new Error(
+					"bootstrap: service_title claim raced without a winning row",
+				);
+			}
+			await db.delete(titleGroups).where(eq(titleGroups.id, groupId)).run();
+			return await bootstrapped(db, raced.groupId, raced.id);
 		}
-		return bootstrapped(db, raced.groupId, raced.id);
+		claimedUnitId = await insertHubSpokesForTitle(db, insertedTitle.id);
+		return await bootstrapped(db, groupId, insertedTitle.id);
+	} catch (error) {
+		if (claimedUnitId !== undefined) {
+			await db
+				.delete(contentUnits)
+				.where(eq(contentUnits.id, claimedUnitId))
+				.run();
+		}
+		await db
+			.delete(serviceTitles)
+			.where(eq(serviceTitles.groupId, groupId))
+			.run();
+		await db.delete(titleGroups).where(eq(titleGroups.id, groupId)).run();
+		throw error;
 	}
 };
 
@@ -138,5 +189,65 @@ const bootstrapFromIdentity = async (
 	return claimGroup(db, identity.title);
 };
 
-export { bootstrapFromIdentity };
+const retireBootstrapScaffolding = async (
+	db: Db,
+	spokeIds: readonly number[],
+): Promise<void> => {
+	if (spokeIds.length === 0) {
+		return;
+	}
+	const bootstrapAssertions = await db
+		.select({
+			id: instalmentAssertions.id,
+			instalmentId: instalmentAssertions.instalmentId,
+			unitId: instalmentAssertions.unitId,
+		})
+		.from(instalmentAssertions)
+		.where(
+			and(
+				eq(instalmentAssertions.source, "bootstrap"),
+				inArray(instalmentAssertions.instalmentId, [...spokeIds]),
+			),
+		)
+		.all();
+	if (bootstrapAssertions.length === 0) {
+		return;
+	}
+	const assertionIds = bootstrapAssertions.map((row) => row.id);
+	const unitIds = bootstrapAssertions.map((row) => row.unitId);
+	const flagHashes = bootstrapAssertions.map(
+		(row) => `low-confidence-flag:${row.instalmentId}:${row.unitId}`,
+	);
+	await db
+		.delete(pendingGroupCandidates)
+		.where(inArray(pendingGroupCandidates.evidenceHash, flagHashes))
+		.run();
+	await db
+		.delete(instalmentAssertions)
+		.where(inArray(instalmentAssertions.id, assertionIds))
+		.run();
+	await db.delete(contentUnits).where(inArray(contentUnits.id, unitIds)).run();
+};
+
+const retireBootstrapScaffoldingForGroup = async (
+	db: Db,
+	groupId: number,
+): Promise<void> => {
+	const spokes = await db
+		.select({ id: serviceInstalments.id })
+		.from(serviceInstalments)
+		.innerJoin(serviceTitles, eq(serviceInstalments.titleId, serviceTitles.id))
+		.where(eq(serviceTitles.groupId, groupId))
+		.all();
+	await retireBootstrapScaffolding(
+		db,
+		spokes.map((row) => row.id),
+	);
+};
+
+export {
+	bootstrapFromIdentity,
+	retireBootstrapScaffolding,
+	retireBootstrapScaffoldingForGroup,
+};
 export type { BootstrappedGroup, BootstrapRefusalReason, BootstrapResult };

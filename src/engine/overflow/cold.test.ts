@@ -137,7 +137,7 @@ describe("createOverflowColdLookup", () => {
 describe("createWorkflowDispatcher", () => {
 	it("joins the running instance when its deterministic id already exists", async () => {
 		const seen = new Set<string>();
-		let getCalls = 0;
+		let statusCalls = 0;
 		const handle: DispatchHandle = {
 			create: async ({ id }) => {
 				await Promise.resolve();
@@ -148,7 +148,17 @@ describe("createWorkflowDispatcher", () => {
 			},
 			get: async () => {
 				await Promise.resolve();
-				getCalls += 1;
+				return {
+					restart: async () => {
+						await Promise.resolve();
+						throw new Error("unexpected restart");
+					},
+					status: async () => {
+						await Promise.resolve();
+						statusCalls += 1;
+						return { status: "running" };
+					},
+				};
 			},
 		};
 		const dispatcher = createWorkflowDispatcher(handle);
@@ -158,7 +168,36 @@ describe("createWorkflowDispatcher", () => {
 		await dispatcher.ensure("overflow_abc", payload);
 
 		expect(seen.size).toBe(1);
-		expect(getCalls).toBe(1);
+		expect(statusCalls).toBe(1);
+	});
+
+	it("restarts errored instances instead of joining them", async () => {
+		let restarted = false;
+		const handle: DispatchHandle = {
+			create: async () => {
+				await Promise.resolve();
+				throw new Error("instance exists");
+			},
+			get: async () => {
+				await Promise.resolve();
+				return {
+					restart: async () => {
+						await Promise.resolve();
+						restarted = true;
+					},
+					status: async () => {
+						await Promise.resolve();
+						return { status: "errored" };
+					},
+				};
+			},
+		};
+		const dispatcher = createWorkflowDispatcher(handle);
+		const payload = payloadFor(workFor("mal"));
+
+		await dispatcher.ensure("overflow_abc", payload);
+
+		expect(restarted).toBe(true);
 	});
 
 	it("rethrows a create failure that is not a duplicate", async () => {

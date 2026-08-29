@@ -462,6 +462,21 @@ const settleConflict = async (
 			}
 		}
 	}
+	if (
+		evidence.kind === "instalment-assertion-conflict" &&
+		evidence.counterpartInstalmentId !== undefined
+	) {
+		await db
+			.insert(instalmentAssertions)
+			.values({
+				confidence: evidence.proposed.confidence,
+				instalmentId: evidence.counterpartInstalmentId,
+				source: MANUAL,
+				unitId: evidence.proposed.unitId,
+			})
+			.onConflictDoNothing()
+			.run();
+	}
 	return { kind: "settled" };
 };
 

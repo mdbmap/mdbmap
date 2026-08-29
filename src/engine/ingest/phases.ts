@@ -1,6 +1,7 @@
 import { eq } from "drizzle-orm";
 
 import type { Db } from "@/db";
+import type { AssertionConfidence } from "@/db/columns";
 import { serviceInstalments } from "@/db/engine-schema";
 import type { InstalmentLocator } from "@/db/schema";
 import { discoverStructuralGroup } from "@/engine/discovery/structural.ts";
@@ -13,9 +14,15 @@ import type {
 } from "@/engine/discovery/structural.ts";
 import { toGraphMember } from "@/engine/gateway/keys.ts";
 import type { Service, TitleIdentity } from "@/engine/identity.ts";
-import { createBudget, createTier3, runLadder } from "@/engine/matcher";
+import {
+	createBudget,
+	createTier3,
+	publishedAlignmentFromPairings,
+	runLadder,
+} from "@/engine/matcher";
 import type {
 	AlignmentOutcome,
+	PublishedAlignment,
 	FactsByLocator,
 	InstalmentFacts,
 	InstalmentStream,
@@ -23,6 +30,8 @@ import type {
 	Tier,
 	TierId,
 } from "@/engine/matcher";
+
+import { isNotEnumerableServiceError } from "./not-enumerable.ts";
 
 interface DiscoverInput {
 	readonly anchor: TitleIdentity;
@@ -87,9 +96,11 @@ interface FetchTargetInput {
 	readonly target: ServiceRef;
 }
 
+type UnavailableReason = "fetch-failed" | "not-enumerable";
+
 type FetchTargetOutcome =
 	| { readonly enumerated: EnumeratedTitle; readonly kind: "fetched" }
-	| { readonly kind: "unavailable" };
+	| { readonly kind: "unavailable"; readonly reason: UnavailableReason };
 
 const fetchTargetStream = async (
 	input: FetchTargetInput,
@@ -97,8 +108,11 @@ const fetchTargetStream = async (
 	try {
 		const enumerated = await input.clients.instalments.enumerate(input.target);
 		return { enumerated, kind: "fetched" };
-	} catch {
-		return { kind: "unavailable" };
+	} catch (error) {
+		if (isNotEnumerableServiceError(error)) {
+			return { kind: "unavailable", reason: "not-enumerable" };
+		}
+		return { kind: "unavailable", reason: "fetch-failed" };
 	}
 };
 
@@ -165,6 +179,25 @@ const alignTarget = (input: AlignInput): AlignPhaseOutcome => {
 	return { alignment: ladder.outcome, kind: "aligned", ladder };
 };
 
+const alignmentFromMappedPairs = (
+	shared: InstalmentStream,
+	member: InstalmentStream,
+	pairs: readonly {
+		readonly confidence: AssertionConfidence;
+		readonly memberLocators: readonly InstalmentLocator[];
+		readonly sharedLocators: readonly InstalmentLocator[];
+	}[],
+): PublishedAlignment | undefined =>
+	publishedAlignmentFromPairings(
+		shared,
+		member,
+		pairs.map((pair) => ({
+			confidence: pair.confidence,
+			left: pair.sharedLocators,
+			right: pair.memberLocators,
+		})),
+	);
+
 const highestTriedTier = (ladder: LadderResult | undefined): TierId => {
 	if (ladder === undefined) {
 		return "t3-episode";
@@ -208,6 +241,7 @@ const convergeMembersOf = (
 ];
 
 export {
+	alignmentFromMappedPairs,
 	alignTarget,
 	anchorStreamFromDb,
 	convergeMembersOf,
@@ -217,6 +251,7 @@ export {
 	targetMappingFor,
 };
 export type {
+	UnavailableReason,
 	AlignInput,
 	AlignPhaseOutcome,
 	DiscoverInput,
