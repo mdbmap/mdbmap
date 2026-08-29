@@ -31,7 +31,12 @@ import {
 	targetMappingFor,
 } from "./phases.ts";
 import type { DiscoveredGroup } from "./phases.ts";
-import { ensureSpokes, ensureTitle, pairingsFromAlignment } from "./spokes.ts";
+import {
+	ensureSpokes,
+	ensureTitle,
+	pairingsFromAlignment,
+	setTitleOrdinal,
+} from "./spokes.ts";
 
 const DEFAULT_BUDGET = 10;
 const DEFAULT_REVISION = 1;
@@ -100,27 +105,27 @@ const endPublishAttempt = async (
 };
 
 const ladderCompleteFor = (alignment: PublishedAlignment): boolean =>
-	alignment.left.pending.length === 0 &&
-	alignment.left.noCounterpart.length === 0 &&
-	alignment.right.pending.length === 0 &&
-	alignment.right.noCounterpart.length === 0;
+	alignment.left.pending.length === 0 && alignment.right.pending.length === 0;
 
 const finishPublish = async (
 	db: Db,
 	input: {
 		readonly continuity: ReturnType<typeof groupCoverageKey>;
 		readonly groupId: number;
+		readonly ladderComplete: boolean;
 		readonly revision: number;
 		readonly targetService: Service;
 	},
 ): Promise<PublishResult> => {
 	await ensureGroupContinuity(db, input.groupId);
-	await completeCoverage(
-		db,
-		input.continuity,
-		input.revision,
-		input.targetService,
-	);
+	if (input.ladderComplete) {
+		await completeCoverage(
+			db,
+			input.continuity,
+			input.revision,
+			input.targetService,
+		);
+	}
 	return { groupId: input.groupId, kind: "published" };
 };
 
@@ -134,6 +139,12 @@ const commitPublish = async (
 		input.target,
 		input.targetOrdinal,
 	);
+	await setTitleOrdinal(
+		db,
+		input.anchorTitleId,
+		input.discovered.anchorOrdinal,
+	);
+	await setTitleOrdinal(db, targetTitleId, input.targetOrdinal);
 	if (input.sharedEnumeration !== undefined) {
 		await ensureSpokes(db, input.anchorTitleId, input.sharedEnumeration);
 	}
@@ -181,6 +192,7 @@ const commitPublish = async (
 	return finishPublish(db, {
 		continuity: input.continuity,
 		groupId: publishGroupId,
+		ladderComplete: ladderCompleteFor(input.alignment),
 		revision: input.revision,
 		targetService: input.targetService,
 	});
@@ -354,20 +366,14 @@ const runSingleTargetPublish = async (
 		);
 	}
 	if (discovered.kind === "no-group") {
-		return endPublishAttempt(
-			db,
-			{ continuity, revision, targetService: input.targetService },
-			{ kind: "refused", reason: "unavailable-target" },
-		);
+		await completeCoverage(db, continuity, revision, input.targetService);
+		return { kind: "refused", reason: "unavailable-target" };
 	}
 
 	const mapping = targetMappingFor(discovered.discovered, input.targetService);
 	if (mapping === undefined) {
-		return endPublishAttempt(
-			db,
-			{ continuity, revision, targetService: input.targetService },
-			{ kind: "refused", reason: "unavailable-target" },
-		);
+		await completeCoverage(db, continuity, revision, input.targetService);
+		return { kind: "refused", reason: "unavailable-target" };
 	}
 
 	return publishAlignedTarget(db, {

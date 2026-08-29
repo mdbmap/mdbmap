@@ -29,7 +29,11 @@ import { buildStructuralDiscoveryClients } from "@/engine/ingest/structural-disc
 import type { Crossing, PublishedAlignment, TierId } from "@/engine/matcher";
 
 import type { BuildDeps } from "./build.ts";
-import { seedPendingCoverage, writeCoverageState } from "./coverage.ts";
+import {
+	completeCoverage,
+	seedPendingCoverage,
+	writeCoverageState,
+} from "./coverage.ts";
 import type { GroupCoverageKey } from "./coverage.ts";
 import {
 	deserializeEnumerated,
@@ -280,11 +284,21 @@ const overflowAlign = async (
 			);
 			return skippedAlignment(streams, anchorTitleId);
 		}
-		if (
-			streams.skip === "refused" ||
-			streams.skip === "no-group" ||
-			streams.skip === "no-mapping"
-		) {
+		if (streams.skip === "no-group" || streams.skip === "no-mapping") {
+			await completeCoverage(
+				ctx.db,
+				ctx.continuity,
+				ctx.revision,
+				ctx.targetService,
+			);
+			const anchorTitleId = await anchorTitleIdFor(
+				ctx.db,
+				ctx.groupId,
+				ctx.anchor,
+			);
+			return skippedAlignment(streams, anchorTitleId);
+		}
+		if (streams.skip === "refused") {
 			if (!instalmentEnumerableServices.has(ctx.targetService)) {
 				const anchorTitleId = await anchorTitleIdFor(
 					ctx.db,

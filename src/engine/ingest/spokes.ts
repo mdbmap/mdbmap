@@ -65,6 +65,18 @@ const ensureTitle = async (
 	return raced;
 };
 
+const setTitleOrdinal = async (
+	db: Db,
+	titleId: number,
+	ordinal: number,
+): Promise<void> => {
+	await db
+		.update(serviceTitles)
+		.set({ ordinal })
+		.where(eq(serviceTitles.id, titleId))
+		.run();
+};
+
 const spokeIdFor = async (
 	db: Db,
 	titleId: number,
@@ -142,4 +154,10 @@ const pairingsFromAlignment = async (
 	return nested.flat();
 };
 
-export { ensureSpokes, ensureTitle, pairingsFromAlignment, spokeIdFor };
+export {
+	ensureSpokes,
+	ensureTitle,
+	pairingsFromAlignment,
+	setTitleOrdinal,
+	spokeIdFor,
+};

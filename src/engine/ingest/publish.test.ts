@@ -127,7 +127,7 @@ describe("runSingleTargetPublish", () => {
 		}
 	});
 
-	it("leaves coverage pending when the target has no discovered counterpart", async () => {
+	it("marks coverage complete when the target has no discovered counterpart", async () => {
 		const db = await freshDb();
 		const bootstrapped = await bootstrapFromIdentity(db, knownIdentity);
 		if (bootstrapped.kind !== "bootstrapped") {
@@ -162,7 +162,7 @@ describe("runSingleTargetPublish", () => {
 			1,
 			"anilist",
 		);
-		expect(coverage).toBe("pending");
+		expect(coverage).toBe("complete");
 	});
 
 	it("is idempotent when publish is retried", async () => {
