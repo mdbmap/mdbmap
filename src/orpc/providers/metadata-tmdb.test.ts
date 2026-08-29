@@ -82,7 +82,7 @@ const season2Json = {
 const movieJson = {
 	backdrop_path: "/movie-backdrop.jpg",
 	credits: {
-		cast: [{ id: 11, name: "Movie Lead", roles: [{ character: "Hero" }] }],
+		cast: [{ character: "Hero", id: 11, name: "Movie Lead" }],
 		crew: [{ id: 12, job: "Director", name: "Movie Director" }],
 	},
 	original_title: "映画",

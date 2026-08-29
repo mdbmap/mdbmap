@@ -197,9 +197,6 @@ const resourcesOf = (resolved: ResolveResult): TmdbResource[] => {
 	for (const segment of resolved.segments) {
 		const value = segment.members.tmdb;
 		if (value === undefined) {
-			if (segment.kind === "atomic") {
-				throw new Error("tmdb: film segment carries no tmdb id");
-			}
 			continue;
 		}
 		const id = resourceId(value);
@@ -333,6 +330,21 @@ const spanOf = (series: TmdbSeries): string => {
 	return `${from}–${to}`;
 };
 
+const movieSpanOf = (movies: readonly TmdbMovie[]): string => {
+	const years = movies
+		.map((movie) => yearOf(movie.release_date))
+		.filter((year): year is number => year !== undefined);
+	if (years.length === 0) {
+		return "";
+	}
+	const from = Math.min(...years);
+	const to = Math.max(...years);
+	if (to === from) {
+		return `${from}`;
+	}
+	return `${from}–${to}`;
+};
+
 interface SeasonSummary {
 	label: string;
 	year: number | undefined;
@@ -406,7 +418,6 @@ const buildMovieSnapshots = (
 		head?.original_title !== undefined && head.original_title !== title
 			? head.original_title
 			: undefined;
-	const releaseDate = head?.release_date;
 	const core = coreSnapshotSchema.parse({
 		backdropRef: imageRef(head?.backdrop_path),
 		cast: head === undefined ? [] : normaliseMovieCast(head),
@@ -429,10 +440,7 @@ const buildMovieSnapshots = (
 			airedTo: movie.release_date,
 			episodes: [],
 		})),
-		span:
-			releaseDate === undefined || yearOf(releaseDate) === undefined
-				? ""
-				: `${yearOf(releaseDate)}`,
+		span: movieSpanOf(movies),
 		version,
 	});
 	return { core, volatile };
@@ -578,13 +586,11 @@ const fetchMoviesFromTmdb = async (
 ): Promise<Snapshots> => {
 	const movies = await Promise.all(
 		resources.map(async (resource) =>
-			resource.kind === "movie"
-				? getJson(
-						http,
-						`/movie/${resource.id}?append_to_response=credits,recommendations`,
-						tmdbMovieSchema,
-					)
-				: Promise.reject(new Error("tmdb: expected movie resource")),
+			getJson(
+				http,
+				`/movie/${resource.id}?append_to_response=credits,recommendations`,
+				tmdbMovieSchema,
+			),
 		),
 	);
 	return buildMovieSnapshots(version, movies);
