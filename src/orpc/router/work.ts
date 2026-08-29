@@ -24,6 +24,7 @@ import type {
 	WorkView,
 } from "@/orpc/schema";
 import { WorkGetInput } from "@/orpc/schema";
+import { resolveSimilar } from "@/orpc/similar";
 
 interface ViewerState {
 	personalByUnit: Map<string, number>;
@@ -324,6 +325,10 @@ const get = pub
 				: reorderByIds(built, selected.releaseSegmentIds, selected.segmentIds);
 		const parts = ordered.length > 0 ? ordered : built;
 
+		const ifYouLiked = await resolveSimilar(context.db, meta.ifYouLiked, {
+			excludeContinuityId: continuityId,
+		});
+
 		return {
 			cast: [...meta.cast],
 			continuityId,
@@ -335,7 +340,7 @@ const get = pub
 				synopsis: meta.synopsis,
 				title: meta.title,
 			},
-			ifYouLiked: [...meta.ifYouLiked],
+			ifYouLiked: [...ifYouLiked],
 			mediaKind: resolved.mediaKind,
 			parts,
 			staff: [...meta.staff],
