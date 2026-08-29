@@ -1,3 +1,7 @@
-const instalmentEnumerableServices = new Set<string>(["anilist", "mal"]);
+const instalmentEnumerableAnimeServices = ["anilist", "mal"] as const;
 
-export { instalmentEnumerableServices };
+const instalmentEnumerableServices = new Set<string>(
+	instalmentEnumerableAnimeServices,
+);
+
+export { instalmentEnumerableAnimeServices, instalmentEnumerableServices };

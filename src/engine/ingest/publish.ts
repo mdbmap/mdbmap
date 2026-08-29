@@ -57,6 +57,7 @@ interface SingleTargetPublishInput {
 }
 
 type PublishRefusalReason =
+	| "fetch-failed"
 	| "not-enumerable"
 	| "over-budget"
 	| "unavailable-target"
@@ -102,6 +103,24 @@ const endPublishAttempt = async (
 			input.targetService,
 			"conflict",
 		);
+	} else if (result.kind === "refused") {
+		const absence =
+			result.reason === "unavailable-target" ||
+			result.reason === "not-enumerable";
+		await (absence
+			? completeCoverage(
+					db,
+					input.continuity,
+					input.revision,
+					input.targetService,
+				)
+			: writeCoverageState(
+					db,
+					input.continuity,
+					input.revision,
+					input.targetService,
+					"conflict",
+				));
 	}
 	return result;
 };
@@ -285,6 +304,9 @@ const publishAlignedTarget = async (
 		target: input.mapping.member,
 	});
 	if (fetched.kind === "unavailable") {
+		if (fetched.reason === "fetch-failed") {
+			return { kind: "refused", reason: "fetch-failed" };
+		}
 		return endPublishAttempt(db, input, {
 			kind: "refused",
 			reason:
@@ -299,6 +321,9 @@ const publishAlignedTarget = async (
 		target: input.discovered.shared,
 	});
 	if (sharedFetched.kind !== "fetched") {
+		if (sharedFetched.reason === "fetch-failed") {
+			return { kind: "refused", reason: "fetch-failed" };
+		}
 		return endPublishAttempt(db, input, {
 			kind: "refused",
 			reason:
@@ -476,13 +501,16 @@ const runAtomicTargetPublish = async (
 		clients: input.clients.discovery,
 	});
 	if (discovered.kind === "refused") {
+		await completeCoverage(db, continuity, revision, input.targetService);
 		return { kind: "refused", reason: discovered.reason };
 	}
 	if (discovered.kind === "no-group") {
+		await completeCoverage(db, continuity, revision, input.targetService);
 		return { kind: "refused", reason: "unavailable-target" };
 	}
 	const mapping = targetMappingFor(discovered.discovered, input.targetService);
 	if (mapping === undefined) {
+		await completeCoverage(db, continuity, revision, input.targetService);
 		return { kind: "refused", reason: "unavailable-target" };
 	}
 	return publishAtomicTarget(db, {

@@ -210,16 +210,16 @@ describe("warm movie lookup", () => {
 });
 
 describe("pending movie cold lookup", () => {
-	it("leaves coverage pending when discovery finds no counterpart", async () => {
+	it("completes coverage when discovery finds no counterpart", async () => {
 		const ingest = await ingestEnv(movieDiscovery(0));
 		const response = await runMapping("movie", "tmdb:603", {
 			coldLookup: liveLookup(ingest),
 			db: ingest.db,
 		});
 
-		expect(response.status).toBe(202);
+		expect(response.status).toBe(200);
 		expect(await ingest.db.select().from(serviceCoverages).get()).toMatchObject(
-			{ state: "pending" },
+			{ state: "complete" },
 		);
 		expect(await ingest.db.select().from(titleAssertions).all()).toHaveLength(
 			0,

@@ -5,7 +5,8 @@ import type { Db as GatewayDb } from "@/db";
 import { serviceCoverages } from "@/db/engine-schema";
 import type { CoverageState } from "@/db/engine-schema";
 
-const RETRY_AFTER_SECONDS = 5;
+import { WARM_RETRY_AFTER_SECONDS } from "./refs.ts";
+
 const pendingRefPattern = /^pending:(?<encoded>[0-9a-z]+)$/u;
 
 type IngestStatus =
@@ -30,7 +31,7 @@ const coverageIdFrom = (ref: string): number | undefined => {
 const statusFrom = (state: CoverageState): IngestStatus => {
 	switch (state) {
 		case "pending": {
-			return { retryAfterSeconds: RETRY_AFTER_SECONDS, status: "running" };
+			return { retryAfterSeconds: WARM_RETRY_AFTER_SECONDS, status: "running" };
 		}
 		case "complete":
 		case "open": {

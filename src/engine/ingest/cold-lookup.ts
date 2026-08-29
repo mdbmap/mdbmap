@@ -22,6 +22,8 @@ import { writeCoverageState } from "@/engine/overflow/coverage.ts";
 import { bootstrapFromIdentity } from "./bootstrap.ts";
 import type { BootstrappedGroup } from "./bootstrap.ts";
 import type { IngestEnv } from "./env.ts";
+import { targetPlansFor } from "./plannable.ts";
+import type { TargetPlan } from "./plannable.ts";
 import { probeUpstream } from "./probe.ts";
 import { runAtomicTargetPublish, runSingleTargetPublish } from "./publish.ts";
 import type { PublishResult } from "./publish.ts";
@@ -32,10 +34,6 @@ interface LiveColdLookupInput {
 	readonly budget?: OverflowBudget;
 	readonly resolveIngest: () => Promisable<IngestEnv>;
 }
-
-type TargetPlan =
-	| { readonly kind: "atomic"; readonly service: Service }
-	| { readonly kind: "enumerated"; readonly service: Service };
 
 interface InlinePublishInput {
 	readonly anchor: TitleIdentity;
@@ -62,27 +60,6 @@ interface IngestWorkCounts {
 	readonly chainSegments: number;
 	readonly targetCandidates: number;
 }
-
-const targetPlansFor = (
-	identity: Identity,
-	profile: Profile,
-): readonly TargetPlan[] => {
-	if (identity.kind !== "title") {
-		return [];
-	}
-	if (profile === "anime") {
-		return (["anilist", "mal"] as const)
-			.filter((service) => service !== identity.title.service)
-			.map((service) => ({ kind: "enumerated", service }));
-	}
-	if (identity.title.service === "tmdb") {
-		return [{ kind: "atomic", service: "imdb" }];
-	}
-	if (identity.title.service === "imdb") {
-		return [{ kind: "atomic", service: "tmdb" }];
-	}
-	return [];
-};
 
 const upstreamExists = async (input: {
 	readonly ingest: IngestEnv;
@@ -182,18 +159,35 @@ const dispatchOverflow = async (input: {
 };
 
 const settleInlinePublish = async (
-	input: InlinePublishInput,
+	input: LiveIngestInput,
+	work: ColdEstimate,
 ): Promise<void> => {
 	const result = await publishInline(input);
-	if (result?.kind === "refused" && result.reason !== "unavailable-target") {
-		await writeCoverageState(
-			input.ingest.db,
-			input.continuity,
-			BASELINE_REVISION,
-			input.target.service,
-			"conflict",
-		);
+	if (result?.kind !== "refused") {
+		return;
 	}
+	if (
+		result.reason === "unavailable-target" ||
+		result.reason === "not-enumerable"
+	) {
+		return;
+	}
+	if (result.reason === "fetch-failed") {
+		await dispatchOverflow({
+			dispatcher: input.ingest.dispatcher,
+			identity: { kind: "title", title: input.anchor },
+			profile: input.profile,
+			work,
+		});
+		return;
+	}
+	await writeCoverageState(
+		input.ingest.db,
+		input.continuity,
+		BASELINE_REVISION,
+		input.target.service,
+		"conflict",
+	);
 };
 
 const seedPendingTargets = async (
@@ -225,7 +219,7 @@ const executeIngestWork = async (input: LiveIngestInput): Promise<void> => {
 			});
 			return;
 		}
-		await settleInlinePublish(input);
+		await settleInlinePublish(input, work);
 	} catch (error) {
 		await writeCoverageState(
 			input.ingest.db,

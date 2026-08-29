@@ -4,6 +4,8 @@ import { presentationOrderSlugs } from "@/db/engine-schema";
 import type { ApiKeyPlan, RateableUnitKind, WatchStatus } from "@/db/schema";
 import { apiKeyPlans, researchTimings, watchStatuses } from "@/db/schema";
 import type { MediaKind } from "@/engine";
+import { profileOrder } from "@/engine/identity.ts";
+import { isIngestPlannable } from "@/engine/ingest/plannable.ts";
 import type { ProviderListItem } from "@/lib/provider-config/store.ts";
 import {
 	ProviderConfigSchema,
@@ -101,6 +103,42 @@ const SetResearchTimingInput = z.object({
 	timing: ResearchTimingSchema,
 });
 
+const numericCatalogueId = z.string().regex(/^\d+$/u);
+const imdbCatalogueId = z.string().regex(/^tt\d+$/u);
+
+const CatalogueTitleInput = z.discriminatedUnion("service", [
+	z.object({
+		id: numericCatalogueId,
+		namespace: z.enum(["movie", "tv"]),
+		service: z.literal("tmdb"),
+	}),
+	z.object({ id: numericCatalogueId, service: z.literal("anilist") }),
+	z.object({ id: imdbCatalogueId, service: z.literal("imdb") }),
+	z.object({ id: numericCatalogueId, service: z.literal("kitsu") }),
+	z.object({ id: numericCatalogueId, service: z.literal("mal") }),
+	z.object({ id: numericCatalogueId, service: z.literal("tvdb") }),
+]);
+
+const IngestStartIdentityInput = z.object({
+	kind: z.literal("title"),
+	title: CatalogueTitleInput,
+});
+
+const IngestStartInput = z
+	.object({
+		identity: IngestStartIdentityInput,
+		profile: z.enum(profileOrder),
+	})
+	.superRefine((input, ctx) => {
+		if (!isIngestPlannable(input.identity, input.profile)) {
+			ctx.addIssue({
+				code: "custom",
+				message: "This identity and profile cannot be ingested.",
+				path: ["identity"],
+			});
+		}
+	});
+
 interface RateableUnit {
 	key: string;
 	kind: RateableUnitKind;
@@ -127,6 +165,17 @@ interface ServiceRating {
 	service: string;
 	votes: number;
 }
+
+type AdminIngestStartResult =
+	| { readonly kind: "complete" }
+	| { readonly kind: "conflict"; readonly review: string }
+	| {
+			readonly kind: "pending";
+			readonly retryAfterSeconds: number;
+			readonly statusUrl: string;
+	  }
+	| { readonly kind: "retryable"; readonly retryAfterSeconds: number }
+	| { readonly kind: "unknown" };
 
 interface CommunityScore {
 	count: number;
@@ -243,6 +292,7 @@ export {
 	ApiKeyPlanSchema,
 	CandidateIdInput,
 	CreateProviderInput,
+	IngestStartInput,
 	ManualPairInput,
 	MarkMatchedInput,
 	MintApiKeyInput,
@@ -261,6 +311,7 @@ export {
 	WorkGetInput,
 };
 export type {
+	AdminIngestStartResult,
 	ApiKeyRow,
 	CommunityScore,
 	Credit,

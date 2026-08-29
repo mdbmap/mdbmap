@@ -2,6 +2,7 @@ export { noColdLookup } from "./cold-lookup.ts";
 export type { ColdLookup, ColdResult, PendingBuild } from "./cold-lookup.ts";
 export { runMapping } from "./handler.ts";
 export type { GatewayDeps } from "./handler.ts";
+export { WARM_RETRY_AFTER_SECONDS, statusUrlFor } from "./refs.ts";
 export { readGraph, survivorGroupId } from "./read.ts";
 export type { Db as GatewayDb } from "@/db";
 export type { GraphRead } from "./read.ts";

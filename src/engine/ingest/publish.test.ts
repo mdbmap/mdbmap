@@ -236,6 +236,35 @@ describe("runSingleTargetPublish", () => {
 		);
 		expect(coverage).toBeUndefined();
 	});
+
+	it("marks coverage conflict when discovery refuses after seeding pending", async () => {
+		const db = await freshDb();
+		const bootstrapped = await bootstrapFromIdentity(db, knownIdentity);
+		if (bootstrapped.kind !== "bootstrapped") {
+			throw new Error(`expected bootstrapped, got ${bootstrapped.kind}`);
+		}
+
+		const result = await runSingleTargetPublish(db, {
+			anchor: knownMal,
+			budget: 0,
+			clients: { discovery: publishClients() },
+			group: bootstrapped.group,
+			targetService: "anilist",
+		});
+
+		expect(result).toEqual({
+			kind: "refused",
+			reason: "over-budget",
+		});
+		expect(
+			await coverageStateFor(
+				db,
+				groupCoverageKey(bootstrapped.group.groupId),
+				1,
+				"anilist",
+			),
+		).toBe("conflict");
+	});
 });
 
 describe("fetchTargetStream", () => {
