@@ -157,6 +157,9 @@ const publishInline = async (
 			: runSingleTargetPublish;
 	return publish(input.ingest.db, {
 		anchor: input.anchor,
+		...(input.ingest.afterPublish === undefined
+			? {}
+			: { afterPublish: input.ingest.afterPublish }),
 		budget: input.budget.requestBudget,
 		clients: { discovery: input.discovery },
 		group: input.group,

@@ -1,3 +1,5 @@
+import { waitUntil } from "cloudflare:workers";
+
 import { createDb } from "@/db";
 import type { Db } from "@/db";
 import type { SimklClient, VerificationClients } from "@/engine/discovery";
@@ -5,6 +7,7 @@ import type { DiscoveryClients } from "@/engine/discovery/structural.ts";
 import { createWorkflowDispatcher } from "@/engine/overflow/cold.ts";
 import type { BuildDispatcher } from "@/engine/overflow/cold.ts";
 
+import type { AfterPublishFuzzyConfig } from "./after-publish.ts";
 import {
 	parseCatalogueSecrets,
 	readCatalogueSecretsSource,
@@ -22,6 +25,7 @@ type IngestBindings = Pick<
 >;
 
 interface IngestEnvOverrides {
+	readonly afterPublish?: AfterPublishConfig;
 	readonly structuralDiscovery?: DiscoveryClients;
 	readonly catalogue?: Partial<{
 		readonly simkl: SimklClient;
@@ -30,7 +34,10 @@ interface IngestEnvOverrides {
 	readonly db?: Db;
 }
 
+type AfterPublishConfig = AfterPublishFuzzyConfig;
+
 interface IngestEnv {
+	readonly afterPublish?: AfterPublishConfig;
 	readonly structuralDiscovery: DiscoveryClients | undefined;
 	readonly catalogue: {
 		readonly simkl: SimklClient | undefined;
@@ -50,6 +57,13 @@ const createIngestEnv = (input: CreateIngestEnvInput): IngestEnv => {
 	const { bindings, overrides, secrets } = input;
 	const built = buildCatalogueClients({ secrets });
 	return {
+		afterPublish: overrides?.afterPublish ?? {
+			catalogues: overrides?.catalogue?.verification ?? built.verification,
+			clients: {},
+			scheduler: (task) => {
+				waitUntil(task);
+			},
+		},
 		catalogue: {
 			simkl: overrides?.catalogue?.simkl ?? built.simkl,
 			verification: overrides?.catalogue?.verification ?? built.verification,
@@ -95,4 +109,5 @@ export type {
 	IngestBindings,
 	IngestEnv,
 	IngestEnvOverrides,
+	AfterPublishConfig,
 };

@@ -129,6 +129,7 @@ interface OverflowContext {
 	readonly continuity: GroupCoverageKey;
 	readonly db: IngestEnv["db"];
 	readonly discovery: DiscoveryClients | undefined;
+	readonly afterPublish: IngestEnv["afterPublish"];
 	readonly groupId: number;
 	readonly revision: number;
 	readonly targetService: Service;
@@ -398,6 +399,9 @@ const overflowPublish = async (
 	const result = await commitPublish(ctx.db, {
 		alignment: alignment.alignment,
 		anchorTitleId: alignment.anchorTitleId,
+		...(ctx.afterPublish === undefined
+			? {}
+			: { afterPublish: ctx.afterPublish }),
 		continuity: alignment.publishContext.continuity,
 		discovered,
 		enumeration: deserializeEnumerated(alignment.enumerated),
@@ -427,6 +431,7 @@ const createBuildDeps = (
 		throw new Error("overflow deps: instalment identities are not supported");
 	}
 	const ctx: OverflowContext = {
+		afterPublish: ingest.afterPublish,
 		anchor: identity.title,
 		budget: DEFAULT_BUDGET,
 		continuity: work.continuity,

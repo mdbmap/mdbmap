@@ -18,6 +18,8 @@ import {
 import { recomputeGroup } from "@/engine/recompute/recompute.ts";
 import type { FreshPairing } from "@/engine/recompute/recompute.ts";
 
+import { scheduleAfterPublishFuzzy } from "./after-publish.ts";
+import type { AfterPublishFuzzyConfig } from "./after-publish.ts";
 import { queueAlignmentCrossingConflicts } from "./alignment-conflict.ts";
 import type { BootstrappedGroup } from "./bootstrap.ts";
 import { retireBootstrapScaffoldingForGroup } from "./bootstrap.ts";
@@ -49,6 +51,7 @@ interface PublishClients {
 
 interface SingleTargetPublishInput {
 	readonly anchor: TitleIdentity;
+	readonly afterPublish?: AfterPublishFuzzyConfig | undefined;
 	readonly budget?: number;
 	readonly clients: PublishClients;
 	readonly group: BootstrappedGroup;
@@ -71,6 +74,7 @@ type PublishResult =
 	| { readonly kind: "refused"; readonly reason: PublishRefusalReason };
 
 interface CommitPublishInput {
+	readonly afterPublish?: AfterPublishFuzzyConfig | undefined;
 	readonly alignment: PublishedAlignment;
 	readonly anchorTitleId: number;
 	readonly continuity: ReturnType<typeof groupCoverageKey>;
@@ -117,6 +121,7 @@ const finishPublish = async (
 		readonly ladderComplete: boolean;
 		readonly revision: number;
 		readonly targetService: Service;
+		readonly afterPublish?: AfterPublishFuzzyConfig | undefined;
 	},
 ): Promise<PublishResult> => {
 	await ensureGroupContinuity(db, input.groupId);
@@ -127,6 +132,13 @@ const finishPublish = async (
 		input.targetService,
 		input.ladderComplete ? "complete" : "open",
 	);
+	if (input.afterPublish !== undefined) {
+		scheduleAfterPublishFuzzy({
+			...input.afterPublish,
+			db,
+			groupId: input.groupId,
+		});
+	}
 	return { groupId: input.groupId, kind: "published" };
 };
 
@@ -157,6 +169,7 @@ const publishAtomicTarget = async (
 		readonly requestedTitleId: number;
 		readonly revision: number;
 		readonly targetService: Service;
+		readonly afterPublish?: AfterPublishFuzzyConfig | undefined;
 	},
 ): Promise<PublishResult> => {
 	const targetTitleId = await ensureTitle(
@@ -189,6 +202,7 @@ const publishAtomicTarget = async (
 	await assertTitleMatch(db, input.requestedTitleId, targetTitleId);
 	await retireBootstrapScaffoldingForGroup(db, groupId);
 	return finishPublish(db, {
+		afterPublish: input.afterPublish,
 		continuity: input.continuity,
 		groupId,
 		ladderComplete: true,
@@ -258,6 +272,7 @@ const commitPublish = async (
 	await retireBootstrapScaffoldingForGroup(db, publishGroupId);
 
 	return finishPublish(db, {
+		afterPublish: input.afterPublish,
 		continuity: input.continuity,
 		groupId: publishGroupId,
 		ladderComplete: ladderCompleteFor(input.alignment),
@@ -270,6 +285,7 @@ const publishAlignedTarget = async (
 	db: Db,
 	input: {
 		readonly anchorTitleId: number;
+		readonly afterPublish?: AfterPublishFuzzyConfig | undefined;
 		readonly budget: number;
 		readonly continuity: ReturnType<typeof groupCoverageKey>;
 		readonly discovered: DiscoveredGroup;
@@ -322,6 +338,7 @@ const publishAlignedTarget = async (
 			});
 		}
 		return commitPublish(db, {
+			afterPublish: input.afterPublish,
 			alignment: mappedAlignment,
 			anchorTitleId: input.anchorTitleId,
 			continuity: input.continuity,
@@ -389,6 +406,7 @@ const publishAlignedTarget = async (
 	}
 
 	return commitPublish(db, {
+		afterPublish: input.afterPublish,
 		alignment: alignment.alignment,
 		anchorTitleId: input.anchorTitleId,
 		continuity: input.continuity,
@@ -445,6 +463,7 @@ const runTargetPublish = async (
 	}
 
 	return publishAlignedTarget(db, {
+		afterPublish: input.afterPublish,
 		anchorTitleId: input.group.requestedTitleId,
 		budget,
 		clients: input.clients,
@@ -486,6 +505,7 @@ const runAtomicTargetPublish = async (
 		return { kind: "refused", reason: "unavailable-target" };
 	}
 	return publishAtomicTarget(db, {
+		afterPublish: input.afterPublish,
 		continuity,
 		discovered: discovered.discovered,
 		groupId: input.group.groupId,
