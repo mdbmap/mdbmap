@@ -391,7 +391,8 @@ as an unlinked spoke — an explicit no-counterpart `[]`.
 ## Provenance
 
 Provenance is a property of an assertion, not of a title. Every instalment
-assertion carries a `source`: the tier that derived it (`t1-structure`,
+assertion carries a `source`: temporary claim scaffolding (`bootstrap`, retired
+once real tier evidence replaces it), the tier that derived it (`t1-structure`,
 `t2-pattern`, `t3-episode`), the research pass that proposed it (`llm-research`,
 `llm-verified` once the review model confirms it), or the curation that vouched
 for it (`community` for an approved correction, `manual` for an admin edit).
@@ -414,11 +415,11 @@ so new instalments stopped being mapped.
 Responses serve a **derived** group source: the most curated provenance any of
 the group's links carries, or the group row's own when that outranks them
 (precedence: `manual` > `community` > `llm-verified` > `llm-research` >
-`t3-episode` > `t2-pattern` > `t1-structure`). A curated instalment is therefore
-still visible in a title-level answer, while instalment-level answers carry the
-link's own source. A `"mixed"` value was considered and rejected: it adds a
-value every client must learn for information the per-instalment sources already
-carry precisely.
+`t3-episode` > `t2-pattern` > `t1-structure` > `bootstrap`). A curated instalment
+is therefore still visible in a title-level answer, while instalment-level
+answers carry the link's own source. A `"mixed"` value was considered and
+rejected: it adds a value every client must learn for information the
+per-instalment sources already carry precisely.
 
 "No counterpart" is a curated decision with no hub to carry it, so it rides on
 the spoke instead: an approved report or an admin edit that leaves an instalment

@@ -13,11 +13,12 @@ import { locator, regular, streamOf } from "@/engine/matcher/test-fixtures.ts";
 import {
 	coverageStateFor,
 	groupCoverageKey,
+	seedPendingCoverage,
 } from "@/engine/overflow/coverage.ts";
 
 import { bootstrapFromIdentity } from "./bootstrap.ts";
 import { fetchTargetStream } from "./phases.ts";
-import { runSingleTargetPublish } from "./publish.ts";
+import { finishPublish, runSingleTargetPublish } from "./publish.ts";
 
 const knownMal = { id: "50265", service: "mal" as const };
 const knownIdentity = { kind: "title" as const, title: knownMal };
@@ -183,6 +184,30 @@ describe("runSingleTargetPublish", () => {
 
 		expect(first).toEqual(second);
 		expect(await db.select().from(serviceCoverages).all()).toHaveLength(1);
+	});
+
+	it("marks coverage open when the published ladder still has pending tails", async () => {
+		const db = await freshDb();
+		const bootstrapped = await bootstrapFromIdentity(db, knownIdentity);
+		if (bootstrapped.kind !== "bootstrapped") {
+			throw new Error(`expected bootstrapped, got ${bootstrapped.kind}`);
+		}
+		const continuity = groupCoverageKey(bootstrapped.group.groupId);
+		await seedPendingCoverage(db, continuity, 1, "anilist");
+
+		const result = await finishPublish(db, {
+			continuity,
+			groupId: bootstrapped.group.groupId,
+			ladderComplete: false,
+			revision: 1,
+			targetService: "anilist",
+		});
+
+		expect(result).toEqual({
+			groupId: bootstrapped.group.groupId,
+			kind: "published",
+		});
+		expect(await coverageStateFor(db, continuity, 1, "anilist")).toBe("open");
 	});
 
 	it("refuses without coverage when the target is not enumerable", async () => {

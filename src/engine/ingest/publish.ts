@@ -118,14 +118,13 @@ const finishPublish = async (
 	},
 ): Promise<PublishResult> => {
 	await ensureGroupContinuity(db, input.groupId);
-	if (input.ladderComplete) {
-		await completeCoverage(
-			db,
-			input.continuity,
-			input.revision,
-			input.targetService,
-		);
-	}
+	await writeCoverageState(
+		db,
+		input.continuity,
+		input.revision,
+		input.targetService,
+		input.ladderComplete ? "complete" : "open",
+	);
 	return { groupId: input.groupId, kind: "published" };
 };
 
