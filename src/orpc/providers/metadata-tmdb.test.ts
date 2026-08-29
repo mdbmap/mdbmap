@@ -6,6 +6,7 @@ import { createTmdbProvider } from "./metadata-tmdb.ts";
 import type { MetadataKv } from "./metadata-tmdb.ts";
 
 const SERIES_ID = "999";
+const MOVIE_ID = SERIES_ID;
 
 const resolved: ResolveResult = {
 	continuityId: "continuity:1",
@@ -78,6 +79,37 @@ const season2Json = {
 	episodes: [{ air_date: "2021-04-01", episode_number: 1, name: "Return" }],
 };
 
+const movieJson = {
+	backdrop_path: "/movie-backdrop.jpg",
+	credits: {
+		cast: [{ id: 11, name: "Movie Lead", roles: [{ character: "Hero" }] }],
+		crew: [{ id: 12, job: "Director", name: "Movie Director" }],
+	},
+	original_title: "映画",
+	overview: "A movie used for tests.",
+	poster_path: "/movie-poster.jpg",
+	production_companies: [{ name: "Movie Studio" }],
+	recommendations: {
+		results: [
+			{ id: 604, poster_path: "/similar-movie.jpg", title: "Similar Movie" },
+		],
+	},
+	release_date: "2001-05-16",
+	title: "Test Movie",
+};
+
+const movieResolved: ResolveResult = {
+	continuityId: "continuity:movie",
+	mediaKind: "film",
+	segments: [
+		{
+			instalments: ["tmdb:999"],
+			kind: "atomic",
+			members: { tmdb: MOVIE_ID },
+		},
+	],
+};
+
 const urlOf = (input: RequestInfo | URL): string => {
 	if (typeof input === "string") {
 		return input;
@@ -91,6 +123,9 @@ const responseFor = (url: string): Response => {
 	}
 	if (url.includes("/season/2")) {
 		return Response.json(season2Json);
+	}
+	if (url.includes(`/movie/${MOVIE_ID}`)) {
+		return Response.json(movieJson);
 	}
 	if (url.includes(`/tv/${SERIES_ID}`)) {
 		return Response.json(seriesJson);
@@ -182,8 +217,8 @@ describe("tmdb metadata provider", () => {
 
 		await provider.fetchWork(resolved);
 
-		const coreKey = `tmdb:v1:core:${SERIES_ID}`;
-		const volatileKey = `tmdb:v1:volatile:${SERIES_ID}`;
+		const coreKey = `tmdb:v1:core:tv:${SERIES_ID}`;
+		const volatileKey = `tmdb:v1:volatile:tv:${SERIES_ID}`;
 		expect(store.has(coreKey)).toBe(true);
 		expect(store.has(volatileKey)).toBe(true);
 
@@ -210,5 +245,79 @@ describe("tmdb metadata provider", () => {
 		const second = await provider.fetchWork(resolved);
 		expect(fetchFn.mock.calls.length).toBe(callsAfterMiss);
 		expect(second).toStrictEqual(first);
+	});
+
+	it("fetches and normalises movie metadata", async () => {
+		const fetchFn = makeFetch();
+		const { kv } = makeKv();
+		const provider = createTmdbProvider({
+			apiKey: "test-key",
+			fetchFn,
+			resolveKv: () => kv,
+		});
+
+		const meta = await provider.fetchWork(movieResolved);
+
+		expect(fetchFn).toHaveBeenCalledWith(
+			"https://api.themoviedb.org/3/movie/999?append_to_response=credits,recommendations&api_key=test-key",
+		);
+		expect(meta).toMatchObject({
+			backdropRef: "tmdb:/movie-backdrop.jpg",
+			coverRef: "tmdb:/movie-poster.jpg",
+			nativeTitle: "映画",
+			studios: ["Movie Studio"],
+			synopsis: "A movie used for tests.",
+			title: "Test Movie",
+		});
+		expect(meta.cast).toStrictEqual([
+			{ name: "Movie Lead", ref: "tmdb:person:11", role: "Hero" },
+		]);
+		expect(meta.staff).toStrictEqual([
+			{ name: "Movie Director", ref: "tmdb:person:12", role: "Director" },
+		]);
+		expect(meta.ifYouLiked).toStrictEqual([
+			{
+				continuityId: "tmdb:movie:604",
+				coverRef: "tmdb:/similar-movie.jpg",
+				title: "Similar Movie",
+			},
+		]);
+		expect(meta.segments).toStrictEqual([
+			{
+				airedFrom: "2001-05-16",
+				airedTo: "2001-05-16",
+				episodes: [],
+				label: "Test Movie",
+				year: 2001,
+			},
+		]);
+		expect(meta.span).toBe("2001");
+	});
+
+	it("isolates movie and TV snapshots with the same numeric ID", async () => {
+		const fetchFn = makeFetch();
+		const { kv, store } = makeKv();
+		const provider = createTmdbProvider({
+			apiKey: "test-key",
+			fetchFn,
+			resolveKv: () => kv,
+		});
+
+		const movieMeta = await provider.fetchWork(movieResolved);
+		const tvMeta = await provider.fetchWork(resolved);
+
+		expect(store.has("tmdb:v1:core:movie:999")).toBe(true);
+		expect(store.has("tmdb:v1:volatile:movie:999")).toBe(true);
+		expect(store.has("tmdb:v1:core:tv:999")).toBe(true);
+		expect(store.has("tmdb:v1:volatile:tv:999")).toBe(true);
+		expect(movieMeta.title).toBe("Test Movie");
+		expect(tvMeta.title).toBe("Test Show");
+		expect(fetchFn).toHaveBeenCalledTimes(4);
+		expect(fetchFn.mock.calls.map(([input]) => urlOf(input))).toStrictEqual([
+			"https://api.themoviedb.org/3/movie/999?append_to_response=credits,recommendations&api_key=test-key",
+			"https://api.themoviedb.org/3/tv/999?append_to_response=aggregate_credits,recommendations&api_key=test-key",
+			"https://api.themoviedb.org/3/tv/999/season/1?api_key=test-key",
+			"https://api.themoviedb.org/3/tv/999/season/2?api_key=test-key",
+		]);
 	});
 });

@@ -10,22 +10,14 @@ import type {
 	WorkMetadata,
 } from "./types.ts";
 
-// Real TMDB provider (#5). Given the engine's resolved members it fetches a TMDB
-// series and its seasons, normalises them into WorkMetadata (segments aligned
-// index-for-index with the engine's segments), and snapshots the result to KV
-// split by volatility. A snapshot hit performs zero upstream subrequests.
-
 const SNAPSHOT_VERSION = 1;
 const DEFAULT_BASE_URL = "https://api.themoviedb.org/3";
-// Slow fields (title, cast, studios) live a week; volatile ones (airing
-// episodes, dates) a few hours.
 const DEFAULT_CORE_TTL_SECONDS = 604_800;
 const DEFAULT_VOLATILE_TTL_SECONDS = 21_600;
 const MAX_CAST = 30;
 const MAX_SIMILAR = 12;
 const YEAR_LENGTH = 4;
 
-// TMDB crew job -> the role label we display. Everything else is dropped.
 const STAFF_JOBS = new Map<string, string>([
 	["Director", "Director"],
 	["Series Composition", "Series Composition"],
@@ -107,6 +99,7 @@ type VolatileSnapshot = z.infer<typeof volatileSnapshotSchema>;
 
 const tmdbRoleSchema = z.object({ character: z.string().optional() });
 const tmdbCastSchema = z.object({
+	character: z.string().optional(),
 	id: z.number(),
 	name: z.string(),
 	roles: z.array(tmdbRoleSchema).optional(),
@@ -126,6 +119,7 @@ const tmdbRecommendationSchema = z.object({
 	id: z.number(),
 	name: z.string().optional(),
 	poster_path: z.string().optional(),
+	title: z.string().optional(),
 });
 const tmdbRecommendationsSchema = z.object({
 	results: z.array(tmdbRecommendationSchema).optional(),
@@ -150,6 +144,18 @@ const tmdbSeriesSchema = z.object({
 	seasons: z.array(tmdbSeasonSummarySchema).optional(),
 });
 
+const tmdbMovieSchema = z.object({
+	backdrop_path: z.string().optional(),
+	credits: tmdbCreditsSchema.optional(),
+	original_title: z.string().optional(),
+	overview: z.string().optional(),
+	poster_path: z.string().optional(),
+	production_companies: z.array(tmdbCompanySchema).optional(),
+	recommendations: tmdbRecommendationsSchema.optional(),
+	release_date: z.string().optional(),
+	title: z.string().optional(),
+});
+
 const tmdbEpisodeSchema = z.object({
 	air_date: z.string().optional(),
 	episode_number: z.number(),
@@ -161,7 +167,10 @@ const tmdbSeasonSchema = z.object({
 });
 
 type TmdbSeries = z.infer<typeof tmdbSeriesSchema>;
+type TmdbMovie = z.infer<typeof tmdbMovieSchema>;
 type TmdbSeason = z.infer<typeof tmdbSeasonSchema>;
+
+type TmdbResource = { kind: "movie"; id: number } | { kind: "tv"; id: number };
 
 const imageRef = (path: string | undefined): string | undefined =>
 	path === undefined || path === "" ? undefined : `tmdb:${path}`;
@@ -178,17 +187,42 @@ const yearOf = (date: string | undefined): number | undefined => {
 	return Number.isNaN(year) ? undefined : year;
 };
 
-const seriesIdOf = (resolved: ResolveResult): string | undefined => {
-	for (const segment of resolved.segments) {
-		if (segment.members.tmdb !== undefined) {
-			return segment.members.tmdb;
-		}
-	}
-	return undefined;
+const resourceId = (value: string): number | undefined => {
+	const id = Number(value);
+	return Number.isSafeInteger(id) && id > 0 ? id : undefined;
 };
 
-const keyFor = (kind: "core" | "volatile", version: number, seriesId: string) =>
-	`tmdb:v${version}:${kind}:${seriesId}`;
+const resourcesOf = (resolved: ResolveResult): TmdbResource[] => {
+	const kind = resolved.mediaKind === "film" ? "movie" : "tv";
+	const resources: TmdbResource[] = [];
+	for (const segment of resolved.segments) {
+		const value = segment.members.tmdb;
+		if (value === undefined) {
+			if (kind === "movie") {
+				throw new Error("tmdb: film segment carries no tmdb id");
+			}
+			continue;
+		}
+		const id = resourceId(value);
+		if (id === undefined) {
+			throw new Error(`tmdb: resolved member has invalid tmdb id ${value}`);
+		}
+		resources.push({ id, kind });
+	}
+	return resources;
+};
+
+const keyFor = (
+	kind: "core" | "volatile",
+	version: number,
+	resource: TmdbResource,
+	resources: readonly TmdbResource[],
+) =>
+	`tmdb:v${version}:${kind}:${resource.kind}:${
+		resource.kind === "movie"
+			? resources.map(({ id }) => id).join(",")
+			: resource.id
+	}`;
 
 const normaliseCast = (series: TmdbSeries): Credit[] =>
 	(series.aggregate_credits?.cast ?? []).slice(0, MAX_CAST).map((member) => ({
@@ -212,7 +246,8 @@ const normaliseStaff = (series: TmdbSeries): Credit[] => {
 		add(creator.name, `tmdb:person:${creator.id}`, "Original Creator");
 	}
 	for (const member of series.aggregate_credits?.crew ?? []) {
-		const role = member.job === undefined ? undefined : STAFF_JOBS.get(member.job);
+		const role =
+			member.job === undefined ? undefined : STAFF_JOBS.get(member.job);
 		if (role !== undefined) {
 			add(member.name, `tmdb:person:${member.id}`, role);
 		}
@@ -226,6 +261,43 @@ const normaliseSimilar = (series: TmdbSeries): Similar[] =>
 		coverRef: imageRef(rec.poster_path),
 		title: rec.name ?? "",
 	}));
+
+const normaliseMovieSimilar = (movie: TmdbMovie): Similar[] =>
+	(movie.recommendations?.results ?? []).slice(0, MAX_SIMILAR).map((rec) => ({
+		continuityId: `tmdb:movie:${rec.id}`,
+		coverRef: imageRef(rec.poster_path),
+		title: rec.title ?? rec.name ?? "",
+	}));
+
+const normaliseMovieCast = (movie: TmdbMovie): Credit[] =>
+	(movie.credits?.cast ?? []).slice(0, MAX_CAST).map((member) => ({
+		name: member.name,
+		ref: `tmdb:person:${member.id}`,
+		role: member.roles?.[0]?.character ?? member.character ?? "",
+	}));
+
+const normaliseMovieStaff = (movie: TmdbMovie): Credit[] => {
+	const staff: Credit[] = [];
+	const seen = new Set<string>();
+	for (const member of movie.credits?.crew ?? []) {
+		const role =
+			member.job === undefined ? undefined : STAFF_JOBS.get(member.job);
+		if (role === undefined) {
+			continue;
+		}
+		const dedupeKey = `${role}:${member.name}`;
+		if (seen.has(dedupeKey)) {
+			continue;
+		}
+		seen.add(dedupeKey);
+		staff.push({
+			name: member.name,
+			ref: `tmdb:person:${member.id}`,
+			role,
+		});
+	}
+	return staff;
+};
 
 const spanOf = (series: TmdbSeries): string => {
 	const from = yearOf(series.first_air_date);
@@ -250,11 +322,13 @@ interface Snapshots {
 }
 
 const volatileSegmentOf = (season: TmdbSeason) => {
-	const episodes: EpisodeMetadata[] = (season.episodes ?? []).map((episode) => ({
-		airDate: episode.air_date,
-		number: episode.episode_number,
-		title: episode.name ?? `Episode ${episode.episode_number}`,
-	}));
+	const episodes: EpisodeMetadata[] = (season.episodes ?? []).map(
+		(episode) => ({
+			airDate: episode.air_date,
+			number: episode.episode_number,
+			title: episode.name ?? `Episode ${episode.episode_number}`,
+		}),
+	);
 	return {
 		airedFrom: season.air_date ?? episodes[0]?.airDate,
 		airedTo: episodes.at(-1)?.airDate,
@@ -280,7 +354,10 @@ const buildSnapshots = (
 		coverRef: imageRef(series.poster_path),
 		ifYouLiked: normaliseSimilar(series),
 		nativeTitle,
-		segments: summaries.map((summary) => ({ label: summary.label, year: summary.year })),
+		segments: summaries.map((summary) => ({
+			label: summary.label,
+			year: summary.year,
+		})),
 		staff: normaliseStaff(series),
 		studios: (series.production_companies ?? []).map((company) => company.name),
 		synopsis: series.overview ?? "",
@@ -294,6 +371,48 @@ const buildSnapshots = (
 		version,
 	});
 
+	return { core, volatile };
+};
+
+const buildMovieSnapshots = (
+	version: number,
+	movies: readonly TmdbMovie[],
+): Snapshots => {
+	const [head] = movies;
+	const title = head?.title ?? "";
+	const nativeTitle =
+		head?.original_title !== undefined && head.original_title !== title
+			? head.original_title
+			: undefined;
+	const releaseDate = head?.release_date;
+	const core = coreSnapshotSchema.parse({
+		backdropRef: imageRef(head?.backdrop_path),
+		cast: head === undefined ? [] : normaliseMovieCast(head),
+		coverRef: imageRef(head?.poster_path),
+		ifYouLiked: head === undefined ? [] : normaliseMovieSimilar(head),
+		nativeTitle,
+		segments: movies.map((movie) => ({
+			label: movie.title ?? "",
+			year: yearOf(movie.release_date),
+		})),
+		staff: head === undefined ? [] : normaliseMovieStaff(head),
+		studios: (head?.production_companies ?? []).map((company) => company.name),
+		synopsis: head?.overview ?? "",
+		title,
+		version,
+	});
+	const volatile = volatileSnapshotSchema.parse({
+		segments: movies.map((movie) => ({
+			airedFrom: movie.release_date,
+			airedTo: movie.release_date,
+			episodes: [],
+		})),
+		span:
+			releaseDate === undefined || yearOf(releaseDate) === undefined
+				? ""
+				: `${yearOf(releaseDate)}`,
+		version,
+	});
 	return { core, volatile };
 };
 
@@ -311,17 +430,24 @@ const toEpisode = (
 	title: episode.title,
 });
 
-const assemble = (core: CoreSnapshot, volatile: VolatileSnapshot): WorkMetadata => {
-	const segments: SegmentMetadata[] = core.segments.map((coreSegment, index) => {
-		const volatileSegment = volatile.segments[index];
-		return {
-			airedFrom: volatileSegment?.airedFrom,
-			airedTo: volatileSegment?.airedTo,
-			episodes: (volatileSegment?.episodes ?? []).map((episode) => toEpisode(episode)),
-			label: coreSegment.label,
-			year: coreSegment.year,
-		};
-	});
+const assemble = (
+	core: CoreSnapshot,
+	volatile: VolatileSnapshot,
+): WorkMetadata => {
+	const segments: SegmentMetadata[] = core.segments.map(
+		(coreSegment, index) => {
+			const volatileSegment = volatile.segments[index];
+			return {
+				airedFrom: volatileSegment?.airedFrom,
+				airedTo: volatileSegment?.airedTo,
+				episodes: (volatileSegment?.episodes ?? []).map((episode) =>
+					toEpisode(episode),
+				),
+				label: coreSegment.label,
+				year: coreSegment.year,
+			};
+		},
+	);
 	return {
 		backdropRef: core.backdropRef,
 		cast: core.cast.map((credit) => toCredit(credit)),
@@ -423,6 +549,25 @@ const fetchFromTmdb = async (
 	return buildSnapshots(version, series, seasons, summaries);
 };
 
+const fetchMoviesFromTmdb = async (
+	http: HttpContext,
+	version: number,
+	resources: readonly TmdbResource[],
+): Promise<Snapshots> => {
+	const movies = await Promise.all(
+		resources.map(async (resource) =>
+			resource.kind === "movie"
+				? getJson(
+						http,
+						`/movie/${resource.id}?append_to_response=credits,recommendations`,
+						tmdbMovieSchema,
+					)
+				: Promise.reject(new Error("tmdb: expected movie resource")),
+		),
+	);
+	return buildMovieSnapshots(version, movies);
+};
+
 const createTmdbProvider = (deps: TmdbProviderDeps): MetadataProvider => {
 	const {
 		apiKey,
@@ -436,22 +581,38 @@ const createTmdbProvider = (deps: TmdbProviderDeps): MetadataProvider => {
 	const http: HttpContext = { apiKey, baseUrl, fetchFn };
 
 	const fetchWork = async (resolved: ResolveResult): Promise<WorkMetadata> => {
-		const seriesId = seriesIdOf(resolved);
-		if (seriesId === undefined) {
-			throw new Error("tmdb: resolved members carry no tmdb series id");
+		const resources = resourcesOf(resolved);
+		const [primaryResource] = resources;
+		if (primaryResource === undefined) {
+			throw new Error("tmdb: resolved members carry no tmdb id");
 		}
 		const kv = await resolveKv();
-		const coreKey = keyFor("core", version, seriesId);
-		const volatileKey = keyFor("volatile", version, seriesId);
+		const coreKey = keyFor("core", version, primaryResource, resources);
+		const volatileKey = keyFor("volatile", version, primaryResource, resources);
 
 		const core = await readSnapshot(kv, coreKey, coreSnapshotSchema, version);
-		const volatile = await readSnapshot(kv, volatileKey, volatileSnapshotSchema, version);
+		const volatile = await readSnapshot(
+			kv,
+			volatileKey,
+			volatileSnapshotSchema,
+			version,
+		);
 		if (core !== undefined && volatile !== undefined) {
 			return assemble(core, volatile);
 		}
 
-		const fetched = await fetchFromTmdb(http, version, seriesId, resolved.segments.length);
-		await kv.put(coreKey, JSON.stringify(fetched.core), { expirationTtl: coreTtlSeconds });
+		const fetched =
+			primaryResource.kind === "movie"
+				? await fetchMoviesFromTmdb(http, version, resources)
+				: await fetchFromTmdb(
+						http,
+						version,
+						String(primaryResource.id),
+						resolved.segments.length,
+					);
+		await kv.put(coreKey, JSON.stringify(fetched.core), {
+			expirationTtl: coreTtlSeconds,
+		});
 		await kv.put(volatileKey, JSON.stringify(fetched.volatile), {
 			expirationTtl: volatileTtlSeconds,
 		});
