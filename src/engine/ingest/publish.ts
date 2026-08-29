@@ -171,11 +171,13 @@ const finishPublish = async (
 		input.ladderComplete ? "complete" : "open",
 	);
 	if (input.afterPublish !== undefined) {
-		scheduleAfterPublishFuzzy({
-			...input.afterPublish,
-			db,
-			groupId: input.groupId,
-		});
+		if (Object.keys(input.afterPublish.clients).length > 0) {
+			scheduleAfterPublishFuzzy({
+				...input.afterPublish,
+				db,
+				groupId: input.groupId,
+			});
+		}
 		if (input.afterPublish.research !== undefined) {
 			const residue = input.ladderComplete
 				? []

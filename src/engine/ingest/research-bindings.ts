@@ -38,7 +38,6 @@ const buildAfterPublishResearch = (
 			clients: catalogue.verification,
 			enqueueReview: noopEnqueueReview,
 			masterKey,
-			providerId: "",
 			timing: createDbTimingStore(db),
 			...(catalogue.simkl === undefined ? {} : { simkl: catalogue.simkl }),
 		},

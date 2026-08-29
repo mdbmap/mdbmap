@@ -1,5 +1,5 @@
 import { eq } from "drizzle-orm";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import {
 	pendingGroupCandidates,
@@ -50,7 +50,7 @@ const countingAgent =
 const researchConfig = (input: {
 	readonly agent: ResearchAgent;
 	readonly masterKey: string;
-	readonly providerId: string;
+	readonly providerId?: string;
 	readonly timing: "after-residue" | "off";
 }): AfterPublishResearchConfig => ({
 	deps: {
@@ -58,7 +58,7 @@ const researchConfig = (input: {
 		clients: {},
 		enqueueReview: noopReview,
 		masterKey: input.masterKey,
-		providerId: input.providerId,
+		...(input.providerId === undefined ? {} : { providerId: input.providerId }),
 		timing: createMemoryTimingStore(input.timing),
 	},
 });
@@ -309,6 +309,10 @@ describe("post-publish research", () => {
 		const db = await freshDb();
 		const calls = { count: 0 };
 		const scheduled: Promise<void>[] = [];
+		const listProvidersSpy = vi.spyOn(
+			await import("@/lib/provider-config"),
+			"listProviders",
+		);
 
 		scheduleAfterPublishResearch({
 			continuity: groupCoverageKey(1),
@@ -316,7 +320,6 @@ describe("post-publish research", () => {
 			deps: researchConfig({
 				agent: countingAgent(calls),
 				masterKey: randomMasterKey(),
-				providerId: "missing",
 				timing: "off",
 			}).deps,
 			groupId: 1,
@@ -329,6 +332,46 @@ describe("post-publish research", () => {
 		expect(scheduled).toHaveLength(1);
 		await Promise.all(scheduled);
 		expect(calls.count).toBe(0);
+		expect(listProvidersSpy).not.toHaveBeenCalled();
+		listProvidersSpy.mockRestore();
+	});
+
+	it("does not schedule fuzzy discovery when only research is configured", async () => {
+		const db = await freshDb();
+		const group = await seedGroup(db);
+		const fetchTitle = vi.fn(() => ({
+			format: "movie" as const,
+			instalmentCount: undefined,
+			releaseDate: "1998-04-03",
+			title: "Cowboy Bebop",
+		}));
+		let scheduleCount = 0;
+
+		await finishPublish(db, {
+			afterPublish: {
+				catalogues: { tmdb: { fetchTitle } },
+				clients: {},
+				research: researchConfig({
+					agent: countingAgent({ count: 0 }),
+					masterKey: randomMasterKey(),
+					timing: "off",
+				}),
+				scheduler: () => {
+					scheduleCount += 1;
+				},
+			},
+			continuity: groupCoverageKey(group.id),
+			groupId: group.id,
+			ladderComplete: false,
+			revision: 1,
+			targetService: "tmdb",
+		});
+
+		expect(scheduleCount).toBe(1);
+		expect(fetchTitle).not.toHaveBeenCalled();
+		expect(await db.select().from(pendingGroupCandidates).all()).toHaveLength(
+			0,
+		);
 	});
 
 	it("does not invoke research when matcher residue is empty", async () => {

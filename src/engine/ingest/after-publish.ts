@@ -11,7 +11,6 @@ import type {
 import type { GroupCoverageKey } from "@/engine/overflow/coverage.ts";
 import { runResearchPass } from "@/engine/research";
 import type { ResearchPassDeps } from "@/engine/research";
-import { listProviders } from "@/lib/provider-config";
 
 type AfterPublishScheduler = (task: Promise<void>) => void;
 
@@ -150,14 +149,6 @@ const scheduleAfterPublishResearch = (
 	input.scheduler(
 		(async () => {
 			try {
-				const providers = await listProviders(input.db, input.deps.masterKey);
-				const providerId =
-					input.deps.providerId.length > 0
-						? input.deps.providerId
-						: providers[0]?.id;
-				if (providerId === undefined) {
-					return;
-				}
 				await runResearchPass(
 					{
 						groupId: input.groupId,
@@ -165,7 +156,7 @@ const scheduleAfterPublishResearch = (
 						targetServices: input.residue,
 					},
 					"after-residue",
-					{ ...input.deps, db: input.db, providerId },
+					{ ...input.deps, db: input.db },
 				);
 			} catch {
 				return;
