@@ -268,11 +268,13 @@ const serialize = (
 	answer: ResolvedAnswer,
 	options: SerializeOptions = {},
 ): MappingResponse => {
+	const continuity =
+		options.continuityId === undefined
+			? {}
+			: { continuityId: options.continuityId };
 	if (answer.kind === "instalment") {
 		return {
-			...(options.continuityId === undefined
-				? {}
-				: { continuityId: options.continuityId }),
+			...continuity,
 			input: formatId(answer.input),
 			mappings: mappingsFor(answer.links, undefined),
 		};
@@ -295,9 +297,7 @@ const serialize = (
 		});
 	}
 	return {
-		...(options.continuityId === undefined
-			? {}
-			: { continuityId: options.continuityId }),
+		...continuity,
 		input: formatId(answer.input),
 		...(instalmentErrors.length > 0 ? { instalmentErrors } : {}),
 		instalments,

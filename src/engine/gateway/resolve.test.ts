@@ -252,7 +252,8 @@ describe("mapping gateway resolution", () => {
 
 	it("returns 409 with an opaque review reference for a blocking conflict", async () => {
 		const group = await seedGroup(db);
-		await seedTitle(db, group.id, "tmdb", "movie:603");
+		const source = await seedTitle(db, group.id, "tmdb", "movie:603");
+		await seedContinuity(db, source.id);
 		await seedCoverage(db, group.id, "imdb", "conflict");
 
 		const outcome = await resolveMapping(db, "movie", "tmdb:603", noColdLookup);
@@ -268,7 +269,8 @@ describe("mapping gateway resolution", () => {
 
 	it("returns 202 with a status URL for a seeded pending build", async () => {
 		const group = await seedGroup(db);
-		await seedTitle(db, group.id, "tmdb", "movie:603");
+		const source = await seedTitle(db, group.id, "tmdb", "movie:603");
+		await seedContinuity(db, source.id);
 		await seedCoverage(db, group.id, "imdb", "pending");
 
 		const outcome = await resolveMapping(db, "movie", "tmdb:603", noColdLookup);
@@ -414,6 +416,7 @@ describe("mapping gateway instalment resolution", () => {
 		const source = await seedTitle(db, group.id, "tmdb", "tv:1396");
 		const target = await seedTitle(db, group.id, "imdb", "tt0903747");
 		await linkTitles(db, source.id, target.id, "t1-structure");
+		const continuityId = await seedContinuity(db, source.id);
 		const sourceEpisode = one(
 			await db
 				.insert(serviceInstalments)
@@ -463,6 +466,7 @@ describe("mapping gateway instalment resolution", () => {
 			return;
 		}
 		expect(outcome.body.input).toBe("tmdb:1396:1:1");
+		expect(outcome.body.continuityId).toBe(continuityId);
 		expect(
 			outcome.body.mappings.imdb?.counterparts.map(
 				(counterpart) => counterpart.id,
