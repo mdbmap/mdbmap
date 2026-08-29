@@ -479,10 +479,12 @@ const runAtomicTargetPublish = async (
 		return { kind: "refused", reason: discovered.reason };
 	}
 	if (discovered.kind === "no-group") {
+		await completeCoverage(db, continuity, revision, input.targetService);
 		return { kind: "refused", reason: "unavailable-target" };
 	}
 	const mapping = targetMappingFor(discovered.discovered, input.targetService);
 	if (mapping === undefined) {
+		await completeCoverage(db, continuity, revision, input.targetService);
 		return { kind: "refused", reason: "unavailable-target" };
 	}
 	return publishAtomicTarget(db, {

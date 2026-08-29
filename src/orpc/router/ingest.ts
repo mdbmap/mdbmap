@@ -27,8 +27,19 @@ const outcomeFor = (
 	if (statuses.includes("pending") && graph.pendingRef !== undefined) {
 		return pending(statusUrlFor(graph.pendingRef), WARM_RETRY_AFTER_SECONDS);
 	}
+	const usable =
+		graph.answer.links.size > 0 &&
+		statuses.some(
+			(status) => status === "matched" || status === "known-no-counterpart",
+		);
+	if (usable) {
+		return { kind: "complete" };
+	}
 	if (graph.reviewRef !== undefined) {
 		return { kind: "conflict", review: graph.reviewRef };
+	}
+	if (graph.answer.links.size === 0) {
+		return;
 	}
 	return { kind: "complete" };
 };
