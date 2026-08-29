@@ -192,25 +192,6 @@ const resourceId = (value: string): number | undefined => {
 	return Number.isSafeInteger(id) && id > 0 ? id : undefined;
 };
 
-const resourcesOf = (resolved: ResolveResult): TmdbResource[] => {
-	const resources: TmdbResource[] = [];
-	for (const segment of resolved.segments) {
-		const value = segment.members.tmdb;
-		if (value === undefined) {
-			continue;
-		}
-		const id = resourceId(value);
-		if (id === undefined) {
-			throw new Error(`tmdb: resolved member has invalid tmdb id ${value}`);
-		}
-		resources.push({
-			id,
-			kind: segment.kind === "atomic" ? "movie" : "tv",
-		});
-	}
-	return resources;
-};
-
 interface ResourceRun {
 	kind: TmdbResource["kind"];
 	resources: readonly TmdbResource[];
@@ -219,15 +200,41 @@ interface ResourceRun {
 const runsOf = (resolved: ResolveResult): ResourceRun[] => {
 	const runs: ResourceRun[] = [];
 	let current: TmdbResource[] = [];
-	let currentKind: TmdbResource["kind"] | undefined;
-	for (const resource of resourcesOf(resolved)) {
-		if (resource.kind !== currentKind) {
-			current = [];
-			currentKind = resource.kind;
-			runs.push({ kind: currentKind, resources: current });
+
+	const flush = () => {
+		if (current.length === 0) {
+			return;
 		}
-		current.push(resource);
+		const [head] = current;
+		if (head === undefined) {
+			return;
+		}
+		runs.push({ kind: head.kind, resources: current });
+		current = [];
+	};
+
+	for (const segment of resolved.segments) {
+		const value = segment.members.tmdb;
+		if (value === undefined) {
+			flush();
+			continue;
+		}
+		const id = resourceId(value);
+		if (id === undefined) {
+			throw new Error(`tmdb: resolved member has invalid tmdb id ${value}`);
+		}
+		const kind = segment.kind === "atomic" ? "movie" : "tv";
+		const [head] = current;
+		const continuesRun =
+			head !== undefined &&
+			head.kind === kind &&
+			(kind === "movie" || head.id === id);
+		if (!continuesRun) {
+			flush();
+		}
+		current.push({ id, kind });
 	}
+	flush();
 	return runs;
 };
 
@@ -240,7 +247,7 @@ const keyFor = (
 	`tmdb:v${version}:${kind}:${resource.kind}:${
 		resource.kind === "movie"
 			? resources.map(({ id }) => id).join(",")
-			: resource.id
+			: `${resource.id}:${resources.length}`
 	}`;
 
 const normaliseCast = (series: TmdbSeries): Credit[] =>

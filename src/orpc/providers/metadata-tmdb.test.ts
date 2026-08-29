@@ -134,6 +134,34 @@ const urlOf = (input: RequestInfo | URL): string => {
 	return input instanceof URL ? input.href : input.url;
 };
 
+const SECOND_SERIES_ID = "200";
+
+const secondSeriesJson = {
+	...seriesJson,
+	name: "Other Show",
+	seasons: [
+		{ air_date: "2019-12-01", name: "Specials", season_number: 0 },
+		{ air_date: "2022-04-01", name: "Season 1", season_number: 1 },
+	],
+};
+
+const multiTvResolved: ResolveResult = {
+	continuityId: "continuity:multi-tv",
+	mediaKind: "tv",
+	segments: [
+		{
+			instalments: ["tmdb:999#1"],
+			kind: "episodic",
+			members: { tmdb: SERIES_ID },
+		},
+		{
+			instalments: ["tmdb:200#1"],
+			kind: "episodic",
+			members: { tmdb: SECOND_SERIES_ID },
+		},
+	],
+};
+
 const responseFor = (url: string): Response => {
 	if (url.includes("/season/1")) {
 		return Response.json(season1Json);
@@ -143,6 +171,9 @@ const responseFor = (url: string): Response => {
 	}
 	if (url.includes(`/movie/${MOVIE_ID}`)) {
 		return Response.json(movieJson);
+	}
+	if (url.includes(`/tv/${SECOND_SERIES_ID}`)) {
+		return Response.json(secondSeriesJson);
 	}
 	if (url.includes(`/tv/${SERIES_ID}`)) {
 		return Response.json(seriesJson);
@@ -234,8 +265,8 @@ describe("tmdb metadata provider", () => {
 
 		await provider.fetchWork(resolved);
 
-		const coreKey = `tmdb:v1:core:tv:${SERIES_ID}`;
-		const volatileKey = `tmdb:v1:volatile:tv:${SERIES_ID}`;
+		const coreKey = `tmdb:v1:core:tv:${SERIES_ID}:2`;
+		const volatileKey = `tmdb:v1:volatile:tv:${SERIES_ID}:2`;
 		expect(store.has(coreKey)).toBe(true);
 		expect(store.has(volatileKey)).toBe(true);
 
@@ -350,8 +381,8 @@ describe("tmdb metadata provider", () => {
 
 		expect(store.has("tmdb:v1:core:movie:999")).toBe(true);
 		expect(store.has("tmdb:v1:volatile:movie:999")).toBe(true);
-		expect(store.has("tmdb:v1:core:tv:999")).toBe(true);
-		expect(store.has("tmdb:v1:volatile:tv:999")).toBe(true);
+		expect(store.has("tmdb:v1:core:tv:999:2")).toBe(true);
+		expect(store.has("tmdb:v1:volatile:tv:999:2")).toBe(true);
 		expect(movieMeta.title).toBe("Test Movie");
 		expect(tvMeta.title).toBe("Test Show");
 		expect(fetchFn).toHaveBeenCalledTimes(4);
@@ -400,5 +431,56 @@ describe("tmdb metadata provider", () => {
 				"https://api.themoviedb.org/3/movie/999?append_to_response=credits,recommendations&api_key=test-key",
 			]),
 		);
+	});
+
+	it("fetches each distinct TV id in its own run", async () => {
+		const fetchFn = makeFetch();
+		const { kv } = makeKv();
+		const provider = createTmdbProvider({
+			apiKey: "test-key",
+			fetchFn,
+			resolveKv: () => kv,
+		});
+
+		const meta = await provider.fetchWork(multiTvResolved);
+
+		expect(fetchFn.mock.calls.map(([input]) => urlOf(input))).toEqual(
+			expect.arrayContaining([
+				"https://api.themoviedb.org/3/tv/999?append_to_response=aggregate_credits,recommendations&api_key=test-key",
+				"https://api.themoviedb.org/3/tv/999/season/1?api_key=test-key",
+				"https://api.themoviedb.org/3/tv/200?append_to_response=aggregate_credits,recommendations&api_key=test-key",
+				"https://api.themoviedb.org/3/tv/200/season/1?api_key=test-key",
+			]),
+		);
+		expect(meta.segments).toStrictEqual([
+			expect.objectContaining({ label: "Season 1", year: 2020 }),
+			expect.objectContaining({ label: "Season 1", year: 2022 }),
+		]);
+	});
+
+	it("keys TV snapshots by series id and segment count", async () => {
+		const fetchFn = makeFetch();
+		const { kv, store } = makeKv();
+		const provider = createTmdbProvider({
+			apiKey: "test-key",
+			fetchFn,
+			resolveKv: () => kv,
+		});
+		const [firstSegment] = resolved.segments;
+		if (firstSegment === undefined) {
+			throw new Error("expected a TV segment fixture");
+		}
+		const oneSegmentResolved: ResolveResult = {
+			continuityId: "continuity:one-season",
+			mediaKind: "tv",
+			segments: [firstSegment],
+		};
+
+		await provider.fetchWork(oneSegmentResolved);
+		await provider.fetchWork(resolved);
+
+		expect(store.has("tmdb:v1:core:tv:999:1")).toBe(true);
+		expect(store.has("tmdb:v1:core:tv:999:2")).toBe(true);
+		expect(fetchFn).toHaveBeenCalledTimes(5);
 	});
 });
