@@ -252,14 +252,14 @@ describe("live movie cold lookup failures", () => {
 			}),
 		).rejects.toThrow("catalogue unavailable");
 		expect(await ingest.db.select().from(serviceCoverages).get()).toMatchObject(
-			{ state: "pending" },
+			{ state: "conflict" },
 		);
 
 		const retry = await runMapping("movie", "tmdb:603", { db: ingest.db });
-		expect(retry.status).toBe(202);
+		expect(retry.status).toBe(409);
 	});
 
-	it("keeps coverage pending when inline publish refuses", async () => {
+	it("terminates pending coverage when inline publish refuses", async () => {
 		const publishModule = await import("./publish.ts");
 		vi.spyOn(publishModule, "runAtomicTargetPublish").mockResolvedValueOnce({
 			kind: "refused",
@@ -272,9 +272,9 @@ describe("live movie cold lookup failures", () => {
 			db: ingest.db,
 		});
 
-		expect(response.status).toBe(202);
+		expect(response.status).toBe(409);
 		expect(await ingest.db.select().from(serviceCoverages).get()).toMatchObject(
-			{ state: "pending" },
+			{ state: "conflict" },
 		);
 	});
 });

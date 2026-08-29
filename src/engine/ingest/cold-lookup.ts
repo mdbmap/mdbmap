@@ -15,12 +15,14 @@ import {
 	seedPendingCoverage,
 } from "@/engine/overflow";
 import type { OverflowBudget } from "@/engine/overflow";
+import { writeCoverageState } from "@/engine/overflow/coverage.ts";
 
 import { bootstrapFromIdentity } from "./bootstrap.ts";
 import type { BootstrappedGroup } from "./bootstrap.ts";
 import type { IngestEnv } from "./env.ts";
 import { probeUpstream } from "./probe.ts";
 import { runAtomicTargetPublish } from "./publish.ts";
+import type { PublishResult } from "./publish.ts";
 
 const BASELINE_REVISION = 1;
 
@@ -32,6 +34,7 @@ interface LiveColdLookupInput {
 interface InlinePublishInput {
 	readonly anchor: TitleIdentity;
 	readonly budget: OverflowBudget;
+	readonly continuity: ReturnType<typeof groupCoverageKey>;
 	readonly discovery: NonNullable<IngestEnv["structuralDiscovery"]>;
 	readonly group: BootstrappedGroup;
 	readonly ingest: IngestEnv;
@@ -85,7 +88,9 @@ const fitsInline = async (input: {
 	).fitsBudget;
 };
 
-const publishInline = async (input: InlinePublishInput): Promise<void> => {
+const publishInline = async (
+	input: InlinePublishInput,
+): Promise<PublishResult | undefined> => {
 	if (
 		!(await fitsInline({
 			budget: input.budget,
@@ -95,13 +100,39 @@ const publishInline = async (input: InlinePublishInput): Promise<void> => {
 	) {
 		return;
 	}
-	await runAtomicTargetPublish(input.ingest.db, {
+	return runAtomicTargetPublish(input.ingest.db, {
 		anchor: input.anchor,
 		budget: input.budget.requestBudget,
 		clients: { discovery: input.discovery },
 		group: input.group,
 		targetService: input.targetService,
 	});
+};
+
+const settleInlinePublish = async (
+	input: InlinePublishInput,
+): Promise<void> => {
+	try {
+		const result = await publishInline(input);
+		if (result?.kind === "refused" && result.reason !== "unavailable-target") {
+			await writeCoverageState(
+				input.ingest.db,
+				input.continuity,
+				BASELINE_REVISION,
+				input.targetService,
+				"conflict",
+			);
+		}
+	} catch (error) {
+		await writeCoverageState(
+			input.ingest.db,
+			input.continuity,
+			BASELINE_REVISION,
+			input.targetService,
+			"conflict",
+		);
+		throw error;
+	}
 };
 
 const createLiveColdLookup = (input: LiveColdLookupInput): ColdLookup => {
@@ -137,9 +168,10 @@ const createLiveColdLookup = (input: LiveColdLookupInput): ColdLookup => {
 			if (discovery === undefined) {
 				return { kind: "updated" };
 			}
-			await publishInline({
+			await settleInlinePublish({
 				anchor: identity.title,
 				budget,
+				continuity,
 				discovery,
 				group: bootstrap.group,
 				ingest,
