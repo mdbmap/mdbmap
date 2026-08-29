@@ -56,14 +56,23 @@ interface CreateIngestEnvInput {
 const createIngestEnv = (input: CreateIngestEnvInput): IngestEnv => {
 	const { bindings, overrides, secrets } = input;
 	const built = buildCatalogueClients({ secrets });
+	const overrideAfterPublish = overrides?.afterPublish;
+	const resolvedAfterPublish =
+		overrideAfterPublish !== undefined &&
+		Object.keys(overrideAfterPublish.clients).length > 0
+			? {
+					...overrideAfterPublish,
+					scheduler:
+						overrideAfterPublish.scheduler ??
+						((task: Promise<void>) => {
+							waitUntil(task);
+						}),
+				}
+			: undefined;
 	return {
-		afterPublish: overrides?.afterPublish ?? {
-			catalogues: overrides?.catalogue?.verification ?? built.verification,
-			clients: {},
-			scheduler: (task) => {
-				waitUntil(task);
-			},
-		},
+		...(resolvedAfterPublish === undefined
+			? {}
+			: { afterPublish: resolvedAfterPublish }),
 		catalogue: {
 			simkl: overrides?.catalogue?.simkl ?? built.simkl,
 			verification: overrides?.catalogue?.verification ?? built.verification,

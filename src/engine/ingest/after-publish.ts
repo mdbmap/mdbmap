@@ -1,4 +1,4 @@
-import { eq } from "drizzle-orm";
+import { asc, eq } from "drizzle-orm";
 
 import type { Db } from "@/db";
 import { serviceTitles } from "@/db/engine-schema";
@@ -72,6 +72,7 @@ const dbSubject = async (
 		.select({ id: serviceTitles.id })
 		.from(serviceTitles)
 		.where(eq(serviceTitles.groupId, groupId))
+		.orderBy(asc(serviceTitles.id))
 		.limit(1)
 		.get();
 	return row?.id;
