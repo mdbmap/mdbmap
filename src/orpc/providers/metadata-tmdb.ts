@@ -340,9 +340,7 @@ const normaliseMovieStaff = (movie: TmdbMovie): Credit[] => {
 	return staff;
 };
 
-const spanOf = (series: TmdbSeries): string => {
-	const from = yearOf(series.first_air_date);
-	const to = yearOf(series.last_air_date);
+const yearSpan = (from: number | undefined, to: number | undefined): string => {
 	if (from === undefined) {
 		return "";
 	}
@@ -352,19 +350,21 @@ const spanOf = (series: TmdbSeries): string => {
 	return `${from}–${to}`;
 };
 
+const spanOf = (series: TmdbSeries): string =>
+	yearSpan(yearOf(series.first_air_date), yearOf(series.last_air_date));
+
 const movieSpanOf = (movies: readonly TmdbMovie[]): string => {
-	const years = movies
-		.map((movie) => yearOf(movie.release_date))
-		.filter((year): year is number => year !== undefined);
-	if (years.length === 0) {
-		return "";
+	let from: number | undefined;
+	let to: number | undefined;
+	for (const movie of movies) {
+		const year = yearOf(movie.release_date);
+		if (year === undefined) {
+			continue;
+		}
+		from = from === undefined ? year : Math.min(from, year);
+		to = to === undefined ? year : Math.max(to, year);
 	}
-	const from = Math.min(...years);
-	const to = Math.max(...years);
-	if (to === from) {
-		return `${from}`;
-	}
-	return `${from}–${to}`;
+	return yearSpan(from, to);
 };
 
 interface SeasonSummary {
