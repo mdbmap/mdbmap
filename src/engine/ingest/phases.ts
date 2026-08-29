@@ -4,7 +4,10 @@ import type { Db } from "@/db";
 import type { AssertionConfidence } from "@/db/columns";
 import { serviceInstalments } from "@/db/engine-schema";
 import type { InstalmentLocator } from "@/db/schema";
-import { discoverStructuralGroup } from "@/engine/discovery/structural.ts";
+import {
+	discoverAtomicGroup as discoverAtomicStructuralGroup,
+	discoverStructuralGroup,
+} from "@/engine/discovery/structural.ts";
 import type {
 	DiscoveryClients,
 	DiscoveryOutcome,
@@ -84,6 +87,18 @@ const discoverGroup = async (
 ): Promise<DiscoverPhaseOutcome> => {
 	const member = toGraphMember(input.anchor);
 	const outcome = await discoverStructuralGroup({
+		budget: input.budget,
+		clients: input.clients,
+		shared: member,
+	});
+	return toDiscoverOutcome(outcome);
+};
+
+const discoverAtomicGroup = async (
+	input: DiscoverInput,
+): Promise<DiscoverPhaseOutcome> => {
+	const member = toGraphMember(input.anchor);
+	const outcome = await discoverAtomicStructuralGroup({
 		budget: input.budget,
 		clients: input.clients,
 		shared: member,
@@ -245,6 +260,7 @@ export {
 	alignTarget,
 	anchorStreamFromDb,
 	convergeMembersOf,
+	discoverAtomicGroup,
 	discoverGroup,
 	fetchTargetStream,
 	highestTriedTier,

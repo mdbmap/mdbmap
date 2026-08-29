@@ -3,6 +3,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import {
 	serviceCoverages,
 	serviceTitles,
+	titleAssertions,
 	titleGroups,
 } from "@/db/engine-schema";
 import { freshDb } from "@/db/test-helpers";
@@ -157,11 +158,19 @@ describe("live movie cold lookup", () => {
 			input: "tmdb:603",
 			mappings: {
 				imdb: {
-					counterparts: [{ id: "tt0133093" }],
+					counterparts: [
+						{
+							assertionPath: [{ confidence: "high", source: "t1-structure" }],
+							id: "tt0133093",
+						},
+					],
 					status: "matched",
 				},
 			},
 		});
+		expect(await ingest.db.select().from(titleAssertions).all()).toMatchObject([
+			{ confidence: "high", source: "t1-structure" },
+		]);
 	});
 });
 
@@ -198,6 +207,22 @@ describe("pending movie cold lookup", () => {
 		await expect(response.json()).resolves.toMatchObject({
 			statusUrl: `/api/engine/status/pending:${coverage?.id.toString(36)}`,
 		});
+	});
+
+	it("leaves coverage pending when discovery finds no counterpart", async () => {
+		const ingest = await ingestEnv(movieDiscovery(0));
+		const response = await runMapping("movie", "tmdb:603", {
+			coldLookup: liveLookup(ingest),
+			db: ingest.db,
+		});
+
+		expect(response.status).toBe(202);
+		expect(await ingest.db.select().from(serviceCoverages).get()).toMatchObject(
+			{ state: "pending" },
+		);
+		expect(await ingest.db.select().from(titleAssertions).all()).toHaveLength(
+			0,
+		);
 	});
 
 	it("returns unknown without writing when the catalogue rejects the id", async () => {

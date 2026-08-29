@@ -430,7 +430,31 @@ const discoverStructuralGroup = async (
 	};
 };
 
-export { discoverStructuralGroup };
+const discoverAtomicGroup = async (
+	input: DiscoveryInput,
+): Promise<DiscoveryOutcome> => {
+	const members = await gatherMembers(input.shared, input.clients);
+	if (members.length === 0) {
+		return { kind: "no-group" };
+	}
+	const anchor = await input.clients.externalIds.describe(input.shared);
+	const ordered = orderGroup(
+		{ firstAirDate: anchor.firstAirDate, ref: input.shared },
+		members,
+	);
+	return {
+		anchorOrdinal: ordered.anchorOrdinal,
+		kind: "discovered",
+		mappings: ordered.members.map((member) => ({
+			member: member.ref,
+			ordinal: member.ordinal,
+			pairs: [],
+		})),
+		shared: input.shared,
+	};
+};
+
+export { discoverAtomicGroup, discoverStructuralGroup };
 export type {
 	DiscoveryClients,
 	DiscoveryInput,
