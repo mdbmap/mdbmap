@@ -3,6 +3,7 @@ import { and, eq, inArray } from "drizzle-orm";
 import type { Db as GatewayDb } from "@/db";
 import {
 	assertionSources,
+	continuitySegments,
 	instalmentAssertions,
 	serviceCoverages,
 	serviceInstalments,
@@ -34,6 +35,7 @@ type GraphRead =
 	| { readonly found: false }
 	| {
 			readonly answer: ResolvedAnswer;
+			readonly continuityId: number | undefined;
 			readonly found: true;
 			readonly pendingRef: string | undefined;
 			readonly reviewRef: string | undefined;
@@ -76,6 +78,25 @@ const survivorGroupId = async (
 		.where(eq(titleGroupAliases.retiredGroupId, groupId))
 		.all();
 	return takeFirst(aliases)?.survivorGroupId ?? groupId;
+};
+
+const continuityIdForGroup = async (
+	db: GatewayDb,
+	groupId: number,
+): Promise<number | undefined> => {
+	const row = takeFirst(
+		await db
+			.select({ continuityId: continuitySegments.continuityId })
+			.from(continuitySegments)
+			.innerJoin(
+				serviceTitles,
+				eq(serviceTitles.id, continuitySegments.titleId),
+			)
+			.where(eq(serviceTitles.groupId, groupId))
+			.orderBy(continuitySegments.continuityId)
+			.all(),
+	);
+	return row?.continuityId;
 };
 
 const coverageVerdicts = async (
@@ -591,6 +612,7 @@ const readTitle = async (
 	);
 	return {
 		answer: { groupSource, input: identity, instalments, kind: "title", links },
+		continuityId: await continuityIdForGroup(db, groupId),
 		found: true,
 		pendingRef: refs.pendingRef,
 		reviewRef: refs.reviewRef,
@@ -621,6 +643,7 @@ const readInstalment = async (
 	);
 	return {
 		answer: { input: identity, kind: "instalment", links },
+		continuityId: await continuityIdForGroup(db, groupId),
 		found: true,
 		pendingRef: refs.pendingRef,
 		reviewRef: refs.reviewRef,

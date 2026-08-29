@@ -2,6 +2,8 @@ import { beforeEach, describe, expect, it } from "vitest";
 
 import {
 	contentUnits,
+	continuities,
+	continuitySegments,
 	instalmentAssertions,
 	serviceCoverages,
 	serviceInstalments,
@@ -88,6 +90,26 @@ const seedInstalment = async (db: Db, titleId: number, locator: string) =>
 			.all(),
 	);
 
+const seedContinuity = async (db: Db, titleId: number) => {
+	const continuity = one(
+		await db
+			.insert(continuities)
+			.values({ source: "t1-structure" })
+			.returning()
+			.all(),
+	);
+	await db
+		.insert(continuitySegments)
+		.values({
+			continuityId: continuity.id,
+			kind: "atomic",
+			releaseOrdinal: 1,
+			titleId,
+		})
+		.run();
+	return continuity.id;
+};
+
 const seedUnit = async (db: Db) =>
 	one(await db.insert(contentUnits).values({}).returning().all());
 
@@ -114,6 +136,7 @@ describe("mapping gateway resolution", () => {
 		const source = await seedTitle(db, group.id, "tmdb", "movie:603");
 		const target = await seedTitle(db, group.id, "imdb", "tt0133093");
 		await linkTitles(db, source.id, target.id, "t1-structure");
+		const continuityId = await seedContinuity(db, source.id);
 
 		const outcome = await resolveMapping(db, "movie", "tmdb:603", noColdLookup);
 
@@ -122,11 +145,26 @@ describe("mapping gateway resolution", () => {
 			return;
 		}
 		expect(outcome.body.input).toBe("tmdb:603");
+		expect(outcome.body.continuityId).toBe(continuityId);
 		const { imdb } = outcome.body.mappings;
 		expect(imdb?.status).toBe("matched");
 		expect(imdb?.counterparts.map((counterpart) => counterpart.id)).toEqual([
 			"tt0133093",
 		]);
+	});
+
+	it("includes the continuity id in the mapping response", async () => {
+		const group = await seedGroup(db);
+		const source = await seedTitle(db, group.id, "tmdb", "movie:603");
+		const continuityId = await seedContinuity(db, source.id);
+
+		const response = await runMapping("movie", "tmdb:603", { db });
+
+		expect(response.status).toBe(200);
+		await expect(response.json()).resolves.toMatchObject({
+			continuityId,
+			input: "tmdb:603",
+		});
 	});
 
 	it("maps in the reverse direction from the same graph", async () => {
@@ -164,6 +202,7 @@ describe("mapping gateway resolution", () => {
 			return;
 		}
 		expect(Object.keys(outcome.body.mappings)).toHaveLength(0);
+		expect("continuityId" in outcome.body).toBe(false);
 	});
 
 	it("rejects a malformed id with the expected shape", async () => {
@@ -224,6 +263,7 @@ describe("mapping gateway resolution", () => {
 		}
 		expect(outcome.review.startsWith("review:")).toBe(true);
 		expect(outcome.body.mappings.imdb?.status).toBe("conflict");
+		expect("continuityId" in outcome.body).toBe(false);
 	});
 
 	it("returns 202 with a status URL for a seeded pending build", async () => {
@@ -240,6 +280,7 @@ describe("mapping gateway resolution", () => {
 		expect(outcome.retryAfterSeconds).toBeGreaterThan(0);
 		expect(outcome.statusUrl.length).toBeGreaterThan(0);
 		expect(outcome.body.mappings.imdb?.status).toBe("pending");
+		expect("continuityId" in outcome.body).toBe(false);
 	});
 
 	it("serves a usable target at 200 while another target is still pending", async () => {
@@ -317,33 +358,39 @@ describe("mapping gateway HTTP responses", () => {
 		const source = await seedTitle(db, group.id, "tmdb", "movie:603");
 		const target = await seedTitle(db, group.id, "imdb", "tt0133093");
 		await linkTitles(db, source.id, target.id, "t1-structure");
+		const continuityId = await seedContinuity(db, source.id);
 
 		const response = await runMapping("movie", "tmdb:603", { db });
 
 		expect(response.status).toBe(200);
 		expect(response.headers.get("content-type")).toContain("application/json");
+		await expect(response.json()).resolves.toMatchObject({ continuityId });
 	});
 
 	it("sets Retry-After and 202 for a pending build", async () => {
 		const group = await seedGroup(db);
-		await seedTitle(db, group.id, "tmdb", "movie:603");
+		const source = await seedTitle(db, group.id, "tmdb", "movie:603");
+		await seedContinuity(db, source.id);
 		await seedCoverage(db, group.id, "imdb", "pending");
 
 		const response = await runMapping("movie", "tmdb:603", { db });
 
 		expect(response.status).toBe(202);
 		expect(Number(response.headers.get("retry-after"))).toBeGreaterThan(0);
+		await expect(response.json()).resolves.not.toHaveProperty("continuityId");
 	});
 
 	it("omits Retry-After and returns 409 for a conflict", async () => {
 		const group = await seedGroup(db);
-		await seedTitle(db, group.id, "tmdb", "movie:603");
+		const source = await seedTitle(db, group.id, "tmdb", "movie:603");
+		await seedContinuity(db, source.id);
 		await seedCoverage(db, group.id, "imdb", "conflict");
 
 		const response = await runMapping("movie", "tmdb:603", { db });
 
 		expect(response.status).toBe(409);
 		expect(response.headers.get("retry-after")).toBeNull();
+		await expect(response.json()).resolves.not.toHaveProperty("continuityId");
 	});
 
 	it("returns 400 for a malformed id and 404 for an unknown id", async () => {

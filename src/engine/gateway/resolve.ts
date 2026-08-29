@@ -56,7 +56,6 @@ const resolveMapping = async (
 			};
 		}
 	}
-	const body = serialize(read.answer);
 	const statuses = [...read.answer.links.values()].map((link) => link.status);
 	const usable =
 		read.answer.links.size === 0 ||
@@ -64,16 +63,23 @@ const resolveMapping = async (
 			(status) => status === "matched" || status === "known-no-counterpart",
 		);
 	if (usable) {
-		return { body, kind: "ok" };
+		return {
+			body:
+				read.continuityId === undefined
+					? serialize(read.answer)
+					: serialize(read.answer, { continuityId: read.continuityId }),
+			kind: "ok",
+		};
 	}
 	if (statuses.includes("pending") && read.pendingRef !== undefined) {
 		return {
-			body,
+			body: serialize(read.answer),
 			kind: "pending",
 			retryAfterSeconds: WARM_RETRY_AFTER_SECONDS,
 			statusUrl: statusUrlFor(read.pendingRef),
 		};
 	}
+	const body = serialize(read.answer);
 	return read.reviewRef === undefined
 		? { body, kind: "ok" }
 		: { body, kind: "conflict", review: read.reviewRef };

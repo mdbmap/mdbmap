@@ -41,7 +41,10 @@ interface ResolvedCounterpart {
 // One counterpart service either resolves to spokes or sits in a completion
 // state with no spokes.
 type ResolvedLink =
-	| { readonly counterparts: readonly ResolvedCounterpart[]; readonly status: "matched" }
+	| {
+			readonly counterparts: readonly ResolvedCounterpart[];
+			readonly status: "matched";
+	  }
 	| { readonly status: CompletionStatus };
 
 type ResolvedLinks = ReadonlyMap<Service, ResolvedLink>;
@@ -125,6 +128,7 @@ interface InstalmentError {
 }
 
 interface MappingResponse {
+	readonly continuityId?: number;
 	readonly input: string;
 	readonly instalmentErrors?: readonly InstalmentError[];
 	readonly instalments?: readonly InstalmentMapping[];
@@ -219,7 +223,10 @@ const formatCounterpart = (
 
 // A title-level answer serves the derived group source; an instalment-level one
 // serves the link's own, so groupSource is present only for the former.
-const linkFor = (link: ResolvedLink, groupSource: GroupSource | undefined): Link => {
+const linkFor = (
+	link: ResolvedLink,
+	groupSource: GroupSource | undefined,
+): Link => {
 	if (link.status !== "matched") {
 		return { counterparts: [], status: link.status };
 	}
@@ -242,7 +249,10 @@ const linkFor = (link: ResolvedLink, groupSource: GroupSource | undefined): Link
 	};
 };
 
-const mappingsFor = (links: ResolvedLinks, groupSource: GroupSource | undefined): Mappings => {
+const mappingsFor = (
+	links: ResolvedLinks,
+	groupSource: GroupSource | undefined,
+): Mappings => {
 	const mappings: Mappings = {};
 	for (const [service, link] of links) {
 		mappings[service] = linkFor(link, groupSource);
@@ -250,16 +260,32 @@ const mappingsFor = (links: ResolvedLinks, groupSource: GroupSource | undefined)
 	return mappings;
 };
 
-const serialize = (answer: ResolvedAnswer): MappingResponse => {
+interface SerializeOptions {
+	readonly continuityId?: number;
+}
+
+const serialize = (
+	answer: ResolvedAnswer,
+	options: SerializeOptions = {},
+): MappingResponse => {
 	if (answer.kind === "instalment") {
-		return { input: formatId(answer.input), mappings: mappingsFor(answer.links, undefined) };
+		return {
+			...(options.continuityId === undefined
+				? {}
+				: { continuityId: options.continuityId }),
+			input: formatId(answer.input),
+			mappings: mappingsFor(answer.links, undefined),
+		};
 	}
 	const instalments: InstalmentMapping[] = [];
 	const instalmentErrors: InstalmentError[] = [];
 	for (const instalment of answer.instalments) {
 		const input = tryFormatId(instalment.input);
 		if (input instanceof FormatError) {
-			instalmentErrors.push({ reason: input.message, source: instalment.source });
+			instalmentErrors.push({
+				reason: input.message,
+				source: instalment.source,
+			});
 			continue;
 		}
 		instalments.push({
@@ -269,6 +295,9 @@ const serialize = (answer: ResolvedAnswer): MappingResponse => {
 		});
 	}
 	return {
+		...(options.continuityId === undefined
+			? {}
+			: { continuityId: options.continuityId }),
 		input: formatId(answer.input),
 		...(instalmentErrors.length > 0 ? { instalmentErrors } : {}),
 		instalments,
@@ -276,7 +305,9 @@ const serialize = (answer: ResolvedAnswer): MappingResponse => {
 	};
 };
 
-const aggregateConfidence = (links: readonly Link[]): LinkedConfidence | undefined =>
+const aggregateConfidence = (
+	links: readonly Link[],
+): LinkedConfidence | undefined =>
 	maxBy(
 		links.filter((link): link is MatchedLink => link.status === "matched"),
 		(link) => confidenceRank(link.confidence),
@@ -292,11 +323,16 @@ const statusOrder = [
 ] as const;
 
 const aggregateStatus = (links: readonly Link[]): LinkStatus =>
-	maxBy(links, (link) => statusOrder.indexOf(link.status))?.status ?? "unmatched";
+	maxBy(links, (link) => statusOrder.indexOf(link.status))?.status ??
+	"unmatched";
 
 const aggregateSource = (links: readonly Link[]): GroupSource | undefined =>
 	maxBy(
-		links.flatMap((link) => (link.status === "matched" && link.source !== undefined ? [link.source] : [])),
+		links.flatMap((link) =>
+			link.status === "matched" && link.source !== undefined
+				? [link.source]
+				: [],
+		),
 		groupSourceRank,
 	);
 
@@ -311,14 +347,19 @@ const toCompact = (response: MappingResponse): CompactResponse => {
 	const links: Link[] = [];
 	for (const service of objectKeys(response.mappings)) {
 		const link = response.mappings[service];
-		if (link === undefined || (link.status === "matched" && link.counterparts.length === 0)) {
+		if (
+			link === undefined ||
+			(link.status === "matched" && link.counterparts.length === 0)
+		) {
 			continue;
 		}
 		links.push(link);
 		if (link.status === "known-no-counterpart") {
 			mappings[service] = [];
 		} else if (link.status === "matched") {
-			mappings[service] = link.counterparts.map((counterpart) => counterpart.id);
+			mappings[service] = link.counterparts.map(
+				(counterpart) => counterpart.id,
+			);
 		}
 	}
 	return {
