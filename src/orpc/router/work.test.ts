@@ -88,14 +88,18 @@ describe("work.get similar links", () => {
 			metadata: {
 				...defaultProviders.metadata,
 				tmdb: {
-					fetchWork: () =>
-						metadataFor([
-							similar("tmdb:tv:3001", "Seeded series"),
-							similar("tmdb:movie:3002", "Seeded film"),
-							similar("anidb:1002", "Seeded anime"),
-							similar("tmdb:tv:999", "Missing work"),
-							similar("imdb:tt999", "Unsupported work"),
-						]),
+					fetchWork: async () => {
+						const metadata = await Promise.resolve(
+							metadataFor([
+								similar("tmdb:tv:3001", "Seeded series"),
+								similar("tmdb:movie:3002", "Seeded film"),
+								similar("anidb:1002", "Seeded anime"),
+								similar("tmdb:tv:999", "Missing work"),
+								similar("imdb:tt999", "Unsupported work"),
+							]),
+						);
+						return metadata;
+					},
 				},
 			},
 		};
