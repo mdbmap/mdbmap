@@ -12,7 +12,6 @@ import {
 	defaultOverflowBudget,
 	estimateBuild,
 	groupCoverageKey,
-	seedPendingCoverage,
 } from "@/engine/overflow";
 import type { OverflowBudget } from "@/engine/overflow";
 import { writeCoverageState } from "@/engine/overflow/coverage.ts";
@@ -21,7 +20,7 @@ import { bootstrapFromIdentity } from "./bootstrap.ts";
 import type { BootstrappedGroup } from "./bootstrap.ts";
 import type { IngestEnv } from "./env.ts";
 import { probeUpstream } from "./probe.ts";
-import { runAtomicTargetPublish } from "./publish.ts";
+import { runAtomicTargetPublish, runSingleTargetPublish } from "./publish.ts";
 import type { PublishResult } from "./publish.ts";
 
 const BASELINE_REVISION = 1;
@@ -31,6 +30,10 @@ interface LiveColdLookupInput {
 	readonly resolveIngest: () => Promisable<IngestEnv>;
 }
 
+type TargetPlan =
+	| { readonly kind: "atomic"; readonly service: Service }
+	| { readonly kind: "enumerated"; readonly service: Service };
+
 interface InlinePublishInput {
 	readonly anchor: TitleIdentity;
 	readonly budget: OverflowBudget;
@@ -38,23 +41,28 @@ interface InlinePublishInput {
 	readonly discovery: NonNullable<IngestEnv["structuralDiscovery"]>;
 	readonly group: BootstrappedGroup;
 	readonly ingest: IngestEnv;
-	readonly targetService: Service;
+	readonly target: TargetPlan;
 }
 
-const movieTargetService = (
+const targetPlansFor = (
 	identity: Identity,
 	profile: Profile,
-): Service | undefined => {
-	if (profile !== "movie" || identity.kind !== "title") {
-		return undefined;
+): readonly TargetPlan[] => {
+	if (identity.kind !== "title") {
+		return [];
+	}
+	if (profile === "anime") {
+		return (["anilist", "mal"] as const)
+			.filter((service) => service !== identity.title.service)
+			.map((service) => ({ kind: "enumerated", service }));
 	}
 	if (identity.title.service === "tmdb") {
-		return "imdb";
+		return [{ kind: "atomic", service: "imdb" }];
 	}
 	if (identity.title.service === "imdb") {
-		return "tmdb";
+		return [{ kind: "atomic", service: "tmdb" }];
 	}
-	return undefined;
+	return [];
 };
 
 const upstreamExists = async (input: {
@@ -74,6 +82,7 @@ const fitsInline = async (input: {
 	readonly budget: OverflowBudget;
 	readonly discovery: NonNullable<IngestEnv["structuralDiscovery"]>;
 	readonly title: TitleIdentity;
+	readonly target: TargetPlan;
 }): Promise<boolean> => {
 	const candidates = await input.discovery.find.find(
 		toGraphMember(input.title),
@@ -81,7 +90,9 @@ const fitsInline = async (input: {
 	return estimateBuild(
 		{
 			chainSegments: 1,
-			targetCandidates: candidates.length,
+			targetCandidates: candidates.filter(
+				(candidate) => candidate.service === input.target.service,
+			).length,
 			targetServices: 1,
 		},
 		input.budget,
@@ -95,17 +106,22 @@ const publishInline = async (
 		!(await fitsInline({
 			budget: input.budget,
 			discovery: input.discovery,
+			target: input.target,
 			title: input.anchor,
 		}))
 	) {
 		return;
 	}
-	return runAtomicTargetPublish(input.ingest.db, {
+	const publish =
+		input.target.kind === "atomic"
+			? runAtomicTargetPublish
+			: runSingleTargetPublish;
+	return publish(input.ingest.db, {
 		anchor: input.anchor,
 		budget: input.budget.requestBudget,
 		clients: { discovery: input.discovery },
 		group: input.group,
-		targetService: input.targetService,
+		targetService: input.target.service,
 	});
 };
 
@@ -119,7 +135,7 @@ const settleInlinePublish = async (
 				input.ingest.db,
 				input.continuity,
 				BASELINE_REVISION,
-				input.targetService,
+				input.target.service,
 				"conflict",
 			);
 		}
@@ -128,11 +144,47 @@ const settleInlinePublish = async (
 			input.ingest.db,
 			input.continuity,
 			BASELINE_REVISION,
-			input.targetService,
+			input.target.service,
 			"conflict",
 		);
 		throw error;
 	}
+};
+
+const seedPendingTargets = async (
+	db: IngestEnv["db"],
+	continuity: ReturnType<typeof groupCoverageKey>,
+	targets: readonly TargetPlan[],
+): Promise<void> => {
+	await Promise.all(
+		targets.map(async (target) =>
+			seedPendingCoverage(db, continuity, BASELINE_REVISION, target.service),
+		),
+	);
+};
+
+const settleInlineTargets = async (input: {
+	readonly budget: OverflowBudget;
+	readonly continuity: ReturnType<typeof groupCoverageKey>;
+	readonly discovery: NonNullable<IngestEnv["structuralDiscovery"]>;
+	readonly group: BootstrappedGroup;
+	readonly ingest: IngestEnv;
+	readonly title: TitleIdentity;
+	readonly targets: readonly TargetPlan[];
+}): Promise<void> => {
+	await Promise.all(
+		input.targets.map(async (target) =>
+			settleInlinePublish({
+				anchor: input.title,
+				budget: input.budget,
+				continuity: input.continuity,
+				discovery: input.discovery,
+				group: input.group,
+				ingest: input.ingest,
+				target,
+			}),
+		),
+	);
 };
 
 const createLiveColdLookup = (input: LiveColdLookupInput): ColdLookup => {
@@ -140,8 +192,8 @@ const createLiveColdLookup = (input: LiveColdLookupInput): ColdLookup => {
 
 	return {
 		begin: async (identity, profile) => {
-			const targetService = movieTargetService(identity, profile);
-			if (targetService === undefined || identity.kind !== "title") {
+			const targets = targetPlansFor(identity, profile);
+			if (targets.length === 0 || identity.kind !== "title") {
 				return { kind: "miss" };
 			}
 			const ingest = await input.resolveIngest();
@@ -158,24 +210,19 @@ const createLiveColdLookup = (input: LiveColdLookupInput): ColdLookup => {
 				return { kind: "miss" };
 			}
 			const continuity = groupCoverageKey(bootstrap.group.groupId);
-			await seedPendingCoverage(
-				ingest.db,
-				continuity,
-				BASELINE_REVISION,
-				targetService,
-			);
 			const discovery = ingest.structuralDiscovery;
+			await seedPendingTargets(ingest.db, continuity, targets);
 			if (discovery === undefined) {
 				return { kind: "updated" };
 			}
-			await settleInlinePublish({
-				anchor: identity.title,
+			await settleInlineTargets({
 				budget,
 				continuity,
 				discovery,
 				group: bootstrap.group,
 				ingest,
-				targetService,
+				targets,
+				title: identity.title,
 			});
 			return { kind: "updated" };
 		},

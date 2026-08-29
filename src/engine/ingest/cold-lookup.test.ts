@@ -16,7 +16,10 @@ import { createLiveColdLookup } from "./cold-lookup.ts";
 import type { IngestEnv } from "./env.ts";
 import { buildStructuralDiscoveryClients } from "./structural-discovery.ts";
 
-const movieSimkl = (exists = true): SimklClient => ({
+const simklEntry = (
+	type: "anime" | "movie" | "show",
+	exists = true,
+): SimklClient => ({
 	fetchEntry: async (): Promise<undefined> => {
 		await Promise.resolve();
 		return;
@@ -29,10 +32,12 @@ const movieSimkl = (exists = true): SimklClient => ({
 					id: "1",
 					relations: [],
 					title: "The Matrix",
-					type: "movie",
+					type,
 				}
 			: undefined,
 });
+
+const movieSimkl = (exists = true): SimklClient => simklEntry("movie", exists);
 
 const movieDiscovery = (candidateCount = 1): DiscoveryClients => ({
 	externalIds: {
@@ -238,6 +243,46 @@ describe("pending movie cold lookup", () => {
 		expect(await ingest.db.select().from(serviceCoverages).all()).toHaveLength(
 			0,
 		);
+	});
+});
+
+describe("live episodic cold lookup", () => {
+	it("starts the series ingest pipeline for a TMDB cold miss", async () => {
+		const base = await ingestEnv(movieDiscovery());
+		const ingest = {
+			...base,
+			catalogue: { ...base.catalogue, simkl: simklEntry("show") },
+			structuralDiscovery: undefined,
+		};
+
+		const response = await runMapping("series", "tmdb:603", {
+			coldLookup: createLiveColdLookup({ resolveIngest: () => ingest }),
+			db: ingest.db,
+		});
+
+		expect(response.status).toBe(202);
+		await expect(
+			ingest.db.select().from(serviceCoverages).all(),
+		).resolves.toEqual([
+			expect.objectContaining({
+				state: "pending",
+				targetService: "imdb",
+			}),
+		]);
+	});
+
+	it("starts anime fan-out for an AniList cold miss", async () => {
+		const base = await ingestEnv(movieDiscovery());
+		const ingest = { ...base, structuralDiscovery: undefined };
+
+		const response = await runMapping("anime", "anilist:1", {
+			coldLookup: createLiveColdLookup({ resolveIngest: () => ingest }),
+			db: ingest.db,
+		});
+
+		expect(response.status).toBe(202);
+		const coverages = await ingest.db.select().from(serviceCoverages).all();
+		expect(coverages.map((row) => row.targetService)).toEqual(["mal"]);
 	});
 });
 
