@@ -110,6 +110,23 @@ const movieResolved: ResolveResult = {
 	],
 };
 
+const mixedResolved: ResolveResult = {
+	continuityId: "continuity:mixed",
+	mediaKind: "tv",
+	segments: [
+		{
+			instalments: ["tmdb:999#1"],
+			kind: "episodic",
+			members: { tmdb: SERIES_ID },
+		},
+		{
+			instalments: ["tmdb:999"],
+			kind: "atomic",
+			members: { tmdb: MOVIE_ID },
+		},
+	],
+};
+
 const urlOf = (input: RequestInfo | URL): string => {
 	if (typeof input === "string") {
 		return input;
@@ -294,6 +311,31 @@ describe("tmdb metadata provider", () => {
 		expect(meta.span).toBe("2001");
 	});
 
+	it("fetches mixed continuities by contiguous segment kind", async () => {
+		const fetchFn = makeFetch();
+		const { kv } = makeKv();
+		const provider = createTmdbProvider({
+			apiKey: "test-key",
+			fetchFn,
+			resolveKv: () => kv,
+		});
+
+		const meta = await provider.fetchWork(mixedResolved);
+
+		expect(fetchFn.mock.calls.map(([input]) => urlOf(input))).toEqual(
+			expect.arrayContaining([
+				"https://api.themoviedb.org/3/tv/999?append_to_response=aggregate_credits,recommendations&api_key=test-key",
+				"https://api.themoviedb.org/3/tv/999/season/1?api_key=test-key",
+				"https://api.themoviedb.org/3/movie/999?append_to_response=credits,recommendations&api_key=test-key",
+			]),
+		);
+		expect(meta.title).toBe("Test Show");
+		expect(meta.segments).toStrictEqual([
+			expect.objectContaining({ label: "Season 1", year: 2020 }),
+			expect.objectContaining({ label: "Test Movie", year: 2001 }),
+		]);
+	});
+
 	it("isolates movie and TV snapshots with the same numeric ID", async () => {
 		const fetchFn = makeFetch();
 		const { kv, store } = makeKv();
@@ -319,5 +361,44 @@ describe("tmdb metadata provider", () => {
 			"https://api.themoviedb.org/3/tv/999/season/1?api_key=test-key",
 			"https://api.themoviedb.org/3/tv/999/season/2?api_key=test-key",
 		]);
+	});
+
+	it("fetches movie metadata for an atomic segment in a mixed continuity", async () => {
+		const fetchFn = makeFetch();
+		const { kv } = makeKv();
+		const provider = createTmdbProvider({
+			apiKey: "test-key",
+			fetchFn,
+			resolveKv: () => kv,
+		});
+
+		const meta = await provider.fetchWork(mixedResolved);
+
+		expect(meta.segments).toStrictEqual([
+			{
+				airedFrom: "2020-04-01",
+				airedTo: "2020-04-08",
+				episodes: [
+					{ airDate: "2020-04-01", number: 1, title: "Pilot" },
+					{ airDate: "2020-04-08", number: 2, title: "Second" },
+				],
+				label: "Season 1",
+				year: 2020,
+			},
+			{
+				airedFrom: "2001-05-16",
+				airedTo: "2001-05-16",
+				episodes: [],
+				label: "Test Movie",
+				year: 2001,
+			},
+		]);
+		expect(fetchFn.mock.calls.map(([input]) => urlOf(input))).toEqual(
+			expect.arrayContaining([
+				"https://api.themoviedb.org/3/tv/999?append_to_response=aggregate_credits,recommendations&api_key=test-key",
+				"https://api.themoviedb.org/3/tv/999/season/1?api_key=test-key",
+				"https://api.themoviedb.org/3/movie/999?append_to_response=credits,recommendations&api_key=test-key",
+			]),
+		);
 	});
 });

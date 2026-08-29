@@ -193,12 +193,11 @@ const resourceId = (value: string): number | undefined => {
 };
 
 const resourcesOf = (resolved: ResolveResult): TmdbResource[] => {
-	const kind = resolved.mediaKind === "film" ? "movie" : "tv";
 	const resources: TmdbResource[] = [];
 	for (const segment of resolved.segments) {
 		const value = segment.members.tmdb;
 		if (value === undefined) {
-			if (kind === "movie") {
+			if (segment.kind === "atomic") {
 				throw new Error("tmdb: film segment carries no tmdb id");
 			}
 			continue;
@@ -207,9 +206,32 @@ const resourcesOf = (resolved: ResolveResult): TmdbResource[] => {
 		if (id === undefined) {
 			throw new Error(`tmdb: resolved member has invalid tmdb id ${value}`);
 		}
-		resources.push({ id, kind });
+		resources.push({
+			id,
+			kind: segment.kind === "atomic" ? "movie" : "tv",
+		});
 	}
 	return resources;
+};
+
+interface ResourceRun {
+	kind: TmdbResource["kind"];
+	resources: readonly TmdbResource[];
+}
+
+const runsOf = (resolved: ResolveResult): ResourceRun[] => {
+	const runs: ResourceRun[] = [];
+	let current: TmdbResource[] = [];
+	let currentKind: TmdbResource["kind"] | undefined;
+	for (const resource of resourcesOf(resolved)) {
+		if (resource.kind !== currentKind) {
+			current = [];
+			currentKind = resource.kind;
+			runs.push({ kind: currentKind, resources: current });
+		}
+		current.push(resource);
+	}
+	return runs;
 };
 
 const keyFor = (
@@ -568,6 +590,20 @@ const fetchMoviesFromTmdb = async (
 	return buildMovieSnapshots(version, movies);
 };
 
+const fetchRun = async (
+	http: HttpContext,
+	version: number,
+	run: ResourceRun,
+): Promise<Snapshots> =>
+	run.kind === "movie"
+		? fetchMoviesFromTmdb(http, version, run.resources)
+		: fetchFromTmdb(
+				http,
+				version,
+				String(run.resources[0]?.id),
+				run.resources.length,
+			);
+
 const createTmdbProvider = (deps: TmdbProviderDeps): MetadataProvider => {
 	const {
 		apiKey,
@@ -581,42 +617,60 @@ const createTmdbProvider = (deps: TmdbProviderDeps): MetadataProvider => {
 	const http: HttpContext = { apiKey, baseUrl, fetchFn };
 
 	const fetchWork = async (resolved: ResolveResult): Promise<WorkMetadata> => {
-		const resources = resourcesOf(resolved);
-		const [primaryResource] = resources;
-		if (primaryResource === undefined) {
+		const runs = runsOf(resolved);
+		if (runs.length === 0) {
 			throw new Error("tmdb: resolved members carry no tmdb id");
 		}
 		const kv = await resolveKv();
-		const coreKey = keyFor("core", version, primaryResource, resources);
-		const volatileKey = keyFor("volatile", version, primaryResource, resources);
-
-		const core = await readSnapshot(kv, coreKey, coreSnapshotSchema, version);
-		const volatile = await readSnapshot(
-			kv,
-			volatileKey,
-			volatileSnapshotSchema,
-			version,
+		const snapshots = await Promise.all(
+			runs.map(async (run) => {
+				const [resource] = run.resources;
+				if (resource === undefined) {
+					throw new Error("tmdb: resource run carries no tmdb id");
+				}
+				const coreKey = keyFor("core", version, resource, run.resources);
+				const volatileKey = keyFor(
+					"volatile",
+					version,
+					resource,
+					run.resources,
+				);
+				const core = await readSnapshot(
+					kv,
+					coreKey,
+					coreSnapshotSchema,
+					version,
+				);
+				const volatile = await readSnapshot(
+					kv,
+					volatileKey,
+					volatileSnapshotSchema,
+					version,
+				);
+				if (core !== undefined && volatile !== undefined) {
+					return { core, volatile };
+				}
+				const fetched = await fetchRun(http, version, run);
+				await kv.put(coreKey, JSON.stringify(fetched.core), {
+					expirationTtl: coreTtlSeconds,
+				});
+				await kv.put(volatileKey, JSON.stringify(fetched.volatile), {
+					expirationTtl: volatileTtlSeconds,
+				});
+				return fetched;
+			}),
 		);
-		if (core !== undefined && volatile !== undefined) {
-			return assemble(core, volatile);
+		const [identitySnapshot] = snapshots;
+		if (identitySnapshot === undefined) {
+			throw new Error("tmdb: metadata snapshot run is missing");
 		}
-
-		const fetched =
-			primaryResource.kind === "movie"
-				? await fetchMoviesFromTmdb(http, version, resources)
-				: await fetchFromTmdb(
-						http,
-						version,
-						String(primaryResource.id),
-						resolved.segments.length,
-					);
-		await kv.put(coreKey, JSON.stringify(fetched.core), {
-			expirationTtl: coreTtlSeconds,
-		});
-		await kv.put(volatileKey, JSON.stringify(fetched.volatile), {
-			expirationTtl: volatileTtlSeconds,
-		});
-		return assemble(fetched.core, fetched.volatile);
+		const identity = assemble(identitySnapshot.core, identitySnapshot.volatile);
+		return {
+			...identity,
+			segments: snapshots.flatMap(
+				(snapshot) => assemble(snapshot.core, snapshot.volatile).segments,
+			),
+		};
 	};
 
 	return { fetchWork };
