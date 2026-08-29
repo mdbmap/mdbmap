@@ -101,24 +101,22 @@ const resolveSimilar = async (
 		),
 	];
 	const continuityByGroup = new Map<number, `continuity:${number}`>();
-	const ensured = await Promise.all(
-		uniqueGroupIds.map(async (groupId) => {
-			try {
-				return [
-					groupId,
-					continuityKey(await ensureGroupContinuity(db, groupId)),
-				] as const;
-			} catch {
-				return;
-			}
-		}),
-	);
-	for (const entry of ensured) {
-		if (entry === undefined) {
-			continue;
+	const ensureContinuities = async (index: number): Promise<void> => {
+		const groupId = uniqueGroupIds[index];
+		if (groupId === undefined) {
+			return;
 		}
-		continuityByGroup.set(entry[0], entry[1]);
-	}
+		try {
+			continuityByGroup.set(
+				groupId,
+				continuityKey(await ensureGroupContinuity(db, groupId)),
+			);
+		} catch {
+			// known unresolvable spines stay on provider refs
+		}
+		await ensureContinuities(index + 1);
+	};
+	await ensureContinuities(0);
 	const exclude = options?.excludeContinuityId;
 	const resolved = items.flatMap((item, index) => {
 		const ref = refs[index];
