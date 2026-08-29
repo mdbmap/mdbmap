@@ -237,7 +237,7 @@ describe("runSingleTargetPublish", () => {
 		expect(coverage).toBeUndefined();
 	});
 
-	it("marks coverage complete when discovery refuses after seeding pending", async () => {
+	it("marks coverage conflict when discovery refuses after seeding pending", async () => {
 		const db = await freshDb();
 		const bootstrapped = await bootstrapFromIdentity(db, knownIdentity);
 		if (bootstrapped.kind !== "bootstrapped") {
@@ -263,7 +263,7 @@ describe("runSingleTargetPublish", () => {
 				1,
 				"anilist",
 			),
-		).toBe("complete");
+		).toBe("conflict");
 	});
 });
 

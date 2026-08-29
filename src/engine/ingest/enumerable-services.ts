@@ -1,5 +1,7 @@
-import type { Service } from "@/engine/identity.ts";
+const instalmentEnumerableAnimeServices = ["anilist", "mal"] as const;
 
-const instalmentEnumerableServices = new Set<Service>(["anilist", "mal"]);
+const instalmentEnumerableServices = new Set<string>(
+	instalmentEnumerableAnimeServices,
+);
 
-export { instalmentEnumerableServices };
+export { instalmentEnumerableAnimeServices, instalmentEnumerableServices };

@@ -103,12 +103,23 @@ const endPublishAttempt = async (
 			"conflict",
 		);
 	} else if (result.kind === "refused") {
-		await completeCoverage(
-			db,
-			input.continuity,
-			input.revision,
-			input.targetService,
-		);
+		const absence =
+			result.reason === "unavailable-target" ||
+			result.reason === "not-enumerable";
+		await (absence
+			? completeCoverage(
+					db,
+					input.continuity,
+					input.revision,
+					input.targetService,
+				)
+			: writeCoverageState(
+					db,
+					input.continuity,
+					input.revision,
+					input.targetService,
+					"conflict",
+				));
 	}
 	return result;
 };
@@ -293,6 +304,13 @@ const publishAlignedTarget = async (
 	});
 	if (fetched.kind === "unavailable") {
 		if (fetched.reason === "fetch-failed") {
+			await writeCoverageState(
+				db,
+				input.continuity,
+				input.revision,
+				input.targetService,
+				"conflict",
+			);
 			return { kind: "refused", reason: "unavailable-target" };
 		}
 		return endPublishAttempt(db, input, {
@@ -310,6 +328,13 @@ const publishAlignedTarget = async (
 	});
 	if (sharedFetched.kind !== "fetched") {
 		if (sharedFetched.reason === "fetch-failed") {
+			await writeCoverageState(
+				db,
+				input.continuity,
+				input.revision,
+				input.targetService,
+				"conflict",
+			);
 			return { kind: "refused", reason: "unavailable-target" };
 		}
 		return endPublishAttempt(db, input, {
