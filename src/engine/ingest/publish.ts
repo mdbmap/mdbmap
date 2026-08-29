@@ -1,4 +1,5 @@
 import type { Db } from "@/db";
+import { titleAssertions } from "@/db/engine-schema";
 import { ensureGroupContinuity } from "@/engine/continuity/persist.ts";
 import { convergeGroups } from "@/engine/discovery/converge.ts";
 import type {
@@ -25,6 +26,7 @@ import {
 	alignmentFromMappedPairs,
 	alignTarget,
 	convergeMembersOf,
+	discoverAtomicGroup,
 	discoverGroup,
 	fetchTargetStream,
 	highestTriedTier,
@@ -126,6 +128,73 @@ const finishPublish = async (
 		input.ladderComplete ? "complete" : "open",
 	);
 	return { groupId: input.groupId, kind: "published" };
+};
+
+const assertTitleMatch = async (
+	db: Db,
+	leftTitleId: number,
+	rightTitleId: number,
+): Promise<void> => {
+	await db
+		.insert(titleAssertions)
+		.values({
+			confidence: "high",
+			source: "t1-structure",
+			titleAId: Math.min(leftTitleId, rightTitleId),
+			titleBId: Math.max(leftTitleId, rightTitleId),
+		})
+		.onConflictDoNothing()
+		.run();
+};
+
+const publishAtomicTarget = async (
+	db: Db,
+	input: {
+		readonly continuity: ReturnType<typeof groupCoverageKey>;
+		readonly discovered: DiscoveredGroup;
+		readonly groupId: number;
+		readonly mapping: NonNullable<ReturnType<typeof targetMappingFor>>;
+		readonly requestedTitleId: number;
+		readonly revision: number;
+		readonly targetService: Service;
+	},
+): Promise<PublishResult> => {
+	const targetTitleId = await ensureTitle(
+		db,
+		input.groupId,
+		input.mapping.member,
+		input.mapping.ordinal,
+	);
+	await setTitleOrdinal(
+		db,
+		input.requestedTitleId,
+		input.discovered.anchorOrdinal,
+	);
+	await setTitleOrdinal(db, targetTitleId, input.mapping.ordinal);
+
+	const converge = await convergeGroups(db, {
+		members: convergeMembersOf(input.discovered),
+	});
+	if (converge.kind === "candidate") {
+		return endPublishAttempt(db, input, {
+			kind: "conflict",
+			reason: "converge-candidate",
+		});
+	}
+	if (converge.kind === "aborted") {
+		return { kind: "refused", reason: "unpublishable" };
+	}
+	const groupId =
+		converge.kind === "merged" ? converge.survivorId : input.groupId;
+	await assertTitleMatch(db, input.requestedTitleId, targetTitleId);
+	await retireBootstrapScaffoldingForGroup(db, groupId);
+	return finishPublish(db, {
+		continuity: input.continuity,
+		groupId,
+		ladderComplete: true,
+		revision: input.revision,
+		targetService: input.targetService,
+	});
 };
 
 const commitPublish = async (
@@ -335,7 +404,7 @@ const publishAlignedTarget = async (
 	});
 };
 
-const runSingleTargetPublish = async (
+const runTargetPublish = async (
 	db: Db,
 	input: SingleTargetPublishInput,
 ): Promise<PublishResult> => {
@@ -388,7 +457,52 @@ const runSingleTargetPublish = async (
 	});
 };
 
-export { DEFAULT_BUDGET, commitPublish, finishPublish, runSingleTargetPublish };
+const runSingleTargetPublish = async (
+	db: Db,
+	input: SingleTargetPublishInput,
+): Promise<PublishResult> => runTargetPublish(db, input);
+
+const runAtomicTargetPublish = async (
+	db: Db,
+	input: SingleTargetPublishInput,
+): Promise<PublishResult> => {
+	const budget = input.budget ?? DEFAULT_BUDGET;
+	const revision = input.revision ?? DEFAULT_REVISION;
+	const continuity = groupCoverageKey(input.group.groupId);
+	await seedPendingCoverage(db, continuity, revision, input.targetService);
+	const discovered = await discoverAtomicGroup({
+		anchor: input.anchor,
+		budget,
+		clients: input.clients.discovery,
+	});
+	if (discovered.kind === "refused") {
+		return { kind: "refused", reason: discovered.reason };
+	}
+	if (discovered.kind === "no-group") {
+		return { kind: "refused", reason: "unavailable-target" };
+	}
+	const mapping = targetMappingFor(discovered.discovered, input.targetService);
+	if (mapping === undefined) {
+		return { kind: "refused", reason: "unavailable-target" };
+	}
+	return publishAtomicTarget(db, {
+		continuity,
+		discovered: discovered.discovered,
+		groupId: input.group.groupId,
+		mapping,
+		requestedTitleId: input.group.requestedTitleId,
+		revision,
+		targetService: input.targetService,
+	});
+};
+
+export {
+	DEFAULT_BUDGET,
+	commitPublish,
+	finishPublish,
+	runAtomicTargetPublish,
+	runSingleTargetPublish,
+};
 export type {
 	PublishClients,
 	PublishConflictReason,

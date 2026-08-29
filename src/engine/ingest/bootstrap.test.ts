@@ -73,6 +73,28 @@ describe("probeUpstream", () => {
 		expect(await db.select().from(titleGroups).all()).toEqual(groupsBefore);
 	});
 
+	it("falls back to the TMDB catalogue when SIMKL has no record", async () => {
+		const tmdbMovie = {
+			id: "123",
+			namespace: "movie" as const,
+			service: "tmdb" as const,
+		};
+		const fetchTitle = vi.fn(() => ({
+			format: "movie",
+			instalmentCount: 1,
+			releaseDate: "1999-03-31",
+			title: "The Matrix",
+		}));
+
+		const result = await probeUpstream(tmdbMovie, {
+			catalogues: { tmdb: { fetchTitle } },
+			simkl: simklWith([]),
+		});
+
+		expect(result).toEqual({ kind: "confirmed" });
+		expect(fetchTitle).toHaveBeenCalledWith("123");
+	});
+
 	it("queries SIMKL with bare id for TMDB titles", async () => {
 		const tmdbMovie = {
 			id: "123",
