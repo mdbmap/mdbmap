@@ -9,15 +9,16 @@ interface PendingBuild {
 	readonly statusUrl: string;
 }
 
-// What a cache miss produced: a started build to wait on, or nothing.
 type ColdResult =
 	| { readonly build: PendingBuild; readonly kind: "started" }
-	| { readonly kind: "miss" };
+	| { readonly kind: "miss" }
+	| { readonly kind: "updated" };
 
-// The hand-off a cache miss takes: `begin` spawns a build, a "started" result
-// answers 202 and a "miss" leaves the request as a 404.
 interface ColdLookup {
-	readonly begin: (identity: Identity, profile: Profile) => Promisable<ColdResult>;
+	readonly begin: (
+		identity: Identity,
+		profile: Profile,
+	) => Promisable<ColdResult>;
 }
 
 const missed: ColdResult = { kind: "miss" };

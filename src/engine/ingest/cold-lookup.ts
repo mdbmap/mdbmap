@@ -1,7 +1,4 @@
-import { and, eq } from "drizzle-orm";
-
-import { serviceCoverages } from "@/db/engine-schema";
-import type { ColdLookup, PendingBuild } from "@/engine/gateway";
+import type { ColdLookup } from "@/engine/gateway";
 import { toGraphMember } from "@/engine/gateway/keys.ts";
 import type {
 	Identity,
@@ -24,12 +21,10 @@ import { probeUpstream } from "./probe.ts";
 import { runAtomicTargetPublish } from "./publish.ts";
 
 const BASELINE_REVISION = 1;
-const DEFAULT_RETRY_AFTER_SECONDS = 5;
 
 interface LiveColdLookupInput {
 	readonly budget?: OverflowBudget;
 	readonly ingest: IngestEnv;
-	readonly retryAfterSeconds?: number;
 }
 
 const movieTargetService = (
@@ -46,44 +41,6 @@ const movieTargetService = (
 		return "tmdb";
 	}
 	return undefined;
-};
-
-const pendingBuild = (
-	coverageRowId: number,
-	retryAfterSeconds: number,
-): PendingBuild => ({
-	retryAfterSeconds,
-	statusUrl: `/api/engine/status/pending:${coverageRowId.toString(36)}`,
-});
-
-const seedPendingBuild = async (input: {
-	readonly group: BootstrappedGroup;
-	readonly ingest: IngestEnv;
-	readonly retryAfterSeconds: number;
-	readonly targetService: Service;
-}): Promise<PendingBuild> => {
-	const continuity = groupCoverageKey(input.group.groupId);
-	await seedPendingCoverage(
-		input.ingest.db,
-		continuity,
-		BASELINE_REVISION,
-		input.targetService,
-	);
-	const row = await input.ingest.db
-		.select({ id: serviceCoverages.id })
-		.from(serviceCoverages)
-		.where(
-			and(
-				eq(serviceCoverages.baselineContinuity, continuity),
-				eq(serviceCoverages.revision, BASELINE_REVISION),
-				eq(serviceCoverages.targetService, input.targetService),
-			),
-		)
-		.get();
-	if (row === undefined) {
-		throw new Error("pending coverage missing after seed");
-	}
-	return pendingBuild(row.id, input.retryAfterSeconds);
 };
 
 const upstreamExists = async (input: {
@@ -145,8 +102,6 @@ const publishInline = async (input: {
 
 const createLiveColdLookup = (input: LiveColdLookupInput): ColdLookup => {
 	const budget = input.budget ?? defaultOverflowBudget;
-	const retryAfterSeconds =
-		input.retryAfterSeconds ?? DEFAULT_RETRY_AFTER_SECONDS;
 
 	return {
 		begin: async (identity, profile) => {
@@ -166,29 +121,25 @@ const createLiveColdLookup = (input: LiveColdLookupInput): ColdLookup => {
 			if (bootstrap.kind !== "bootstrapped") {
 				return { kind: "miss" };
 			}
-			const build = await seedPendingBuild({
-				group: bootstrap.group,
-				ingest: input.ingest,
-				retryAfterSeconds,
+			await seedPendingCoverage(
+				input.ingest.db,
+				groupCoverageKey(bootstrap.group.groupId),
+				BASELINE_REVISION,
 				targetService,
-			});
+			);
 			const discovery = input.ingest.structuralDiscovery;
 			if (discovery === undefined) {
-				return { build, kind: "started" };
+				return { kind: "updated" };
 			}
-			try {
-				await publishInline({
-					anchor: identity.title,
-					budget,
-					discovery,
-					group: bootstrap.group,
-					ingest: input.ingest,
-					targetService,
-				});
-			} catch {
-				return { build, kind: "started" };
-			}
-			return { build, kind: "started" };
+			await publishInline({
+				anchor: identity.title,
+				budget,
+				discovery,
+				group: bootstrap.group,
+				ingest: input.ingest,
+				targetService,
+			});
+			return { kind: "updated" };
 		},
 	};
 };

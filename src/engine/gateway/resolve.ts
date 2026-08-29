@@ -45,14 +45,15 @@ const resolveMapping = async (
 		const cold = await coldLookup.begin(parsed.identity, profile);
 		read = await readGraph(db, parsed.identity);
 		if (!read.found) {
-			return cold.kind === "miss"
-				? { kind: "unknown" }
-				: {
-						body: { input: formatId(parsed.identity), mappings: {} },
-						kind: "pending",
-						retryAfterSeconds: cold.build.retryAfterSeconds,
-						statusUrl: cold.build.statusUrl,
-					};
+			if (cold.kind !== "started") {
+				return { kind: "unknown" };
+			}
+			return {
+				body: { input: formatId(parsed.identity), mappings: {} },
+				kind: "pending",
+				retryAfterSeconds: cold.build.retryAfterSeconds,
+				statusUrl: cold.build.statusUrl,
+			};
 		}
 	}
 	const body = serialize(read.answer);

@@ -56,6 +56,15 @@ const movieDiscovery = (candidateCount = 1): DiscoveryClients => ({
 	},
 });
 
+const failingMovieDiscovery = (): DiscoveryClients => ({
+	...movieDiscovery(),
+	externalIds: {
+		describe: () => {
+			throw new Error("catalogue unavailable");
+		},
+	},
+});
+
 const ingestEnv = async (
 	discovery: DiscoveryClients,
 	probeExists = true,
@@ -160,5 +169,18 @@ describe("live movie cold lookup", () => {
 		expect(await ingest.db.select().from(serviceCoverages).all()).toHaveLength(
 			0,
 		);
+	});
+});
+
+describe("live movie cold lookup failures", () => {
+	it("does not convert an unexpected publish failure to pending", async () => {
+		const ingest = await ingestEnv(failingMovieDiscovery());
+
+		await expect(
+			runMapping("movie", "tmdb:603", {
+				coldLookup: createLiveColdLookup({ ingest }),
+				db: ingest.db,
+			}),
+		).rejects.toThrow("catalogue unavailable");
 	});
 });
