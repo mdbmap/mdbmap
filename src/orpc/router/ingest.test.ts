@@ -145,4 +145,26 @@ describe("admin ingest.start input validation", () => {
 		});
 		expect(result.success).toBe(false);
 	});
+
+	it("rejects a tmdb title under the anime profile", () => {
+		const result = IngestStartInput.safeParse({
+			identity: {
+				kind: "title",
+				title: { id: "603", namespace: "movie", service: "tmdb" },
+			},
+			profile: "anime",
+		});
+		expect(result.success).toBe(false);
+	});
+
+	it("rejects a tmdb namespace mismatch for the profile", () => {
+		const result = IngestStartInput.safeParse({
+			identity: {
+				kind: "title",
+				title: { id: "603", namespace: "movie", service: "tmdb" },
+			},
+			profile: "series",
+		});
+		expect(result.success).toBe(false);
+	});
 });

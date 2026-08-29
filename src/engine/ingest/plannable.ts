@@ -1,4 +1,5 @@
 import type { Identity, Profile, Service } from "@/engine/identity.ts";
+import { isTitleAdmitted } from "@/engine/identity.ts";
 
 type TargetPlan =
 	| { readonly kind: "atomic"; readonly service: Service }
@@ -8,7 +9,7 @@ const targetPlansFor = (
 	identity: Identity,
 	profile: Profile,
 ): readonly TargetPlan[] => {
-	if (identity.kind !== "title") {
+	if (identity.kind !== "title" || !isTitleAdmitted(profile, identity.title)) {
 		return [];
 	}
 	if (profile === "anime") {

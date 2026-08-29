@@ -244,6 +244,21 @@ const resolveTitle = (
 	return { ok: true, title: { id, service } };
 };
 
+const isTitleAdmitted = (profile: Profile, title: TitleIdentity): boolean => {
+	const spec = profiles[profile];
+	const admission = resolveTitle(spec, title.service, title.id);
+	if (!admission.ok) {
+		return false;
+	}
+	if (title.service === "tmdb") {
+		return (
+			admission.title.service === "tmdb" &&
+			admission.title.namespace === title.namespace
+		);
+	}
+	return true;
+};
+
 const parseId = (profile: Profile, raw: string): ParseResult => {
 	const identified = identify(raw);
 	if (!identified.ok) {
@@ -306,7 +321,7 @@ const formatId = (identity: Identity): string => {
 	return `${head}:${locator.season}:${locator.episode}`;
 };
 
-export { FormatError, formatId, parseId, serviceOrder };
+export { FormatError, formatId, isTitleAdmitted, parseId, serviceOrder };
 export type {
 	Identity,
 	Locator,

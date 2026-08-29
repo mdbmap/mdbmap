@@ -1,7 +1,12 @@
 import { describe, expect, it } from "vitest";
 
-import type { Identity, ParseErrorReason, Profile } from "./identity.ts";
-import { FormatError, formatId, parseId } from "./identity.ts";
+import type {
+	Identity,
+	ParseErrorReason,
+	Profile,
+	TitleIdentity,
+} from "./identity.ts";
+import { FormatError, formatId, isTitleAdmitted, parseId } from "./identity.ts";
 
 // Each canonical case must both parse to its identity and format back to the
 // exact string it came from.
@@ -11,7 +16,10 @@ const roundTrips: readonly {
 	readonly raw: string;
 }[] = [
 	{
-		identity: { kind: "title", title: { id: "603", namespace: "movie", service: "tmdb" } },
+		identity: {
+			kind: "title",
+			title: { id: "603", namespace: "movie", service: "tmdb" },
+		},
 		profile: "movie",
 		raw: "tmdb:603",
 	},
@@ -21,7 +29,10 @@ const roundTrips: readonly {
 		raw: "tt0133093",
 	},
 	{
-		identity: { kind: "title", title: { id: "1399", namespace: "tv", service: "tmdb" } },
+		identity: {
+			kind: "title",
+			title: { id: "1399", namespace: "tv", service: "tmdb" },
+		},
 		profile: "series",
 		raw: "tmdb:1399",
 	},
@@ -95,8 +106,16 @@ const rejections: readonly {
 	{ profile: "anime", raw: "tmdb:1399:2:5", reason: "tmdb-not-in-anime" },
 	{ profile: "anime", raw: "kitsu:44081:2:5", reason: "season-not-one" },
 	{ profile: "anime", raw: "kitsu:44081:x:5", reason: "malformed-locator" },
-	{ profile: "anime", raw: "kitsu:44081:1:2:5", reason: "extra-qualifier-segment" },
-	{ profile: "series", raw: "tmdb:1399:2:5:7", reason: "extra-qualifier-segment" },
+	{
+		profile: "anime",
+		raw: "kitsu:44081:1:2:5",
+		reason: "extra-qualifier-segment",
+	},
+	{
+		profile: "series",
+		raw: "tmdb:1399:2:5:7",
+		reason: "extra-qualifier-segment",
+	},
 	{ profile: "series", raw: "tmdb:1399:2", reason: "malformed-locator" },
 	{ profile: "series", raw: "tmdb:", reason: "malformed-native-id" },
 	{ profile: "series", raw: "floop:1", reason: "unrecognised-service" },
@@ -106,13 +125,19 @@ const rejections: readonly {
 ];
 
 describe("parseId round-trips", () => {
-	it.each(roundTrips)("parses $raw under /$profile", ({ identity, profile, raw }) => {
-		expect(parseId(profile, raw)).toStrictEqual({ identity, ok: true });
-	});
+	it.each(roundTrips)(
+		"parses $raw under /$profile",
+		({ identity, profile, raw }) => {
+			expect(parseId(profile, raw)).toStrictEqual({ identity, ok: true });
+		},
+	);
 
-	it.each(roundTrips)("formats $raw back from its identity", ({ identity, raw }) => {
-		expect(formatId(identity)).toBe(raw);
-	});
+	it.each(roundTrips)(
+		"formats $raw back from its identity",
+		({ identity, raw }) => {
+			expect(formatId(identity)).toBe(raw);
+		},
+	);
 });
 
 describe("flat-or-season-one", () => {
@@ -128,7 +153,9 @@ describe("flat-or-season-one", () => {
 	});
 
 	it("accepts the explicit season-1 form as the same request", () => {
-		expect(parseId("anime", "kitsu:44081:1:5")).toStrictEqual(parseId("anime", "kitsu:44081:5"));
+		expect(parseId("anime", "kitsu:44081:1:5")).toStrictEqual(
+			parseId("anime", "kitsu:44081:5"),
+		);
 	});
 
 	it("normalises the season-1 form back to the bare-episode canonical", () => {
@@ -140,7 +167,9 @@ describe("flat-or-season-one", () => {
 	});
 
 	it("applies to mal and anilist prefixes too", () => {
-		expect(parseId("anime", "mal:50265:1:3")).toStrictEqual(parseId("anime", "mal:50265:3"));
+		expect(parseId("anime", "mal:50265:1:3")).toStrictEqual(
+			parseId("anime", "mal:50265:3"),
+		);
 		expect(parseId("anime", "anilist:140960:1:7")).toStrictEqual(
 			parseId("anime", "anilist:140960:7"),
 		);
@@ -167,13 +196,71 @@ describe("formatId flat-mode season guard", () => {
 	});
 });
 
+describe("isTitleAdmitted", () => {
+	const admitted: readonly {
+		readonly profile: Profile;
+		readonly title: TitleIdentity;
+	}[] = [
+		{
+			profile: "movie",
+			title: { id: "603", namespace: "movie", service: "tmdb" },
+		},
+		{
+			profile: "series",
+			title: { id: "1399", namespace: "tv", service: "tmdb" },
+		},
+		{ profile: "anime", title: { id: "50265", service: "mal" } },
+		{ profile: "movie", title: { id: "tt0133093", service: "imdb" } },
+	];
+
+	const rejected: readonly {
+		readonly profile: Profile;
+		readonly title: TitleIdentity;
+	}[] = [
+		{
+			profile: "anime",
+			title: { id: "603", namespace: "movie", service: "tmdb" },
+		},
+		{
+			profile: "anime",
+			title: { id: "1399", namespace: "tv", service: "tmdb" },
+		},
+		{
+			profile: "movie",
+			title: { id: "1399", namespace: "tv", service: "tmdb" },
+		},
+		{
+			profile: "series",
+			title: { id: "603", namespace: "movie", service: "tmdb" },
+		},
+		{ profile: "movie", title: { id: "50265", service: "mal" } },
+	];
+
+	it.each(admitted)(
+		"admits $title.service under /$profile",
+		({ profile, title }) => {
+			expect(isTitleAdmitted(profile, title)).toBe(true);
+		},
+	);
+
+	it.each(rejected)(
+		"rejects $title.service under /$profile",
+		({ profile, title }) => {
+			expect(isTitleAdmitted(profile, title)).toBe(false);
+		},
+	);
+});
+
 describe("parseId rejections", () => {
-	it.each(rejections)("rejects $raw under /$profile as $reason", ({ profile, raw, reason }) => {
-		const result = parseId(profile, raw);
-		if (result.ok) {
-			throw new Error(`expected ${raw} to be rejected`);
-		}
-		expect(result.error.reason).toBe(reason);
-		expect(result.error.expected.length).toBeGreaterThan(0);
-	});
+	it.each(rejections)(
+		"rejects $raw under /$profile as $reason",
+		({ profile, raw, reason }) => {
+			const result = parseId(profile, raw);
+			if (result.ok) {
+				throw new Error(`expected ${raw} to be rejected`);
+			}
+			expect(result.error.reason).toBe(reason);
+			expect(result.error.expected.length).toBeGreaterThan(0);
+		},
+	);
 });
