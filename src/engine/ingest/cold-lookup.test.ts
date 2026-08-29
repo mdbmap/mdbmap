@@ -62,21 +62,30 @@ const ingestEnv = async (
 ): Promise<IngestEnv> => ({
 	catalogue: {
 		simkl: movieSimkl(probeExists),
-		verification: {
-			tmdb: {
-				fetchTitle: () => ({
-					format: "movie",
-					instalmentCount: 1,
-					releaseDate: "1999-03-31",
-					title: "The Matrix",
-				}),
-			},
-		},
+		verification: {},
 	},
 	db: await freshDb(),
 	dispatcher: undefined,
 	structuralDiscovery: discovery,
 });
+
+const occupyCoverageIds = async (ingest: IngestEnv): Promise<void> => {
+	await ingest.db
+		.insert(serviceCoverages)
+		.values(
+			Array.from(
+				{ length: 9 },
+				(_unused, position) =>
+					({
+						baselineContinuity: "group:999",
+						revision: position + 1,
+						state: "complete",
+						targetService: "imdb",
+					}) satisfies typeof serviceCoverages.$inferInsert,
+			),
+		)
+		.run();
+};
 
 describe("movie catalogue discovery", () => {
 	it("normalizes namespaced TMDB ids across production discovery", async () => {
@@ -123,16 +132,18 @@ describe("live movie cold lookup", () => {
 
 	it("returns pending with the seeded coverage row when work exceeds budget", async () => {
 		const ingest = await ingestEnv(movieDiscovery(51));
+		await occupyCoverageIds(ingest);
 		const response = await runMapping("movie", "tmdb:603", {
 			coldLookup: createLiveColdLookup({ ingest }),
 			db: ingest.db,
 		});
 
 		expect(response.status).toBe(202);
-		const [coverage] = await ingest.db.select().from(serviceCoverages).all();
+		const coverages = await ingest.db.select().from(serviceCoverages).all();
+		const coverage = coverages.find((row) => row.state === "pending");
 		expect(coverage?.state).toBe("pending");
 		await expect(response.json()).resolves.toMatchObject({
-			statusUrl: `/api/engine/status/pending:${coverage?.id}`,
+			statusUrl: `/api/engine/status/pending:${coverage?.id.toString(36)}`,
 		});
 	});
 

@@ -53,7 +53,7 @@ const pendingBuild = (
 	retryAfterSeconds: number,
 ): PendingBuild => ({
 	retryAfterSeconds,
-	statusUrl: `/api/engine/status/pending:${coverageRowId}`,
+	statusUrl: `/api/engine/status/pending:${coverageRowId.toString(36)}`,
 });
 
 const seedPendingBuild = async (input: {
@@ -102,7 +102,6 @@ const upstreamExists = async (input: {
 const fitsInline = async (input: {
 	readonly budget: OverflowBudget;
 	readonly discovery: NonNullable<IngestEnv["structuralDiscovery"]>;
-	readonly targetService: Service;
 	readonly title: TitleIdentity;
 }): Promise<boolean> => {
 	const candidates = await input.discovery.find.find(
@@ -111,9 +110,7 @@ const fitsInline = async (input: {
 	return estimateBuild(
 		{
 			chainSegments: 1,
-			targetCandidates: candidates.filter(
-				(candidate) => candidate.service === input.targetService,
-			).length,
+			targetCandidates: candidates.length,
 			targetServices: 1,
 		},
 		input.budget,
@@ -132,7 +129,6 @@ const publishInline = async (input: {
 		!(await fitsInline({
 			budget: input.budget,
 			discovery: input.discovery,
-			targetService: input.targetService,
 			title: input.anchor,
 		}))
 	) {
@@ -140,6 +136,7 @@ const publishInline = async (input: {
 	}
 	await runAtomicTargetPublish(input.ingest.db, {
 		anchor: input.anchor,
+		budget: input.budget.requestBudget,
 		clients: { discovery: input.discovery },
 		group: input.group,
 		targetService: input.targetService,

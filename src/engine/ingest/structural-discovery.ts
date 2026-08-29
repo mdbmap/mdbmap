@@ -476,13 +476,13 @@ const simklRefsOf = (
 		.map(([service, serviceId]) => ({
 			service,
 			serviceId:
-				service === "tmdb"
-					? `${entry.type === "movie" ? "movie" : "tv"}:${serviceId}`
+				service === "tmdb" && entry.type === "movie"
+					? `movie:${serviceId}`
 					: serviceId,
 		}));
 
 const simklLookupId = (title: ServiceRef): string =>
-	title.service === "tmdb"
+	title.service === "tmdb" && title.serviceId.startsWith("movie:")
 		? (title.serviceId.split(":")[1] ?? title.serviceId)
 		: title.serviceId;
 
