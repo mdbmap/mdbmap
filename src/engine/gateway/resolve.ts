@@ -64,10 +64,7 @@ const resolveMapping = async (
 		);
 	if (usable) {
 		return {
-			body:
-				read.continuityId === undefined
-					? serialize(read.answer)
-					: serialize(read.answer, { continuityId: read.continuityId }),
+			body: serialize(read.answer, { continuityId: read.continuityId }),
 			kind: "ok",
 		};
 	}

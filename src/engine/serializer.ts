@@ -261,7 +261,7 @@ const mappingsFor = (
 };
 
 interface SerializeOptions {
-	readonly continuityId?: number;
+	readonly continuityId?: number | undefined;
 }
 
 const serialize = (
