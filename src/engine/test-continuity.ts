@@ -188,27 +188,7 @@ const seedTmdbContinuity = async (
 	tmdbId: string,
 	locators: readonly string[] = ["s1e1"],
 ): Promise<{ readonly continuityId: string }> => {
-	const groupRows = await db
-		.insert(titleGroups)
-		.values({ source: "release" })
-		.returning()
-		.all();
-	const groupId = one(groupRows).id;
-	const unitRows = await db.insert(contentUnits).values({}).returning().all();
-	const unitId = one(unitRows).id;
-	const titleId = await insertTitle(
-		db,
-		groupId,
-		"tmdb",
-		`${namespace}:${tmdbId}`,
-		0,
-	);
-	await Promise.all(
-		locators.map(async (locator) => {
-			const spokeId = await insertSpoke(db, titleId, locator);
-			await coverUnit(db, spokeId, unitId);
-		}),
-	);
+	const { groupId } = await seedTmdbGroup(db, namespace, tmdbId, locators);
 	return {
 		continuityId: continuityKey(await ensureGroupContinuity(db, groupId)),
 	};
