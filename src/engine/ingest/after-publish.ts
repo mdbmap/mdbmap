@@ -8,6 +8,10 @@ import type {
 	FuzzySearchClients,
 	VerificationClients,
 } from "@/engine/discovery";
+import type { GroupCoverageKey } from "@/engine/overflow/coverage.ts";
+import { runResearchPass } from "@/engine/research";
+import type { ResearchPassDeps } from "@/engine/research";
+import { listProviders } from "@/lib/provider-config";
 
 type AfterPublishScheduler = (task: Promise<void>) => void;
 
@@ -21,6 +25,22 @@ interface AfterPublishFuzzyInput extends AfterPublishFuzzyConfig {
 	readonly db: Db;
 	readonly groupId: number;
 }
+
+interface AfterPublishResearchConfig {
+	readonly deps: Omit<ResearchPassDeps, "db">;
+}
+
+interface AfterPublishResearchInput extends AfterPublishResearchConfig {
+	readonly continuity: GroupCoverageKey;
+	readonly db: Db;
+	readonly groupId: number;
+	readonly residue: readonly string[];
+	readonly scheduler: AfterPublishScheduler;
+}
+
+type AfterPublishConfig = AfterPublishFuzzyConfig & {
+	readonly research?: AfterPublishResearchConfig;
+};
 
 const YEAR_LENGTH = 4;
 
@@ -121,9 +141,45 @@ const scheduleAfterPublishFuzzy = (input: AfterPublishFuzzyInput): void => {
 	);
 };
 
-export { scheduleAfterPublishFuzzy };
+const scheduleAfterPublishResearch = (
+	input: AfterPublishResearchInput,
+): void => {
+	if (input.residue.length === 0) {
+		return;
+	}
+	input.scheduler(
+		(async () => {
+			try {
+				const providers = await listProviders(input.db, input.deps.masterKey);
+				const providerId =
+					input.deps.providerId.length > 0
+						? input.deps.providerId
+						: providers[0]?.id;
+				if (providerId === undefined) {
+					return;
+				}
+				await runResearchPass(
+					{
+						groupId: input.groupId,
+						id: input.continuity,
+						targetServices: input.residue,
+					},
+					"after-residue",
+					{ ...input.deps, db: input.db, providerId },
+				);
+			} catch {
+				return;
+			}
+		})(),
+	);
+};
+
+export { scheduleAfterPublishFuzzy, scheduleAfterPublishResearch };
 export type {
+	AfterPublishConfig,
 	AfterPublishFuzzyConfig,
 	AfterPublishFuzzyInput,
+	AfterPublishResearchConfig,
+	AfterPublishResearchInput,
 	AfterPublishScheduler,
 };

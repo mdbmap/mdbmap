@@ -25,6 +25,7 @@ export type {
 	ResearchAssertion,
 	TitleResearchAssertion,
 } from "./assertions.ts";
+export { researchAgent } from "./agent.ts";
 export { runResearchPass } from "./orchestrate.ts";
 export type {
 	ResearchAgent,
