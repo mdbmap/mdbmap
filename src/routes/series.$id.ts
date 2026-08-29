@@ -4,13 +4,12 @@ import { runMapping } from "@/engine/gateway";
 import { createLiveColdLookup, resolveIngestEnv } from "@/engine/ingest";
 import { withPublicApiGate } from "@/lib/api-key";
 
-const runSeriesMapping = async (id: string): Promise<Response> => {
-	const ingest = await resolveIngestEnv();
-	return runMapping("series", id, {
-		coldLookup: createLiveColdLookup({ ingest }),
-		db: ingest.db,
-	});
-};
+const liveColdLookup = createLiveColdLookup({
+	resolveIngest: resolveIngestEnv,
+});
+
+const runSeriesMapping = async (id: string): Promise<Response> =>
+	runMapping("series", id, { coldLookup: liveColdLookup });
 
 export const Route = createFileRoute("/series/$id")({
 	server: {
