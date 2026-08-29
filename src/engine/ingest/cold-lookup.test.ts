@@ -352,7 +352,9 @@ describe("live movie cold lookup failures", () => {
 
 		await expect(
 			runMapping("movie", "tmdb:603", {
-				coldLookup: createLiveColdLookup({ ingest }),
+				coldLookup: createLiveColdLookup({
+					resolveIngest: () => ingest,
+				}),
 				db: ingest.db,
 			}),
 		).rejects.toThrow("discovery unavailable");
@@ -373,7 +375,9 @@ describe("live movie cold lookup failures", () => {
 
 		await expect(
 			runMapping("movie", "tmdb:603", {
-				coldLookup: createLiveColdLookup({ ingest }),
+				coldLookup: createLiveColdLookup({
+					resolveIngest: () => ingest,
+				}),
 				db: ingest.db,
 			}),
 		).rejects.toThrow("dispatcher unavailable");
