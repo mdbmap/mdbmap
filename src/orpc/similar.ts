@@ -85,6 +85,7 @@ const loadSimilarGroups = async (
 const resolveSimilar = async (
 	db: Db,
 	items: readonly Similar[],
+	options?: { readonly excludeContinuityId?: string },
 ): Promise<Similar[]> => {
 	const refs = items.map((item) => parseSimilarRef(item.continuityId));
 	const groups = await loadSimilarGroups(db, refs);
@@ -100,46 +101,50 @@ const resolveSimilar = async (
 		),
 	];
 	const continuityByGroup = new Map<number, `continuity:${number}`>();
-	const ensureContinuities = async (index: number): Promise<void> => {
-		const groupId = uniqueGroupIds[index];
-		if (groupId === undefined) {
-			return;
+	const ensured = await Promise.all(
+		uniqueGroupIds.map(async (groupId) => {
+			try {
+				return [
+					groupId,
+					continuityKey(await ensureGroupContinuity(db, groupId)),
+				] as const;
+			} catch {
+				return;
+			}
+		}),
+	);
+	for (const entry of ensured) {
+		if (entry === undefined) {
+			continue;
 		}
-		try {
-			continuityByGroup.set(
-				groupId,
-				continuityKey(await ensureGroupContinuity(db, groupId)),
-			);
-		} catch {
-			// leave items for this group on their provider ref
-		}
-		await ensureContinuities(index + 1);
-	};
-	await ensureContinuities(0);
-	const resolved = items.map((item, index) => {
+		continuityByGroup.set(entry[0], entry[1]);
+	}
+	const exclude = options?.excludeContinuityId;
+	const resolved = items.flatMap((item, index) => {
 		const ref = refs[index];
 		if (ref === undefined) {
-			return item;
+			return [item];
 		}
 		const groupId = groups.get(similarLookupKey(ref));
 		if (groupId === undefined) {
-			return item;
+			return [item];
 		}
 		const resolvedId = continuityByGroup.get(groupId);
 		if (resolvedId === undefined) {
-			return item;
+			return [item];
 		}
-		return { ...item, continuityId: resolvedId };
+		if (exclude !== undefined && resolvedId === exclude) {
+			return [];
+		}
+		return [{ ...item, continuityId: resolvedId }];
 	});
-	const seenContinuity = new Set<string>();
+	const seen = new Set<string>();
 	return resolved.filter((item) => {
-		if (!item.continuityId.startsWith("continuity:")) {
-			return true;
-		}
-		if (seenContinuity.has(item.continuityId)) {
+		const key = item.continuityId;
+		if (seen.has(key)) {
 			return false;
 		}
-		seenContinuity.add(item.continuityId);
+		seen.add(key);
 		return true;
 	});
 };

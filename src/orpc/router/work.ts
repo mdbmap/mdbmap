@@ -325,7 +325,9 @@ const get = pub
 				: reorderByIds(built, selected.releaseSegmentIds, selected.segmentIds);
 		const parts = ordered.length > 0 ? ordered : built;
 
-		const ifYouLiked = await resolveSimilar(context.db, meta.ifYouLiked);
+		const ifYouLiked = await resolveSimilar(context.db, meta.ifYouLiked, {
+			excludeContinuityId: continuityId,
+		});
 
 		return {
 			cast: [...meta.cast],
