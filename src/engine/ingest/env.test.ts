@@ -14,6 +14,7 @@ describe("createIngestEnvFromSource", () => {
 	it("builds without catalogue keys and leaves SIMKL unconfigured for broker fallthrough", async () => {
 		const ingest = createIngestEnvFromSource(env, {}, { db: await freshDb() });
 
+		expect(ingest.afterPublish).toBeUndefined();
 		expect(ingest.catalogue.simkl).toBeUndefined();
 		expect(ingest.catalogue.verification).toStrictEqual({});
 		expect(ingest.structuralDiscovery).toBeDefined();

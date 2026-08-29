@@ -129,6 +129,7 @@ interface OverflowContext {
 	readonly continuity: GroupCoverageKey;
 	readonly db: IngestEnv["db"];
 	readonly discovery: DiscoveryClients | undefined;
+	readonly afterPublish?: IngestEnv["afterPublish"];
 	readonly groupId: number;
 	readonly revision: number;
 	readonly targetService: Service;
@@ -398,6 +399,9 @@ const overflowPublish = async (
 	const result = await commitPublish(ctx.db, {
 		alignment: alignment.alignment,
 		anchorTitleId: alignment.anchorTitleId,
+		...(ctx.afterPublish === undefined
+			? {}
+			: { afterPublish: ctx.afterPublish }),
 		continuity: alignment.publishContext.continuity,
 		discovered,
 		enumeration: deserializeEnumerated(alignment.enumerated),
@@ -426,7 +430,18 @@ const createBuildDeps = (
 	if (identity.kind !== "title") {
 		throw new Error("overflow deps: instalment identities are not supported");
 	}
+	let scheduledWork: Promise<void>[] = [];
+	const afterPublish =
+		ingest.afterPublish === undefined
+			? undefined
+			: {
+					...ingest.afterPublish,
+					scheduler: (task: Promise<void>) => {
+						scheduledWork = [...scheduledWork, task];
+					},
+				};
 	const ctx: OverflowContext = {
+		...(afterPublish === undefined ? {} : { afterPublish }),
 		anchor: identity.title,
 		budget: DEFAULT_BUDGET,
 		continuity: work.continuity,
@@ -441,7 +456,12 @@ const createBuildDeps = (
 		align: async ({ chain, streams }) => overflowAlign(ctx, chain, streams),
 		discover: async () => overflowDiscover(ctx),
 		fetchTarget: async (chain) => overflowFetch(ctx, chain),
-		publish: async (alignment) => overflowPublish(ctx, alignment),
+		publish: async (alignment) => {
+			await overflowPublish(ctx, alignment);
+			if (scheduledWork.length > 0) {
+				await Promise.all(scheduledWork);
+			}
+		},
 		seedPending: async () => {
 			await seedPendingCoverage(
 				ctx.db,
