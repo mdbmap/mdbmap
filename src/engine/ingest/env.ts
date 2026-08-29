@@ -1,3 +1,5 @@
+import { waitUntil } from "cloudflare:workers";
+
 import { createDb } from "@/db";
 import type { Db } from "@/db";
 import type { SimklClient, VerificationClients } from "@/engine/discovery";
@@ -43,10 +45,7 @@ const swallowFailure = async (task: Promise<void>): Promise<void> => {
 };
 
 const scheduleWithWaitUntil = (task: Promise<void>): void => {
-	void (async () => {
-		const { waitUntil } = await import("cloudflare:workers");
-		waitUntil(swallowFailure(task));
-	})();
+	waitUntil(swallowFailure(task));
 };
 
 interface IngestEnv {
