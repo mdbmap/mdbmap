@@ -73,6 +73,15 @@ const failingMovieDiscovery = (): DiscoveryClients => ({
 	},
 });
 
+const failingMovieEstimate = (): DiscoveryClients => ({
+	...movieDiscovery(),
+	find: {
+		find: () => {
+			throw new Error("discovery unavailable");
+		},
+	},
+});
+
 const ingestEnv = async (
 	discovery: DiscoveryClients,
 	probeExists = true,
@@ -338,6 +347,44 @@ describe("live episodic cold lookup", () => {
 });
 
 describe("live movie cold lookup failures", () => {
+	it("terminates pending coverage when estimating ingest work fails", async () => {
+		const ingest = await ingestEnv(failingMovieEstimate());
+
+		await expect(
+			runMapping("movie", "tmdb:603", {
+				coldLookup: createLiveColdLookup({ ingest }),
+				db: ingest.db,
+			}),
+		).rejects.toThrow("discovery unavailable");
+		expect(await ingest.db.select().from(serviceCoverages).get()).toMatchObject(
+			{ state: "conflict" },
+		);
+
+		const retry = await runMapping("movie", "tmdb:603", { db: ingest.db });
+		expect(retry.status).toBe(409);
+	});
+
+	it("terminates pending coverage when overflow dispatch fails", async () => {
+		const ingest = await ingestEnv(movieDiscovery(51), true, {
+			ensure: () => {
+				throw new Error("dispatcher unavailable");
+			},
+		});
+
+		await expect(
+			runMapping("movie", "tmdb:603", {
+				coldLookup: createLiveColdLookup({ ingest }),
+				db: ingest.db,
+			}),
+		).rejects.toThrow("dispatcher unavailable");
+		expect(await ingest.db.select().from(serviceCoverages).get()).toMatchObject(
+			{ state: "conflict" },
+		);
+
+		const retry = await runMapping("movie", "tmdb:603", { db: ingest.db });
+		expect(retry.status).toBe(409);
+	});
+
 	it("does not convert an unexpected publish failure to pending", async () => {
 		const ingest = await ingestEnv(failingMovieDiscovery());
 
