@@ -9,9 +9,12 @@ import {
 import { freshDb } from "@/db/test-helpers";
 import type { SimklClient } from "@/engine/discovery";
 import type { Identity } from "@/engine/identity.ts";
+import { bootstrapFromIdentity } from "@/engine/ingest";
 import type { IngestEnv } from "@/engine/ingest";
+import { seedPendingCoverage } from "@/engine/overflow";
 import type { ORPCContext, SessionUser } from "@/orpc/context";
 import { router } from "@/orpc/router";
+import { IngestStartInput } from "@/orpc/schema";
 
 const identity = {
 	kind: "title",
@@ -101,5 +104,45 @@ describe("admin ingest.start", () => {
 		await expect(
 			ingest.db.select().from(serviceCoverages).all(),
 		).resolves.toEqual([]);
+	});
+
+	it("returns pending for a warm graph without calling upstream", async () => {
+		const ingest = await ingestEnv(false);
+		const bootstrap = await bootstrapFromIdentity(ingest.db, identity);
+		if (bootstrap.kind !== "bootstrapped") {
+			throw new Error("expected bootstrap");
+		}
+		await seedPendingCoverage(
+			ingest.db,
+			`group:${bootstrap.group.groupId}`,
+			1,
+			"imdb",
+		);
+		const client = clientFor({ id: "admin-1", role: "admin" }, ingest);
+
+		const result = await client.ingest.start({ identity, profile: "movie" });
+		expect(result.kind).toBe("pending");
+	});
+});
+
+describe("admin ingest.start input validation", () => {
+	it("rejects an instalment identity", () => {
+		const result = IngestStartInput.safeParse({
+			identity: {
+				kind: "instalment",
+				locator: { episode: 1, season: 1 },
+				title: { id: "603", namespace: "movie", service: "tmdb" },
+			},
+			profile: "movie",
+		});
+		expect(result.success).toBe(false);
+	});
+
+	it("rejects an unplannable identity and profile pair", () => {
+		const result = IngestStartInput.safeParse({
+			identity: { kind: "title", title: { id: "1", service: "mal" } },
+			profile: "movie",
+		});
+		expect(result.success).toBe(false);
 	});
 });

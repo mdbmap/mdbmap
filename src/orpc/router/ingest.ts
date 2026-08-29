@@ -15,27 +15,41 @@ const pending = (
 	statusUrl,
 });
 
+const outcomeFor = (
+	graph: Awaited<ReturnType<typeof readGraph>>,
+): AdminIngestStartResult | undefined => {
+	if (!graph.found) {
+		return;
+	}
+	if (graph.pendingRef !== undefined) {
+		return pending(
+			`/api/engine/status/${graph.pendingRef}`,
+			RETRY_AFTER_SECONDS,
+		);
+	}
+	return { kind: "complete" };
+};
+
 const start = admin
 	.input(IngestStartInput)
 	.handler(async ({ context, input }): Promise<AdminIngestStartResult> => {
 		const ingest = await (context.resolveIngest ?? resolveIngestEnv)();
-		const cold = await createLiveColdLookup({
+		const warm = await readGraph(ingest.db, input.identity);
+		const warmOutcome = outcomeFor(warm);
+		if (warmOutcome !== undefined) {
+			return warmOutcome;
+		}
+
+		await createLiveColdLookup({
 			resolveIngest: () => ingest,
 		}).begin(input.identity, input.profile);
-		if (cold.kind === "miss") {
-			return { kind: "unknown" };
+
+		const afterCold = await readGraph(ingest.db, input.identity);
+		const coldOutcome = outcomeFor(afterCold);
+		if (coldOutcome !== undefined) {
+			return coldOutcome;
 		}
-		if (cold.kind === "started") {
-			return pending(cold.build.statusUrl, cold.build.retryAfterSeconds);
-		}
-		const graph = await readGraph(ingest.db, input.identity);
-		if (graph.found && graph.pendingRef !== undefined) {
-			return pending(
-				`/api/engine/status/${graph.pendingRef}`,
-				RETRY_AFTER_SECONDS,
-			);
-		}
-		return graph.found ? { kind: "complete" } : { kind: "unknown" };
+		return { kind: "unknown" };
 	});
 
 const ingest = { start };

@@ -264,6 +264,9 @@ const settleInlineTargets = async (input: {
 	);
 };
 
+const isIngestPlannable = (identity: Identity, profile: Profile): boolean =>
+	identity.kind === "title" && targetPlansFor(identity, profile).length > 0;
+
 const createLiveColdLookup = (input: LiveColdLookupInput): ColdLookup => {
 	const budget = input.budget ?? defaultOverflowBudget;
 
@@ -307,5 +310,5 @@ const createLiveColdLookup = (input: LiveColdLookupInput): ColdLookup => {
 	};
 };
 
-export { createLiveColdLookup, estimateIngestWork };
+export { createLiveColdLookup, estimateIngestWork, isIngestPlannable };
 export type { EstimateIngestWorkInput, LiveColdLookupInput };

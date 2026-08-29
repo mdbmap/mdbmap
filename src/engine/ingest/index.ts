@@ -25,7 +25,7 @@ export type {
 	CatalogueSecrets,
 	CatalogueSecretsSource,
 } from "./catalogue-secrets.ts";
-export { createLiveColdLookup } from "./cold-lookup.ts";
+export { createLiveColdLookup, isIngestPlannable } from "./cold-lookup.ts";
 export type { LiveColdLookupInput } from "./cold-lookup.ts";
 export {
 	createIngestEnv,

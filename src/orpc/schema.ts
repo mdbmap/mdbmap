@@ -4,6 +4,7 @@ import { presentationOrderSlugs } from "@/db/engine-schema";
 import type { ApiKeyPlan, RateableUnitKind, WatchStatus } from "@/db/schema";
 import { apiKeyPlans, researchTimings, watchStatuses } from "@/db/schema";
 import type { MediaKind } from "@/engine";
+import { isIngestPlannable } from "@/engine/ingest";
 import type { ProviderListItem } from "@/lib/provider-config/store.ts";
 import {
 	ProviderConfigSchema,
@@ -130,10 +131,25 @@ const CatalogueIdentityInput = z.discriminatedUnion("kind", [
 	}),
 ]);
 
-const IngestStartInput = z.object({
-	identity: CatalogueIdentityInput,
-	profile: z.enum(["anime", "movie", "series"]),
+const IngestStartIdentityInput = z.object({
+	kind: z.literal("title"),
+	title: CatalogueTitleInput,
 });
+
+const IngestStartInput = z
+	.object({
+		identity: IngestStartIdentityInput,
+		profile: z.enum(["anime", "movie", "series"]),
+	})
+	.superRefine((input, ctx) => {
+		if (!isIngestPlannable(input.identity, input.profile)) {
+			ctx.addIssue({
+				code: "custom",
+				message: "This identity and profile cannot be ingested.",
+				path: ["identity"],
+			});
+		}
+	});
 
 interface RateableUnit {
 	key: string;
