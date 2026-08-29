@@ -195,11 +195,14 @@ const resourceId = (value: string): number | undefined => {
 interface ResourceRun {
 	kind: TmdbResource["kind"];
 	resources: readonly TmdbResource[];
+	seasonOffset: number | undefined;
 }
 
 const runsOf = (resolved: ResolveResult): ResourceRun[] => {
 	const runs: ResourceRun[] = [];
 	let current: TmdbResource[] = [];
+	let currentSeasonOffset: number | undefined;
+	const tvSeasonCounts = new Map<number, number>();
 
 	const flush = () => {
 		if (current.length === 0) {
@@ -209,8 +212,13 @@ const runsOf = (resolved: ResolveResult): ResourceRun[] => {
 		if (head === undefined) {
 			return;
 		}
-		runs.push({ kind: head.kind, resources: current });
+		runs.push({
+			kind: head.kind,
+			resources: current,
+			seasonOffset: currentSeasonOffset,
+		});
 		current = [];
+		currentSeasonOffset = undefined;
 	};
 
 	for (const segment of resolved.segments) {
@@ -231,8 +239,14 @@ const runsOf = (resolved: ResolveResult): ResourceRun[] => {
 			(kind === "movie" || head.id === id);
 		if (!continuesRun) {
 			flush();
+			if (kind === "tv") {
+				currentSeasonOffset = tvSeasonCounts.get(id) ?? 0;
+			}
 		}
 		current.push({ id, kind });
+		if (kind === "tv") {
+			tvSeasonCounts.set(id, (tvSeasonCounts.get(id) ?? 0) + 1);
+		}
 	}
 	flush();
 	return runs;
@@ -243,11 +257,12 @@ const keyFor = (
 	version: number,
 	resource: TmdbResource,
 	resources: readonly TmdbResource[],
+	seasonOffset: number | undefined,
 ) =>
 	`tmdb:v${version}:${kind}:${resource.kind}:${
 		resource.kind === "movie"
 			? resources.map(({ id }) => id).join(",")
-			: `${resource.id}:${resources.length}`
+			: `${resource.id}:${seasonOffset ?? 0}:${resources.length}`
 	}`;
 
 const normaliseCast = (series: TmdbSeries): Credit[] =>
@@ -556,6 +571,7 @@ const fetchFromTmdb = async (
 	http: HttpContext,
 	version: number,
 	seriesId: string,
+	seasonOffset: number,
 	segmentCount: number,
 ): Promise<Snapshots> => {
 	const series = await getJson(
@@ -566,7 +582,7 @@ const fetchFromTmdb = async (
 	const regularSeasons = (series.seasons ?? [])
 		.filter((season) => season.season_number >= 1)
 		.toSorted((left, right) => left.season_number - right.season_number)
-		.slice(0, segmentCount);
+		.slice(seasonOffset, seasonOffset + segmentCount);
 
 	const seasons = await Promise.all(
 		regularSeasons.map(async (season) => {
@@ -579,7 +595,7 @@ const fetchFromTmdb = async (
 		}),
 	);
 	const summaries: SeasonSummary[] = regularSeasons.map((season, index) => ({
-		label: season.name ?? `Season ${index + 1}`,
+		label: season.name ?? `Season ${season.season_number}`,
 		year: yearOf(season.air_date ?? seasons[index]?.air_date),
 	}));
 
@@ -614,8 +630,53 @@ const fetchRun = async (
 				http,
 				version,
 				String(run.resources[0]?.id),
+				run.seasonOffset ?? 0,
 				run.resources.length,
 			);
+
+const emptySegment = (): SegmentMetadata => ({
+	airedFrom: undefined,
+	airedTo: undefined,
+	episodes: [],
+	label: "",
+	year: undefined,
+});
+
+const segmentsAlignedWithResolved = (
+	resolved: ResolveResult,
+	runs: readonly ResourceRun[],
+	snapshots: readonly Snapshots[],
+): SegmentMetadata[] => {
+	const segmentsByRun = snapshots.map(
+		(snapshot) => assemble(snapshot.core, snapshot.volatile).segments,
+	);
+	const aligned: SegmentMetadata[] = [];
+	let runIndex = 0;
+	let segmentInRun = 0;
+
+	for (const segment of resolved.segments) {
+		if (segment.members.tmdb === undefined) {
+			aligned.push(emptySegment());
+			continue;
+		}
+		const runSegments = segmentsByRun[runIndex];
+		const run = runs[runIndex];
+		if (run === undefined || runSegments === undefined) {
+			throw new Error("tmdb: segment/run mismatch");
+		}
+		const segmentMeta = runSegments[segmentInRun];
+		if (segmentMeta === undefined) {
+			throw new Error("tmdb: segment/run mismatch");
+		}
+		aligned.push(segmentMeta);
+		segmentInRun += 1;
+		if (segmentInRun >= run.resources.length) {
+			runIndex += 1;
+			segmentInRun = 0;
+		}
+	}
+	return aligned;
+};
 
 const createTmdbProvider = (deps: TmdbProviderDeps): MetadataProvider => {
 	const {
@@ -641,12 +702,19 @@ const createTmdbProvider = (deps: TmdbProviderDeps): MetadataProvider => {
 				if (resource === undefined) {
 					throw new Error("tmdb: resource run carries no tmdb id");
 				}
-				const coreKey = keyFor("core", version, resource, run.resources);
+				const coreKey = keyFor(
+					"core",
+					version,
+					resource,
+					run.resources,
+					run.seasonOffset,
+				);
 				const volatileKey = keyFor(
 					"volatile",
 					version,
 					resource,
 					run.resources,
+					run.seasonOffset,
 				);
 				const core = await readSnapshot(
 					kv,
@@ -680,9 +748,7 @@ const createTmdbProvider = (deps: TmdbProviderDeps): MetadataProvider => {
 		const identity = assemble(identitySnapshot.core, identitySnapshot.volatile);
 		return {
 			...identity,
-			segments: snapshots.flatMap(
-				(snapshot) => assemble(snapshot.core, snapshot.volatile).segments,
-			),
+			segments: segmentsAlignedWithResolved(resolved, runs, snapshots),
 		};
 	};
 

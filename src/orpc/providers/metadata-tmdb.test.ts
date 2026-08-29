@@ -265,8 +265,8 @@ describe("tmdb metadata provider", () => {
 
 		await provider.fetchWork(resolved);
 
-		const coreKey = `tmdb:v1:core:tv:${SERIES_ID}:2`;
-		const volatileKey = `tmdb:v1:volatile:tv:${SERIES_ID}:2`;
+		const coreKey = `tmdb:v1:core:tv:${SERIES_ID}:0:2`;
+		const volatileKey = `tmdb:v1:volatile:tv:${SERIES_ID}:0:2`;
 		expect(store.has(coreKey)).toBe(true);
 		expect(store.has(volatileKey)).toBe(true);
 
@@ -381,8 +381,8 @@ describe("tmdb metadata provider", () => {
 
 		expect(store.has("tmdb:v1:core:movie:999")).toBe(true);
 		expect(store.has("tmdb:v1:volatile:movie:999")).toBe(true);
-		expect(store.has("tmdb:v1:core:tv:999:2")).toBe(true);
-		expect(store.has("tmdb:v1:volatile:tv:999:2")).toBe(true);
+		expect(store.has("tmdb:v1:core:tv:999:0:2")).toBe(true);
+		expect(store.has("tmdb:v1:volatile:tv:999:0:2")).toBe(true);
 		expect(movieMeta.title).toBe("Test Movie");
 		expect(tvMeta.title).toBe("Test Show");
 		expect(fetchFn).toHaveBeenCalledTimes(4);
@@ -479,8 +479,101 @@ describe("tmdb metadata provider", () => {
 		await provider.fetchWork(oneSegmentResolved);
 		await provider.fetchWork(resolved);
 
-		expect(store.has("tmdb:v1:core:tv:999:1")).toBe(true);
-		expect(store.has("tmdb:v1:core:tv:999:2")).toBe(true);
+		expect(store.has("tmdb:v1:core:tv:999:0:1")).toBe(true);
+		expect(store.has("tmdb:v1:core:tv:999:0:2")).toBe(true);
 		expect(fetchFn).toHaveBeenCalledTimes(5);
+	});
+
+	const resumedTvResolved: ResolveResult = {
+		continuityId: "continuity:resumed-tv",
+		mediaKind: "tv",
+		segments: [
+			{
+				instalments: ["tmdb:999#1"],
+				kind: "episodic",
+				members: { tmdb: SERIES_ID },
+			},
+			{
+				instalments: ["tmdb:999"],
+				kind: "atomic",
+				members: { tmdb: MOVIE_ID },
+			},
+			{
+				instalments: ["tmdb:999#3"],
+				kind: "episodic",
+				members: { tmdb: SERIES_ID },
+			},
+		],
+	};
+
+	it("resumes a TV series after an interleaved film at the correct season", async () => {
+		const fetchFn = makeFetch();
+		const { kv } = makeKv();
+		const provider = createTmdbProvider({
+			apiKey: "test-key",
+			fetchFn,
+			resolveKv: () => kv,
+		});
+
+		const meta = await provider.fetchWork(resumedTvResolved);
+
+		expect(fetchFn.mock.calls.map(([input]) => urlOf(input))).toEqual(
+			expect.arrayContaining([
+				"https://api.themoviedb.org/3/tv/999?append_to_response=aggregate_credits,recommendations&api_key=test-key",
+				"https://api.themoviedb.org/3/tv/999/season/1?api_key=test-key",
+				"https://api.themoviedb.org/3/movie/999?append_to_response=credits,recommendations&api_key=test-key",
+				"https://api.themoviedb.org/3/tv/999/season/2?api_key=test-key",
+			]),
+		);
+		expect(meta.segments).toHaveLength(3);
+		expect(meta.segments[0]?.label).toBe("Season 1");
+		expect(meta.segments[1]?.label).toBe("Test Movie");
+		expect(meta.segments[2]?.label).toBe("Season 2");
+		expect(meta.segments[2]?.year).toBe(2021);
+	});
+
+	const tmdbLessResolved: ResolveResult = {
+		continuityId: "continuity:tmdb-less",
+		mediaKind: "tv",
+		segments: [
+			{
+				instalments: ["tmdb:999#1"],
+				kind: "episodic",
+				members: { tmdb: SERIES_ID },
+			},
+			{
+				instalments: ["imdb:tt123"],
+				kind: "atomic",
+				members: {},
+			},
+			{
+				instalments: ["tmdb:999#3"],
+				kind: "episodic",
+				members: { tmdb: SERIES_ID },
+			},
+		],
+	};
+
+	it("keeps segment index alignment when a segment has no tmdb member", async () => {
+		const fetchFn = makeFetch();
+		const { kv } = makeKv();
+		const provider = createTmdbProvider({
+			apiKey: "test-key",
+			fetchFn,
+			resolveKv: () => kv,
+		});
+
+		const meta = await provider.fetchWork(tmdbLessResolved);
+
+		expect(meta.segments).toHaveLength(3);
+		expect(meta.segments[0]?.label).toBe("Season 1");
+		expect(meta.segments[1]).toStrictEqual({
+			airedFrom: undefined,
+			airedTo: undefined,
+			episodes: [],
+			label: "",
+			year: undefined,
+		});
+		expect(meta.segments[2]?.label).toBe("Season 2");
 	});
 });
