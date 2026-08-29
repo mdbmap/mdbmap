@@ -33,7 +33,7 @@ type IngestBindings = Pick<
 };
 
 interface IngestEnvOverrides {
-	readonly afterPublish?: AfterPublishFuzzyConfig;
+	readonly afterPublish?: AfterPublishConfig;
 	readonly structuralDiscovery?: DiscoveryClients;
 	readonly catalogue?: Partial<{
 		readonly simkl: SimklClient;
@@ -43,7 +43,7 @@ interface IngestEnvOverrides {
 }
 
 interface IngestEnv {
-	readonly afterPublish?: AfterPublishFuzzyConfig;
+	readonly afterPublish?: AfterPublishConfig;
 	readonly structuralDiscovery: DiscoveryClients | undefined;
 	readonly catalogue: {
 		readonly simkl: SimklClient | undefined;
