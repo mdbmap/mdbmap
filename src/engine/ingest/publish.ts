@@ -102,6 +102,13 @@ const endPublishAttempt = async (
 			input.targetService,
 			"conflict",
 		);
+	} else if (result.kind === "refused") {
+		await completeCoverage(
+			db,
+			input.continuity,
+			input.revision,
+			input.targetService,
+		);
 	}
 	return result;
 };
@@ -476,6 +483,7 @@ const runAtomicTargetPublish = async (
 		clients: input.clients.discovery,
 	});
 	if (discovered.kind === "refused") {
+		await completeCoverage(db, continuity, revision, input.targetService);
 		return { kind: "refused", reason: discovered.reason };
 	}
 	if (discovered.kind === "no-group") {
