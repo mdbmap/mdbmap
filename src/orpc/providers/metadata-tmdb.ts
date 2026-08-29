@@ -662,11 +662,18 @@ const segmentsAlignedWithResolved = (
 		const runSegments = segmentsByRun[runIndex];
 		const run = runs[runIndex];
 		if (run === undefined || runSegments === undefined) {
-			throw new Error("tmdb: segment/run mismatch");
+			aligned.push(emptySegment());
+			continue;
 		}
 		const segmentMeta = runSegments[segmentInRun];
 		if (segmentMeta === undefined) {
-			throw new Error("tmdb: segment/run mismatch");
+			aligned.push(emptySegment());
+			segmentInRun += 1;
+			if (segmentInRun >= run.resources.length) {
+				runIndex += 1;
+				segmentInRun = 0;
+			}
+			continue;
 		}
 		aligned.push(segmentMeta);
 		segmentInRun += 1;
