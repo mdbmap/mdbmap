@@ -180,9 +180,11 @@ const finishPublish = async (
 		}
 		const schedule = input.afterPublish.scheduler;
 		if (input.afterPublish.research !== undefined && schedule !== undefined) {
-			const residue = input.ladderComplete
-				? []
-				: await matcherResidueFor(db, input.continuity, input.revision);
+			const residue = await matcherResidueFor(
+				db,
+				input.continuity,
+				input.revision,
+			);
 			scheduleAfterPublishResearch({
 				...input.afterPublish.research,
 				continuity: input.continuity,
