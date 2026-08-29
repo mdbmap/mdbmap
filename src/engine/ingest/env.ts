@@ -5,7 +5,10 @@ import type { DiscoveryClients } from "@/engine/discovery/structural.ts";
 import { createWorkflowDispatcher } from "@/engine/overflow/cold.ts";
 import type { BuildDispatcher } from "@/engine/overflow/cold.ts";
 
-import type { AfterPublishFuzzyConfig } from "./after-publish.ts";
+import type {
+	AfterPublishFuzzyConfig,
+	AfterPublishScheduler,
+} from "./after-publish.ts";
 import {
 	parseCatalogueSecrets,
 	readCatalogueSecretsSource,
@@ -34,21 +37,6 @@ interface IngestEnvOverrides {
 
 type AfterPublishConfig = AfterPublishFuzzyConfig;
 
-const swallowFailure = async (task: Promise<void>): Promise<void> => {
-	try {
-		await task;
-	} catch {
-		return;
-	}
-};
-
-const scheduleWithWaitUntil = (task: Promise<void>): void => {
-	void (async () => {
-		const { waitUntil } = await import("cloudflare:workers");
-		waitUntil(swallowFailure(task));
-	})();
-};
-
 interface IngestEnv {
 	readonly afterPublish?: AfterPublishConfig;
 	readonly structuralDiscovery: DiscoveryClients | undefined;
@@ -62,20 +50,23 @@ interface IngestEnv {
 
 interface CreateIngestEnvInput {
 	readonly bindings: IngestBindings;
+	readonly defaultScheduler?: AfterPublishScheduler;
 	readonly overrides?: IngestEnvOverrides | undefined;
 	readonly secrets: CatalogueSecrets;
 }
 
 const createIngestEnv = (input: CreateIngestEnvInput): IngestEnv => {
-	const { bindings, overrides, secrets } = input;
+	const { bindings, defaultScheduler, overrides, secrets } = input;
 	const built = buildCatalogueClients({ secrets });
 	const overrideAfterPublish = overrides?.afterPublish;
+	const scheduler = overrideAfterPublish?.scheduler ?? defaultScheduler;
 	const resolvedAfterPublish =
 		overrideAfterPublish !== undefined &&
-		Object.keys(overrideAfterPublish.clients).length > 0
+		Object.keys(overrideAfterPublish.clients).length > 0 &&
+		scheduler !== undefined
 			? {
 					...overrideAfterPublish,
-					scheduler: overrideAfterPublish.scheduler ?? scheduleWithWaitUntil,
+					scheduler,
 				}
 			: undefined;
 	return {
@@ -103,9 +94,11 @@ const createIngestEnvFromSource = (
 	bindings: IngestBindings,
 	source: CatalogueSecretsSource,
 	overrides?: IngestEnvOverrides,
+	defaultScheduler?: AfterPublishScheduler,
 ): IngestEnv =>
 	createIngestEnv({
 		bindings,
+		...(defaultScheduler === undefined ? {} : { defaultScheduler }),
 		overrides,
 		secrets: parseCatalogueSecrets(source),
 	});
@@ -113,11 +106,15 @@ const createIngestEnvFromSource = (
 const resolveIngestEnv = async (
 	overrides?: IngestEnvOverrides,
 ): Promise<IngestEnv> => {
-	const { env } = await import("cloudflare:workers");
+	const [{ env }, { scheduleWithWaitUntil }] = await Promise.all([
+		import("cloudflare:workers"),
+		import("./schedule.workers.ts"),
+	]);
 	return createIngestEnvFromSource(
 		env,
 		readCatalogueSecretsSource(env),
 		overrides,
+		scheduleWithWaitUntil,
 	);
 };
 
