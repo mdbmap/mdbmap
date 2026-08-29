@@ -693,7 +693,19 @@ const createTmdbProvider = (deps: TmdbProviderDeps): MetadataProvider => {
 	const fetchWork = async (resolved: ResolveResult): Promise<WorkMetadata> => {
 		const runs = runsOf(resolved);
 		if (runs.length === 0) {
-			throw new Error("tmdb: resolved members carry no tmdb id");
+			return {
+				backdropRef: undefined,
+				cast: [],
+				coverRef: undefined,
+				ifYouLiked: [],
+				nativeTitle: undefined,
+				segments: resolved.segments.map(() => emptySegment()),
+				span: "",
+				staff: [],
+				studios: [],
+				synopsis: "",
+				title: "",
+			};
 		}
 		const kv = await resolveKv();
 		const snapshots = await Promise.all(

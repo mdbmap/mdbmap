@@ -135,6 +135,42 @@ const urlOf = (input: RequestInfo | URL): string => {
 };
 
 const SECOND_SERIES_ID = "200";
+const SECOND_MOVIE_ID = "1000";
+
+const secondMovieJson = {
+	...movieJson,
+	release_date: "2003-11-05",
+	title: "Test Movie Two",
+};
+
+const multiMovieResolved: ResolveResult = {
+	continuityId: "continuity:multi-movie",
+	mediaKind: "film",
+	segments: [
+		{
+			instalments: ["tmdb:999"],
+			kind: "atomic",
+			members: { tmdb: MOVIE_ID },
+		},
+		{
+			instalments: ["tmdb:1000"],
+			kind: "atomic",
+			members: { tmdb: SECOND_MOVIE_ID },
+		},
+	],
+};
+
+const noTmdbResolved: ResolveResult = {
+	continuityId: "continuity:imdb-only",
+	mediaKind: "film",
+	segments: [
+		{
+			instalments: ["imdb:tt1"],
+			kind: "atomic",
+			members: {},
+		},
+	],
+};
 
 const secondSeriesJson = {
 	...seriesJson,
@@ -168,6 +204,9 @@ const responseFor = (url: string): Response => {
 	}
 	if (url.includes("/season/2")) {
 		return Response.json(season2Json);
+	}
+	if (url.includes(`/movie/${SECOND_MOVIE_ID}`)) {
+		return Response.json(secondMovieJson);
 	}
 	if (url.includes(`/movie/${MOVIE_ID}`)) {
 		return Response.json(movieJson);
@@ -575,5 +614,58 @@ describe("tmdb metadata provider", () => {
 			year: undefined,
 		});
 		expect(meta.segments[2]?.label).toBe("Season 2");
+	});
+
+	it("spans years across a multi-movie atomic run", async () => {
+		const fetchFn = makeFetch();
+		const { kv, store } = makeKv();
+		const provider = createTmdbProvider({
+			apiKey: "test-key",
+			fetchFn,
+			resolveKv: () => kv,
+		});
+
+		const meta = await provider.fetchWork(multiMovieResolved);
+
+		expect(fetchFn.mock.calls.map(([input]) => urlOf(input))).toEqual(
+			expect.arrayContaining([
+				"https://api.themoviedb.org/3/movie/999?append_to_response=credits,recommendations&api_key=test-key",
+				"https://api.themoviedb.org/3/movie/1000?append_to_response=credits,recommendations&api_key=test-key",
+			]),
+		);
+		expect(meta.span).toBe("2001–2003");
+		expect(meta.segments.map((segment) => segment.label)).toEqual([
+			"Test Movie",
+			"Test Movie Two",
+		]);
+		expect(
+			[...store.keys()].some((key) => key.includes("movie:999,1000")),
+		).toBe(true);
+	});
+
+	it("returns empty metadata when no segment carries a tmdb id", async () => {
+		const fetchFn = makeFetch();
+		const { kv } = makeKv();
+		const provider = createTmdbProvider({
+			apiKey: "test-key",
+			fetchFn,
+			resolveKv: () => kv,
+		});
+
+		const meta = await provider.fetchWork(noTmdbResolved);
+
+		expect(fetchFn).not.toHaveBeenCalled();
+		expect(meta).toMatchObject({
+			segments: [
+				{
+					airedFrom: undefined,
+					airedTo: undefined,
+					episodes: [],
+					label: "",
+					year: undefined,
+				},
+			],
+			title: "",
+		});
 	});
 });
