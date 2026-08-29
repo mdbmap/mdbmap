@@ -430,14 +430,14 @@ const createBuildDeps = (
 	if (identity.kind !== "title") {
 		throw new Error("overflow deps: instalment identities are not supported");
 	}
-	let fuzzyWork: Promise<void> | undefined;
+	let scheduledWork: Promise<void>[] = [];
 	const afterPublish =
 		ingest.afterPublish === undefined
 			? undefined
 			: {
 					...ingest.afterPublish,
 					scheduler: (task: Promise<void>) => {
-						fuzzyWork = task;
+						scheduledWork = [...scheduledWork, task];
 					},
 				};
 	const ctx: OverflowContext = {
@@ -458,8 +458,8 @@ const createBuildDeps = (
 		fetchTarget: async (chain) => overflowFetch(ctx, chain),
 		publish: async (alignment) => {
 			await overflowPublish(ctx, alignment);
-			if (fuzzyWork !== undefined) {
-				await fuzzyWork;
+			if (scheduledWork.length > 0) {
+				await Promise.all(scheduledWork);
 			}
 		},
 		seedPending: async () => {
