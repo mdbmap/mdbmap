@@ -1,5 +1,3 @@
-import { waitUntil } from "cloudflare:workers";
-
 import { createDb } from "@/db";
 import type { Db } from "@/db";
 import type { SimklClient, VerificationClients } from "@/engine/discovery";
@@ -36,6 +34,21 @@ interface IngestEnvOverrides {
 
 type AfterPublishConfig = AfterPublishFuzzyConfig;
 
+const swallowFailure = async (task: Promise<void>): Promise<void> => {
+	try {
+		await task;
+	} catch {
+		return;
+	}
+};
+
+const scheduleWithWaitUntil = (task: Promise<void>): void => {
+	void (async () => {
+		const { waitUntil } = await import("cloudflare:workers");
+		waitUntil(swallowFailure(task));
+	})();
+};
+
 interface IngestEnv {
 	readonly afterPublish?: AfterPublishConfig;
 	readonly structuralDiscovery: DiscoveryClients | undefined;
@@ -62,11 +75,7 @@ const createIngestEnv = (input: CreateIngestEnvInput): IngestEnv => {
 		Object.keys(overrideAfterPublish.clients).length > 0
 			? {
 					...overrideAfterPublish,
-					scheduler:
-						overrideAfterPublish.scheduler ??
-						((task: Promise<void>) => {
-							waitUntil(task);
-						}),
+					scheduler: overrideAfterPublish.scheduler ?? scheduleWithWaitUntil,
 				}
 			: undefined;
 	return {

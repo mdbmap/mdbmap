@@ -22,12 +22,18 @@ interface AfterPublishFuzzyInput extends AfterPublishFuzzyConfig {
 	readonly groupId: number;
 }
 
+const YEAR_LENGTH = 4;
+
 const yearOf = (releaseDate: string | undefined): number | undefined => {
 	if (releaseDate === undefined) {
 		return undefined;
 	}
-	const year = Number(releaseDate.slice(0, 4));
-	return Number.isInteger(year) ? year : undefined;
+	const head = releaseDate.slice(0, YEAR_LENGTH);
+	if (head.length < YEAR_LENGTH) {
+		return undefined;
+	}
+	const year = Number(head);
+	return Number.isNaN(year) ? undefined : year;
 };
 
 const queriesFor = async (
@@ -51,7 +57,12 @@ const queriesFor = async (
 			if (client === undefined) {
 				return;
 			}
-			const metadata = await client.fetchTitle(title.serviceId);
+			let metadata;
+			try {
+				metadata = await client.fetchTitle(title.serviceId);
+			} catch {
+				return;
+			}
 			return metadata === undefined
 				? undefined
 				: {
@@ -81,23 +92,27 @@ const dbSubject = async (
 const scheduleAfterPublishFuzzy = (input: AfterPublishFuzzyInput): void => {
 	input.scheduler(
 		(async () => {
-			const subject = await dbSubject(input.db, input.groupId);
-			if (subject === undefined) {
+			try {
+				const subject = await dbSubject(input.db, input.groupId);
+				if (subject === undefined) {
+					return;
+				}
+				const queries = await queriesFor(
+					input.db,
+					input.groupId,
+					input.catalogues,
+				);
+				if (queries.length === 0) {
+					return;
+				}
+				await runFuzzyDiscovery(
+					input.db,
+					{ clients: input.clients },
+					{ queries, subjectTitleId: subject },
+				);
+			} catch {
 				return;
 			}
-			const queries = await queriesFor(
-				input.db,
-				input.groupId,
-				input.catalogues,
-			);
-			if (queries.length === 0) {
-				return;
-			}
-			await runFuzzyDiscovery(
-				input.db,
-				{ clients: input.clients },
-				{ queries, subjectTitleId: subject },
-			);
 		})(),
 	);
 };
