@@ -97,8 +97,11 @@ const occupyCoverageIds = async (ingest: IngestEnv): Promise<void> => {
 		.run();
 };
 
+const liveLookup = (ingest: IngestEnv): ColdLookup =>
+	createLiveColdLookup({ resolveIngest: () => ingest });
+
 const runObservedLiveLookup = async (ingest: IngestEnv) => {
-	const liveColdLookup = createLiveColdLookup({ ingest });
+	const liveColdLookup = liveLookup(ingest);
 	let coldResultKind: ColdResult["kind"] | undefined;
 	const observedColdLookup: ColdLookup = {
 		begin: async (identity, profile) => {
@@ -145,7 +148,7 @@ describe("live movie cold lookup", () => {
 	it("publishes a cold movie mapping and returns it in the same request", async () => {
 		const ingest = await ingestEnv(movieDiscovery());
 		const response = await runMapping("movie", "tmdb:603", {
-			coldLookup: createLiveColdLookup({ ingest }),
+			coldLookup: liveLookup(ingest),
 			db: ingest.db,
 		});
 
@@ -160,7 +163,28 @@ describe("live movie cold lookup", () => {
 			},
 		});
 	});
+});
 
+describe("warm movie lookup", () => {
+	it("does not resolve ingest dependencies for a warm movie mapping", async () => {
+		const ingest = await ingestEnv(movieDiscovery());
+		await runMapping("movie", "tmdb:603", {
+			coldLookup: liveLookup(ingest),
+			db: ingest.db,
+		});
+		const resolveIngest = vi.fn(() => ingest);
+
+		const response = await runMapping("movie", "tmdb:603", {
+			coldLookup: createLiveColdLookup({ resolveIngest }),
+			db: ingest.db,
+		});
+
+		expect(response.status).toBe(200);
+		expect(resolveIngest).not.toHaveBeenCalled();
+	});
+});
+
+describe("pending movie cold lookup", () => {
 	it("returns pending with the seeded coverage row when work exceeds budget", async () => {
 		const ingest = await ingestEnv(movieDiscovery(51));
 		await occupyCoverageIds(ingest);
@@ -179,7 +203,7 @@ describe("live movie cold lookup", () => {
 	it("returns unknown without writing when the catalogue rejects the id", async () => {
 		const ingest = await ingestEnv(movieDiscovery(), false);
 		const response = await runMapping("movie", "tmdb:999", {
-			coldLookup: createLiveColdLookup({ ingest }),
+			coldLookup: liveLookup(ingest),
 			db: ingest.db,
 		});
 
@@ -198,19 +222,19 @@ describe("live movie cold lookup failures", () => {
 
 		await expect(
 			runMapping("movie", "tmdb:603", {
-				coldLookup: createLiveColdLookup({ ingest }),
+				coldLookup: liveLookup(ingest),
 				db: ingest.db,
 			}),
 		).rejects.toThrow("catalogue unavailable");
 		expect(await ingest.db.select().from(serviceCoverages).get()).toMatchObject(
-			{ state: "conflict" },
+			{ state: "pending" },
 		);
 
 		const retry = await runMapping("movie", "tmdb:603", { db: ingest.db });
-		expect(retry.status).toBe(409);
+		expect(retry.status).toBe(202);
 	});
 
-	it("terminates pending coverage when inline publish refuses", async () => {
+	it("keeps coverage pending when inline publish refuses", async () => {
 		const publishModule = await import("./publish.ts");
 		vi.spyOn(publishModule, "runAtomicTargetPublish").mockResolvedValueOnce({
 			kind: "refused",
@@ -219,13 +243,13 @@ describe("live movie cold lookup failures", () => {
 		const ingest = await ingestEnv(movieDiscovery());
 
 		const response = await runMapping("movie", "tmdb:603", {
-			coldLookup: createLiveColdLookup({ ingest }),
+			coldLookup: liveLookup(ingest),
 			db: ingest.db,
 		});
 
-		expect(response.status).toBe(409);
+		expect(response.status).toBe(202);
 		expect(await ingest.db.select().from(serviceCoverages).get()).toMatchObject(
-			{ state: "conflict" },
+			{ state: "pending" },
 		);
 	});
 });

@@ -4,13 +4,12 @@ import { runMapping } from "@/engine/gateway";
 import { createLiveColdLookup, resolveIngestEnv } from "@/engine/ingest";
 import { withPublicApiGate } from "@/lib/api-key";
 
-const runMovieMapping = async (id: string): Promise<Response> => {
-	const ingest = await resolveIngestEnv();
-	return runMapping("movie", id, {
-		coldLookup: createLiveColdLookup({ ingest }),
-		db: ingest.db,
-	});
-};
+const liveColdLookup = createLiveColdLookup({
+	resolveIngest: resolveIngestEnv,
+});
+
+const runMovieMapping = async (id: string): Promise<Response> =>
+	runMapping("movie", id, { coldLookup: liveColdLookup });
 
 export const Route = createFileRoute("/movie/$id")({
 	server: {

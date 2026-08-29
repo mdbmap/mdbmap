@@ -1,3 +1,5 @@
+import type { Promisable } from "type-fest";
+
 import type { ColdLookup } from "@/engine/gateway";
 import { toGraphMember } from "@/engine/gateway/keys.ts";
 import type {
@@ -13,26 +15,23 @@ import {
 	seedPendingCoverage,
 } from "@/engine/overflow";
 import type { OverflowBudget } from "@/engine/overflow";
-import { writeCoverageState } from "@/engine/overflow/coverage.ts";
 
 import { bootstrapFromIdentity } from "./bootstrap.ts";
 import type { BootstrappedGroup } from "./bootstrap.ts";
 import type { IngestEnv } from "./env.ts";
 import { probeUpstream } from "./probe.ts";
 import { runAtomicTargetPublish } from "./publish.ts";
-import type { PublishResult } from "./publish.ts";
 
 const BASELINE_REVISION = 1;
 
 interface LiveColdLookupInput {
 	readonly budget?: OverflowBudget;
-	readonly ingest: IngestEnv;
+	readonly resolveIngest: () => Promisable<IngestEnv>;
 }
 
 interface InlinePublishInput {
 	readonly anchor: TitleIdentity;
 	readonly budget: OverflowBudget;
-	readonly continuity: ReturnType<typeof groupCoverageKey>;
 	readonly discovery: NonNullable<IngestEnv["structuralDiscovery"]>;
 	readonly group: BootstrappedGroup;
 	readonly ingest: IngestEnv;
@@ -86,9 +85,7 @@ const fitsInline = async (input: {
 	).fitsBudget;
 };
 
-const publishInline = async (
-	input: InlinePublishInput,
-): Promise<PublishResult | undefined> => {
+const publishInline = async (input: InlinePublishInput): Promise<void> => {
 	if (
 		!(await fitsInline({
 			budget: input.budget,
@@ -98,39 +95,13 @@ const publishInline = async (
 	) {
 		return;
 	}
-	return runAtomicTargetPublish(input.ingest.db, {
+	await runAtomicTargetPublish(input.ingest.db, {
 		anchor: input.anchor,
 		budget: input.budget.requestBudget,
 		clients: { discovery: input.discovery },
 		group: input.group,
 		targetService: input.targetService,
 	});
-};
-
-const settleInlinePublish = async (
-	input: InlinePublishInput,
-): Promise<void> => {
-	try {
-		const result = await publishInline(input);
-		if (result?.kind === "refused" && result.reason !== "unavailable-target") {
-			await writeCoverageState(
-				input.ingest.db,
-				input.continuity,
-				BASELINE_REVISION,
-				input.targetService,
-				"conflict",
-			);
-		}
-	} catch (error) {
-		await writeCoverageState(
-			input.ingest.db,
-			input.continuity,
-			BASELINE_REVISION,
-			input.targetService,
-			"conflict",
-		);
-		throw error;
-	}
 };
 
 const createLiveColdLookup = (input: LiveColdLookupInput): ColdLookup => {
@@ -142,36 +113,36 @@ const createLiveColdLookup = (input: LiveColdLookupInput): ColdLookup => {
 			if (targetService === undefined || identity.kind !== "title") {
 				return { kind: "miss" };
 			}
+			const ingest = await input.resolveIngest();
 			if (
 				!(await upstreamExists({
-					ingest: input.ingest,
+					ingest,
 					title: identity.title,
 				}))
 			) {
 				return { kind: "miss" };
 			}
-			const bootstrap = await bootstrapFromIdentity(input.ingest.db, identity);
+			const bootstrap = await bootstrapFromIdentity(ingest.db, identity);
 			if (bootstrap.kind !== "bootstrapped") {
 				return { kind: "miss" };
 			}
 			const continuity = groupCoverageKey(bootstrap.group.groupId);
 			await seedPendingCoverage(
-				input.ingest.db,
+				ingest.db,
 				continuity,
 				BASELINE_REVISION,
 				targetService,
 			);
-			const discovery = input.ingest.structuralDiscovery;
+			const discovery = ingest.structuralDiscovery;
 			if (discovery === undefined) {
 				return { kind: "updated" };
 			}
-			await settleInlinePublish({
+			await publishInline({
 				anchor: identity.title,
 				budget,
-				continuity,
 				discovery,
 				group: bootstrap.group,
-				ingest: input.ingest,
+				ingest,
 				targetService,
 			});
 			return { kind: "updated" };
