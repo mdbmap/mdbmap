@@ -101,6 +101,40 @@ const SetResearchTimingInput = z.object({
 	timing: ResearchTimingSchema,
 });
 
+const CatalogueTitleInput = z.discriminatedUnion("service", [
+	z.object({
+		id: z.string().min(1),
+		namespace: z.enum(["movie", "tv"]),
+		service: z.literal("tmdb"),
+	}),
+	z.object({ id: z.string().min(1), service: z.literal("anilist") }),
+	z.object({ id: z.string().min(1), service: z.literal("imdb") }),
+	z.object({ id: z.string().min(1), service: z.literal("kitsu") }),
+	z.object({ id: z.string().min(1), service: z.literal("mal") }),
+	z.object({ id: z.string().min(1), service: z.literal("tvdb") }),
+]);
+
+const NonNegativeInt = z.number().int().min(0);
+
+const InstalmentLocatorInput = z.object({
+	episode: NonNegativeInt,
+	season: NonNegativeInt,
+});
+
+const CatalogueIdentityInput = z.discriminatedUnion("kind", [
+	z.object({ kind: z.literal("title"), title: CatalogueTitleInput }),
+	z.object({
+		kind: z.literal("instalment"),
+		locator: InstalmentLocatorInput,
+		title: CatalogueTitleInput,
+	}),
+]);
+
+const IngestStartInput = z.object({
+	identity: CatalogueIdentityInput,
+	profile: z.enum(["anime", "movie", "series"]),
+});
+
 interface RateableUnit {
 	key: string;
 	kind: RateableUnitKind;
@@ -127,6 +161,15 @@ interface ServiceRating {
 	service: string;
 	votes: number;
 }
+
+type AdminIngestStartResult =
+	| { readonly kind: "complete" }
+	| {
+			readonly kind: "pending";
+			readonly retryAfterSeconds: number;
+			readonly statusUrl: string;
+	  }
+	| { readonly kind: "unknown" };
 
 interface CommunityScore {
 	count: number;
@@ -242,7 +285,9 @@ interface RatingResult {
 export {
 	ApiKeyPlanSchema,
 	CandidateIdInput,
+	CatalogueIdentityInput,
 	CreateProviderInput,
+	IngestStartInput,
 	ManualPairInput,
 	MarkMatchedInput,
 	MintApiKeyInput,
@@ -261,6 +306,7 @@ export {
 	WorkGetInput,
 };
 export type {
+	AdminIngestStartResult,
 	ApiKeyRow,
 	CommunityScore,
 	Credit,

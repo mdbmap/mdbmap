@@ -2,6 +2,7 @@ import type { Promisable } from "type-fest";
 
 import type { Db } from "@/db";
 import type { EngineRead } from "@/engine";
+import type { IngestEnv } from "@/engine/ingest";
 
 import type { Providers } from "./providers";
 
@@ -25,6 +26,7 @@ interface ORPCContext {
 	headers?: Headers;
 	providerConfigMasterKey?: string;
 	providers?: Providers;
+	resolveIngest?: () => Promisable<IngestEnv>;
 	resolveSession?: ResolveSession;
 }
 
