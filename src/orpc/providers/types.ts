@@ -22,7 +22,7 @@ interface SegmentMetadata {
 	airedFrom: string | undefined;
 	airedTo: string | undefined;
 	episodes: readonly EpisodeMetadata[];
-	label: string;
+	label: string | undefined;
 	year: number | undefined;
 }
 

@@ -610,7 +610,7 @@ describe("tmdb metadata provider", () => {
 			airedFrom: undefined,
 			airedTo: undefined,
 			episodes: [],
-			label: "",
+			label: undefined,
 			year: undefined,
 		});
 		expect(meta.segments[2]?.label).toBe("Season 2");
@@ -661,7 +661,7 @@ describe("tmdb metadata provider", () => {
 					airedFrom: undefined,
 					airedTo: undefined,
 					episodes: [],
-					label: "",
+					label: undefined,
 					year: undefined,
 				},
 			],

@@ -638,7 +638,7 @@ const emptySegment = (): SegmentMetadata => ({
 	airedFrom: undefined,
 	airedTo: undefined,
 	episodes: [],
-	label: "",
+	label: undefined,
 	year: undefined,
 });
 
@@ -653,6 +653,13 @@ const segmentsAlignedWithResolved = (
 	const aligned: SegmentMetadata[] = [];
 	let runIndex = 0;
 	let segmentInRun = 0;
+	const advance = (run: ResourceRun): void => {
+		segmentInRun += 1;
+		if (segmentInRun >= run.resources.length) {
+			runIndex += 1;
+			segmentInRun = 0;
+		}
+	};
 
 	for (const segment of resolved.segments) {
 		if (segment.members.tmdb === undefined) {
@@ -668,19 +675,11 @@ const segmentsAlignedWithResolved = (
 		const segmentMeta = runSegments[segmentInRun];
 		if (segmentMeta === undefined) {
 			aligned.push(emptySegment());
-			segmentInRun += 1;
-			if (segmentInRun >= run.resources.length) {
-				runIndex += 1;
-				segmentInRun = 0;
-			}
+			advance(run);
 			continue;
 		}
 		aligned.push(segmentMeta);
-		segmentInRun += 1;
-		if (segmentInRun >= run.resources.length) {
-			runIndex += 1;
-			segmentInRun = 0;
-		}
+		advance(run);
 	}
 	return aligned;
 };
