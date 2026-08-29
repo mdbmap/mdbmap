@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 import {
 	serviceCoverages,
@@ -9,6 +9,7 @@ import { freshDb } from "@/db/test-helpers";
 import type { SimklClient } from "@/engine/discovery";
 import type { DiscoveryClients } from "@/engine/discovery/structural.ts";
 import { runMapping } from "@/engine/gateway";
+import type { ColdLookup, ColdResult } from "@/engine/gateway";
 
 import { createLiveColdLookup } from "./cold-lookup.ts";
 import type { IngestEnv } from "./env.ts";
@@ -96,6 +97,27 @@ const occupyCoverageIds = async (ingest: IngestEnv): Promise<void> => {
 		.run();
 };
 
+const runObservedLiveLookup = async (ingest: IngestEnv) => {
+	const liveColdLookup = createLiveColdLookup({ ingest });
+	let coldResultKind: ColdResult["kind"] | undefined;
+	const observedColdLookup: ColdLookup = {
+		begin: async (identity, profile) => {
+			const result = await liveColdLookup.begin(identity, profile);
+			coldResultKind = result.kind;
+			return result;
+		},
+	};
+	const response = await runMapping("movie", "tmdb:603", {
+		coldLookup: observedColdLookup,
+		db: ingest.db,
+	});
+	return { coldResultKind, response };
+};
+
+afterEach(() => {
+	vi.restoreAllMocks();
+});
+
 describe("movie catalogue discovery", () => {
 	it("normalizes namespaced TMDB ids across production discovery", async () => {
 		const discovery = buildStructuralDiscoveryClients({
@@ -142,12 +164,10 @@ describe("live movie cold lookup", () => {
 	it("returns pending with the seeded coverage row when work exceeds budget", async () => {
 		const ingest = await ingestEnv(movieDiscovery(51));
 		await occupyCoverageIds(ingest);
-		const response = await runMapping("movie", "tmdb:603", {
-			coldLookup: createLiveColdLookup({ ingest }),
-			db: ingest.db,
-		});
+		const { coldResultKind, response } = await runObservedLiveLookup(ingest);
 
 		expect(response.status).toBe(202);
+		expect(coldResultKind).toBe("updated");
 		const coverages = await ingest.db.select().from(serviceCoverages).all();
 		const coverage = coverages.find((row) => row.state === "pending");
 		expect(coverage?.state).toBe("pending");
@@ -182,5 +202,30 @@ describe("live movie cold lookup failures", () => {
 				db: ingest.db,
 			}),
 		).rejects.toThrow("catalogue unavailable");
+		expect(await ingest.db.select().from(serviceCoverages).get()).toMatchObject(
+			{ state: "conflict" },
+		);
+
+		const retry = await runMapping("movie", "tmdb:603", { db: ingest.db });
+		expect(retry.status).toBe(409);
+	});
+
+	it("terminates pending coverage when inline publish refuses", async () => {
+		const publishModule = await import("./publish.ts");
+		vi.spyOn(publishModule, "runAtomicTargetPublish").mockResolvedValueOnce({
+			kind: "refused",
+			reason: "unpublishable",
+		});
+		const ingest = await ingestEnv(movieDiscovery());
+
+		const response = await runMapping("movie", "tmdb:603", {
+			coldLookup: createLiveColdLookup({ ingest }),
+			db: ingest.db,
+		});
+
+		expect(response.status).toBe(409);
+		expect(await ingest.db.select().from(serviceCoverages).get()).toMatchObject(
+			{ state: "conflict" },
+		);
 	});
 });
