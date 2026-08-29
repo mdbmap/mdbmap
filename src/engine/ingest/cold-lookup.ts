@@ -12,6 +12,7 @@ import {
 	defaultOverflowBudget,
 	estimateBuild,
 	groupCoverageKey,
+	seedPendingCoverage,
 } from "@/engine/overflow";
 import type { OverflowBudget } from "@/engine/overflow";
 import { writeCoverageState } from "@/engine/overflow/coverage.ts";
