@@ -11,6 +11,7 @@ import type { Service, TitleIdentity } from "@/engine/identity.ts";
 import type { PublishedAlignment } from "@/engine/matcher";
 import {
 	completeCoverage,
+	coverageStatesFor,
 	groupCoverageKey,
 	writeCoverageState,
 	seedPendingCoverage,
@@ -18,8 +19,11 @@ import {
 import { recomputeGroup } from "@/engine/recompute/recompute.ts";
 import type { FreshPairing } from "@/engine/recompute/recompute.ts";
 
-import { scheduleAfterPublishFuzzy } from "./after-publish.ts";
-import type { AfterPublishFuzzyConfig } from "./after-publish.ts";
+import {
+	scheduleAfterPublishFuzzy,
+	scheduleAfterPublishResearch,
+} from "./after-publish.ts";
+import type { AfterPublishConfig } from "./after-publish.ts";
 import { queueAlignmentCrossingConflicts } from "./alignment-conflict.ts";
 import type { BootstrappedGroup } from "./bootstrap.ts";
 import { retireBootstrapScaffoldingForGroup } from "./bootstrap.ts";
@@ -51,7 +55,7 @@ interface PublishClients {
 
 interface SingleTargetPublishInput {
 	readonly anchor: TitleIdentity;
-	readonly afterPublish?: AfterPublishFuzzyConfig | undefined;
+	readonly afterPublish?: AfterPublishConfig | undefined;
 	readonly budget?: number;
 	readonly clients: PublishClients;
 	readonly group: BootstrappedGroup;
@@ -75,7 +79,7 @@ type PublishResult =
 	| { readonly kind: "refused"; readonly reason: PublishRefusalReason };
 
 interface CommitPublishInput {
-	readonly afterPublish?: AfterPublishFuzzyConfig | undefined;
+	readonly afterPublish?: AfterPublishConfig | undefined;
 	readonly alignment: PublishedAlignment;
 	readonly anchorTitleId: number;
 	readonly continuity: ReturnType<typeof groupCoverageKey>;
@@ -132,6 +136,21 @@ const endPublishAttempt = async (
 const ladderCompleteFor = (alignment: PublishedAlignment): boolean =>
 	alignment.left.pending.length === 0 && alignment.right.pending.length === 0;
 
+const matcherResidueFor = async (
+	db: Db,
+	continuity: ReturnType<typeof groupCoverageKey>,
+	revision: number,
+): Promise<readonly string[]> => {
+	const states = await coverageStatesFor(db, continuity, revision);
+	const residue: string[] = [];
+	for (const [service, state] of states) {
+		if (state === "open" || state === "conflict") {
+			residue.push(service);
+		}
+	}
+	return residue;
+};
+
 const finishPublish = async (
 	db: Db,
 	input: {
@@ -140,7 +159,7 @@ const finishPublish = async (
 		readonly ladderComplete: boolean;
 		readonly revision: number;
 		readonly targetService: Service;
-		readonly afterPublish?: AfterPublishFuzzyConfig | undefined;
+		readonly afterPublish?: AfterPublishConfig | undefined;
 	},
 ): Promise<PublishResult> => {
 	await ensureGroupContinuity(db, input.groupId);
@@ -152,11 +171,29 @@ const finishPublish = async (
 		input.ladderComplete ? "complete" : "open",
 	);
 	if (input.afterPublish !== undefined) {
-		scheduleAfterPublishFuzzy({
-			...input.afterPublish,
-			db,
-			groupId: input.groupId,
-		});
+		if (Object.keys(input.afterPublish.clients).length > 0) {
+			scheduleAfterPublishFuzzy({
+				...input.afterPublish,
+				db,
+				groupId: input.groupId,
+			});
+		}
+		const schedule = input.afterPublish.scheduler;
+		if (input.afterPublish.research !== undefined && schedule !== undefined) {
+			const residue = await matcherResidueFor(
+				db,
+				input.continuity,
+				input.revision,
+			);
+			scheduleAfterPublishResearch({
+				...input.afterPublish.research,
+				continuity: input.continuity,
+				db,
+				groupId: input.groupId,
+				residue,
+				scheduler: schedule,
+			});
+		}
 	}
 	return { groupId: input.groupId, kind: "published" };
 };
@@ -188,7 +225,7 @@ const publishAtomicTarget = async (
 		readonly requestedTitleId: number;
 		readonly revision: number;
 		readonly targetService: Service;
-		readonly afterPublish?: AfterPublishFuzzyConfig | undefined;
+		readonly afterPublish?: AfterPublishConfig | undefined;
 	},
 ): Promise<PublishResult> => {
 	const targetTitleId = await ensureTitle(
@@ -304,7 +341,7 @@ const publishAlignedTarget = async (
 	db: Db,
 	input: {
 		readonly anchorTitleId: number;
-		readonly afterPublish?: AfterPublishFuzzyConfig | undefined;
+		readonly afterPublish?: AfterPublishConfig | undefined;
 		readonly budget: number;
 		readonly continuity: ReturnType<typeof groupCoverageKey>;
 		readonly discovered: DiscoveredGroup;

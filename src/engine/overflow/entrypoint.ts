@@ -18,10 +18,14 @@ const toDurableStep = (step: WorkflowStep): DurableStep => ({
 	do: async (name, policy, run) => step.do(name, policy, run),
 });
 
-const resolveBuildDeps = (env: Env, payload: BuildPayload) => {
+const resolveBuildDeps = async (env: Env, payload: BuildPayload) => {
+	const { scheduleWithWaitUntil } =
+		await import("@/engine/ingest/schedule.workers.ts");
 	const ingest = createIngestEnvFromSource(
 		env,
 		readCatalogueSecretsSource(env),
+		undefined,
+		scheduleWithWaitUntil,
 	);
 	return createBuildDeps(ingest, payload);
 };
@@ -33,7 +37,7 @@ class OverflowBuildWorkflow extends WorkflowEntrypoint<Env, BuildPayload> {
 	): Promise<unknown> {
 		return runOverflowBuild(
 			event.payload.work,
-			resolveBuildDeps(this.env, event.payload),
+			await resolveBuildDeps(this.env, event.payload),
 			toDurableStep(step),
 		);
 	}

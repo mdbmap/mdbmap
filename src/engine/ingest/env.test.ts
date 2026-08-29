@@ -5,6 +5,7 @@ import { describe, expect, it } from "vitest";
 
 import { freshDb } from "@/db/test-helpers";
 import { discover } from "@/engine/discovery";
+import { randomMasterKey } from "@/lib/provider-config/test-support.ts";
 
 import { parseCatalogueSecrets } from "./catalogue-secrets.ts";
 import { buildCatalogueClients } from "./clients.ts";
@@ -43,5 +44,21 @@ describe("createIngestEnvFromSource", () => {
 		expect(clients.verification.tmdb).toBeDefined();
 		expect(clients.verification.tvdb).toBeDefined();
 		expect(clients.verification.anidb).toBeDefined();
+	});
+
+	it("wires afterPublish research when a provider master key is configured", async () => {
+		const masterKey = randomMasterKey();
+		const ingest = createIngestEnvFromSource(
+			{ ...env, PROVIDER_CONFIG_MASTER_KEY: masterKey },
+			{},
+			{ db: await freshDb() },
+			(task) => {
+				void task;
+			},
+		);
+
+		expect(ingest.afterPublish?.research?.deps.masterKey).toBe(masterKey);
+		expect(ingest.afterPublish?.research?.deps.timing).toBeDefined();
+		expect(ingest.afterPublish?.clients).toStrictEqual({});
 	});
 });

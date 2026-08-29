@@ -1,9 +1,10 @@
 import { eq } from "drizzle-orm";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import {
 	pendingGroupCandidates,
 	serviceTitles,
+	titleAssertions,
 	titleGroups,
 } from "@/db/engine-schema";
 import { freshDb } from "@/db/test-helpers";
@@ -11,8 +12,21 @@ import type {
 	FuzzySearchClients,
 	VerificationClients,
 } from "@/engine/discovery";
+import {
+	coverageStateFor,
+	groupCoverageKey,
+} from "@/engine/overflow/coverage.ts";
+import { createMemoryTimingStore } from "@/engine/research";
+import type { ResearchAgent, ResearchProposal } from "@/engine/research";
+import { storeProvider } from "@/lib/provider-config";
+import { randomMasterKey } from "@/lib/provider-config/test-support.ts";
 
-import { scheduleAfterPublishFuzzy } from "./after-publish.ts";
+import {
+	scheduleAfterPublishFuzzy,
+	scheduleAfterPublishResearch,
+} from "./after-publish.ts";
+import type { AfterPublishResearchConfig } from "./after-publish.ts";
+import { finishPublish } from "./publish.ts";
 
 const one = <Row>(rows: readonly Row[]): Row => {
 	const [row] = rows;
@@ -21,6 +35,76 @@ const one = <Row>(rows: readonly Row[]): Row => {
 	}
 	return row;
 };
+
+const noopReview = async (): Promise<void> => {
+	await Promise.resolve();
+};
+
+const countingAgent =
+	(calls: { count: number }): ResearchAgent =>
+	() => {
+		calls.count += 1;
+		return { proposals: [], residue: [] };
+	};
+
+const researchConfig = (input: {
+	readonly agent: ResearchAgent;
+	readonly masterKey: string;
+	readonly providerId?: string;
+	readonly timing: "after-residue" | "off";
+}): AfterPublishResearchConfig => ({
+	deps: {
+		agent: input.agent,
+		clients: {},
+		enqueueReview: noopReview,
+		masterKey: input.masterKey,
+		...(input.providerId === undefined ? {} : { providerId: input.providerId }),
+		timing: createMemoryTimingStore(input.timing),
+	},
+});
+
+const seedGroup = async (db: Awaited<ReturnType<typeof freshDb>>) => {
+	const group = one(
+		await db
+			.insert(titleGroups)
+			.values({ source: "t1-structure" })
+			.returning()
+			.all(),
+	);
+	await db
+		.insert(serviceTitles)
+		.values([
+			{ groupId: group.id, ordinal: 0, service: "tmdb", serviceId: "1" },
+			{ groupId: group.id, ordinal: 1, service: "tvdb", serviceId: "2" },
+		])
+		.run();
+	return group;
+};
+
+const researchProposal = (left: number, right: number): ResearchProposal => ({
+	claim: "the titles match",
+	evidence: [
+		{
+			kind: "api",
+			official: true,
+			operator: "tmdb",
+			stance: "corroborates",
+			url: "https://api.themoviedb.org",
+			validated: true,
+		},
+		{
+			kind: "api",
+			official: true,
+			operator: "tvdb",
+			stance: "corroborates",
+			url: "https://api4.thetvdb.com",
+			validated: true,
+		},
+	],
+	kind: "title",
+	left: { service: "tmdb", serviceId: String(left) },
+	right: { service: "tvdb", serviceId: String(right) },
+});
 
 describe("post-publish fuzzy discovery", () => {
 	it("invokes the scheduler and queues a candidate from catalogue metadata", async () => {
@@ -178,5 +262,174 @@ describe("post-publish fuzzy discovery", () => {
 			.where(eq(pendingGroupCandidates.subjectKey, `title:${subject.id}`))
 			.all();
 		expect(rows).toHaveLength(1);
+	});
+});
+
+describe("post-publish research", () => {
+	it("publishes proposals after residue through finishPublish", async () => {
+		const db = await freshDb();
+		const group = await seedGroup(db);
+		const masterKey = randomMasterKey();
+		const provider = await storeProvider(db, masterKey, {
+			config: { apiKey: "sk-test", kind: "openai", model: "gpt-test" },
+			label: "research-test",
+		});
+		const scheduled: Promise<void>[] = [];
+
+		await finishPublish(db, {
+			afterPublish: {
+				catalogues: {},
+				clients: {},
+				research: researchConfig({
+					agent: () => ({
+						proposals: [researchProposal(1, 2)],
+						residue: [],
+					}),
+					masterKey,
+					providerId: provider.id,
+					timing: "after-residue",
+				}),
+				scheduler: (task) => {
+					scheduled.push(task);
+				},
+			},
+			continuity: groupCoverageKey(group.id),
+			groupId: group.id,
+			ladderComplete: false,
+			revision: 1,
+			targetService: "tmdb",
+		});
+
+		expect(scheduled.length).toBeGreaterThan(0);
+		await Promise.all(scheduled);
+		expect(await db.select().from(titleAssertions).all()).toHaveLength(1);
+	});
+
+	it("does not invoke an off-timing research pass", async () => {
+		const db = await freshDb();
+		const calls = { count: 0 };
+		const scheduled: Promise<void>[] = [];
+		const listProvidersSpy = vi.spyOn(
+			await import("@/lib/provider-config"),
+			"listProviders",
+		);
+
+		scheduleAfterPublishResearch({
+			continuity: groupCoverageKey(1),
+			db,
+			deps: researchConfig({
+				agent: countingAgent(calls),
+				masterKey: randomMasterKey(),
+				timing: "off",
+			}).deps,
+			groupId: 1,
+			residue: ["tmdb"],
+			scheduler: (task) => {
+				scheduled.push(task);
+			},
+		});
+
+		expect(scheduled).toHaveLength(1);
+		await Promise.all(scheduled);
+		expect(calls.count).toBe(0);
+		expect(listProvidersSpy).not.toHaveBeenCalled();
+		listProvidersSpy.mockRestore();
+	});
+
+	it("does not schedule fuzzy discovery when only research is configured", async () => {
+		const db = await freshDb();
+		const group = await seedGroup(db);
+		const fetchTitle = vi.fn(() => ({
+			format: "movie" as const,
+			instalmentCount: undefined,
+			releaseDate: "1998-04-03",
+			title: "Cowboy Bebop",
+		}));
+		let scheduleCount = 0;
+
+		await finishPublish(db, {
+			afterPublish: {
+				catalogues: { tmdb: { fetchTitle } },
+				clients: {},
+				research: researchConfig({
+					agent: countingAgent({ count: 0 }),
+					masterKey: randomMasterKey(),
+					timing: "off",
+				}),
+				scheduler: () => {
+					scheduleCount += 1;
+				},
+			},
+			continuity: groupCoverageKey(group.id),
+			groupId: group.id,
+			ladderComplete: false,
+			revision: 1,
+			targetService: "tmdb",
+		});
+
+		expect(scheduleCount).toBe(1);
+		expect(fetchTitle).not.toHaveBeenCalled();
+		expect(await db.select().from(pendingGroupCandidates).all()).toHaveLength(
+			0,
+		);
+	});
+
+	it("does not invoke research when matcher residue is empty", async () => {
+		const calls = { count: 0 };
+
+		scheduleAfterPublishResearch({
+			continuity: groupCoverageKey(1),
+			db: await freshDb(),
+			deps: researchConfig({
+				agent: countingAgent(calls),
+				masterKey: randomMasterKey(),
+				providerId: "missing",
+				timing: "after-residue",
+			}).deps,
+			groupId: 1,
+			residue: [],
+			scheduler: () => {
+				throw new Error("scheduler should not be called");
+			},
+		});
+
+		expect(calls.count).toBe(0);
+	});
+
+	it("isolates research failure from the completed publish", async () => {
+		const db = await freshDb();
+		const group = await seedGroup(db);
+		const scheduled: Promise<void>[] = [];
+
+		const result = await finishPublish(db, {
+			afterPublish: {
+				catalogues: {},
+				clients: {},
+				research: researchConfig({
+					agent: () => ({
+						proposals: [],
+						residue: [],
+					}),
+					masterKey: randomMasterKey(),
+					providerId: "missing",
+					timing: "after-residue",
+				}),
+				scheduler: (task) => {
+					scheduled.push(task);
+				},
+			},
+			continuity: groupCoverageKey(group.id),
+			groupId: group.id,
+			ladderComplete: false,
+			revision: 1,
+			targetService: "tmdb",
+		});
+
+		expect(result).toEqual({ groupId: group.id, kind: "published" });
+		expect(scheduled.length).toBeGreaterThan(0);
+		await Promise.all(scheduled);
+		expect(
+			await coverageStateFor(db, groupCoverageKey(group.id), 1, "tmdb"),
+		).toBe("open");
 	});
 });

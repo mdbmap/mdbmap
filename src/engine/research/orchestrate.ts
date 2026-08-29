@@ -3,16 +3,13 @@ import type { Promisable } from "type-fest";
 import type { Db } from "@/db";
 import type { SimklClient } from "@/engine/discovery";
 import type { ProviderConfig } from "@/lib/provider-config";
-import { getProviderConfig } from "@/lib/provider-config";
+import { getProviderConfig, listProviders } from "@/lib/provider-config";
 
 import { publishResearchProposals } from "./publish.ts";
 import type { ResearchProposal, ReviewEnqueue } from "./publish.ts";
 import { resolveResearchSchedule } from "./schedule.ts";
 import { shouldRunResearch } from "./timing.ts";
-import type {
-	ResearchPhase,
-	ResearchTimingStore,
-} from "./timing.ts";
+import type { ResearchPhase, ResearchTimingStore } from "./timing.ts";
 import { buildResearchTools } from "./tools.ts";
 import type {
 	ResearchCatalogueClients,
@@ -43,7 +40,7 @@ interface ResearchPassDeps {
 	readonly db: Db;
 	readonly enqueueReview: ReviewEnqueue;
 	readonly masterKey: string;
-	readonly providerId: string;
+	readonly providerId?: string;
 	readonly scrape?: ScrapeClient;
 	readonly simkl?: SimklClient;
 	readonly timing?: ResearchTimingStore;
@@ -59,7 +56,7 @@ type ResearchPassOutcome =
 	  }
 	| {
 			readonly kind: "skipped";
-			readonly reason: "timing-mismatch" | "timing-off";
+			readonly reason: "no-provider" | "timing-mismatch" | "timing-off";
 			readonly residue: readonly string[];
 	  };
 
@@ -80,6 +77,16 @@ const mergeResidue = (
 		merged.push(service);
 	}
 	return merged;
+};
+
+const resolveProviderId = async (
+	deps: Pick<ResearchPassDeps, "db" | "masterKey" | "providerId">,
+): Promise<string | undefined> => {
+	if (deps.providerId !== undefined) {
+		return deps.providerId;
+	}
+	const providers = await listProviders(deps.db, deps.masterKey);
+	return providers[0]?.id;
 };
 
 const runResearchPass = async (
@@ -121,11 +128,16 @@ const runResearchPass = async (
 		}
 	}
 
-	const provider = await getProviderConfig(
-		deps.db,
-		deps.masterKey,
-		deps.providerId,
-	);
+	const providerId = await resolveProviderId(deps);
+	if (providerId === undefined) {
+		return {
+			kind: "skipped",
+			reason: "no-provider",
+			residue: continuity.targetServices,
+		};
+	}
+
+	const provider = await getProviderConfig(deps.db, deps.masterKey, providerId);
 	const tools = buildResearchTools({
 		clients: deps.clients,
 		db: deps.db,
