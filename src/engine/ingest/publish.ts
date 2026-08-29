@@ -178,7 +178,8 @@ const finishPublish = async (
 				groupId: input.groupId,
 			});
 		}
-		if (input.afterPublish.research !== undefined) {
+		const schedule = input.afterPublish.scheduler;
+		if (input.afterPublish.research !== undefined && schedule !== undefined) {
 			const residue = input.ladderComplete
 				? []
 				: await matcherResidueFor(db, input.continuity, input.revision);
@@ -188,7 +189,7 @@ const finishPublish = async (
 				db,
 				groupId: input.groupId,
 				residue,
-				scheduler: input.afterPublish.scheduler,
+				scheduler: schedule,
 			});
 		}
 	}
