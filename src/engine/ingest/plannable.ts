@@ -1,6 +1,8 @@
 import type { Identity, Profile, Service } from "@/engine/identity.ts";
 import { isTitleAdmitted } from "@/engine/identity.ts";
 
+import { instalmentEnumerableServices } from "./enumerable-services.ts";
+
 type TargetPlan =
 	| { readonly kind: "atomic"; readonly service: Service }
 	| { readonly kind: "enumerated"; readonly service: Service };
@@ -13,9 +15,12 @@ const targetPlansFor = (
 		return [];
 	}
 	if (profile === "anime") {
-		return (["anilist", "mal"] as const)
+		return [...instalmentEnumerableServices]
 			.filter((service) => service !== identity.title.service)
-			.map((service) => ({ kind: "enumerated", service }));
+			.map((service) => ({
+				kind: "enumerated" as const,
+				service,
+			}));
 	}
 	if (identity.title.service === "tmdb") {
 		return [{ kind: "atomic", service: "imdb" }];

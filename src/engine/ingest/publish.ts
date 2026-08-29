@@ -292,6 +292,9 @@ const publishAlignedTarget = async (
 		target: input.mapping.member,
 	});
 	if (fetched.kind === "unavailable") {
+		if (fetched.reason === "fetch-failed") {
+			return { kind: "refused", reason: "unavailable-target" };
+		}
 		return endPublishAttempt(db, input, {
 			kind: "refused",
 			reason:
@@ -306,6 +309,9 @@ const publishAlignedTarget = async (
 		target: input.discovered.shared,
 	});
 	if (sharedFetched.kind !== "fetched") {
+		if (sharedFetched.reason === "fetch-failed") {
+			return { kind: "refused", reason: "unavailable-target" };
+		}
 		return endPublishAttempt(db, input, {
 			kind: "refused",
 			reason:

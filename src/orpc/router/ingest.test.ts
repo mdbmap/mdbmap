@@ -144,6 +144,31 @@ describe("admin ingest.start", () => {
 			expect(result.review).toMatch(/^review:[0-9a-z]+$/u);
 		}
 	});
+
+	it("falls through when warm links are for other services than the profile targets", async () => {
+		const ingest = await ingestEnv();
+		const animeIdentity = {
+			kind: "title" as const,
+			title: { id: "1", service: "mal" as const },
+		};
+		const bootstrap = await bootstrapFromIdentity(ingest.db, animeIdentity);
+		if (bootstrap.kind !== "bootstrapped") {
+			throw new Error("expected bootstrap");
+		}
+		await ingest.db.insert(serviceCoverages).values({
+			baselineContinuity: `group:${bootstrap.group.groupId}`,
+			revision: 1,
+			state: "complete",
+			targetService: "tmdb",
+		});
+		const client = clientFor({ id: "admin-1", role: "admin" }, ingest);
+
+		const result = await client.ingest.start({
+			identity: animeIdentity,
+			profile: "anime",
+		});
+		expect(result.kind).not.toBe("complete");
+	});
 });
 
 describe("admin ingest.start input validation", () => {
