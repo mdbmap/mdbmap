@@ -134,8 +134,12 @@ describe("work.get similar links", () => {
 			metadata: {
 				...defaultProviders.metadata,
 				tmdb: {
-					fetchWork: () =>
-						metadataFor([similar(target.providerRef, "Unmaterialised work")]),
+					fetchWork: async () => {
+						const metadata = await Promise.resolve(
+							metadataFor([similar(target.providerRef, "Unmaterialised work")]),
+						);
+						return metadata;
+					},
 				},
 			},
 		};
