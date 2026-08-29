@@ -335,15 +335,27 @@ const publishAlignedTarget = async (
 	});
 };
 
-const runSingleTargetPublish = async (
+const atomicTitle = (): EnumeratedTitle => ({
+	facts: new Map(),
+	stream: {
+		boundary: "complete",
+		instalments: [{ kind: "regular", locator: "s1e1" }],
+	},
+});
+
+const runTargetPublish = async (
 	db: Db,
 	input: SingleTargetPublishInput,
+	allowAtomicTarget: boolean,
 ): Promise<PublishResult> => {
 	const budget = input.budget ?? DEFAULT_BUDGET;
 	const revision = input.revision ?? DEFAULT_REVISION;
 	const continuity = groupCoverageKey(input.group.groupId);
 
-	if (!instalmentEnumerableServices.has(input.targetService)) {
+	if (
+		!allowAtomicTarget &&
+		!instalmentEnumerableServices.has(input.targetService)
+	) {
 		return {
 			kind: "refused",
 			reason: "not-enumerable",
@@ -388,7 +400,36 @@ const runSingleTargetPublish = async (
 	});
 };
 
-export { DEFAULT_BUDGET, commitPublish, finishPublish, runSingleTargetPublish };
+const runSingleTargetPublish = async (
+	db: Db,
+	input: SingleTargetPublishInput,
+): Promise<PublishResult> => runTargetPublish(db, input, false);
+
+const runAtomicTargetPublish = async (
+	db: Db,
+	input: SingleTargetPublishInput,
+): Promise<PublishResult> =>
+	runTargetPublish(
+		db,
+		{
+			...input,
+			clients: {
+				discovery: {
+					...input.clients.discovery,
+					instalments: { enumerate: atomicTitle },
+				},
+			},
+		},
+		true,
+	);
+
+export {
+	DEFAULT_BUDGET,
+	commitPublish,
+	finishPublish,
+	runAtomicTargetPublish,
+	runSingleTargetPublish,
+};
 export type {
 	PublishClients,
 	PublishConflictReason,

@@ -473,7 +473,18 @@ const simklRefsOf = (
 ): ServiceRef[] =>
 	Object.entries(entry.externalIds)
 		.filter(([service]) => service !== excludeService)
-		.map(([service, serviceId]) => ({ service, serviceId }));
+		.map(([service, serviceId]) => ({
+			service,
+			serviceId:
+				service === "tmdb"
+					? `${entry.type === "movie" ? "movie" : "tv"}:${serviceId}`
+					: serviceId,
+		}));
+
+const simklLookupId = (title: ServiceRef): string =>
+	title.service === "tmdb"
+		? (title.serviceId.split(":")[1] ?? title.serviceId)
+		: title.serviceId;
 
 const buildStructuralDiscoveryClients = (
 	deps: StructuralDiscoveryDeps,
@@ -487,7 +498,7 @@ const buildStructuralDiscoveryClients = (
 					try {
 						const entry = await simkl.findByExternalId(
 							title.service,
-							title.serviceId,
+							simklLookupId(title),
 						);
 						if (entry === undefined) {
 							return await directDescribe(title, fetchFn);
@@ -509,7 +520,7 @@ const buildStructuralDiscoveryClients = (
 					try {
 						const entry = await simkl.findByExternalId(
 							shared.service,
-							shared.serviceId,
+							simklLookupId(shared),
 						);
 						if (entry !== undefined) {
 							return simklRefsOf(entry, shared.service);

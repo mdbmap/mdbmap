@@ -25,6 +25,8 @@ export type {
 	CatalogueSecrets,
 	CatalogueSecretsSource,
 } from "./catalogue-secrets.ts";
+export { createLiveColdLookup } from "./cold-lookup.ts";
+export type { LiveColdLookupInput } from "./cold-lookup.ts";
 export {
 	createIngestEnv,
 	createIngestEnvFromSource,
@@ -38,7 +40,7 @@ export type {
 } from "./env.ts";
 export { probeUpstream } from "./probe.ts";
 export type { ProbeDeps, ProbeRefusalReason, ProbeResult } from "./probe.ts";
-export { runSingleTargetPublish } from "./publish.ts";
+export { runAtomicTargetPublish, runSingleTargetPublish } from "./publish.ts";
 export type {
 	PublishClients,
 	PublishConflictReason,

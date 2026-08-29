@@ -40,17 +40,20 @@ const resolveMapping = async (
 	if (!parsed.ok) {
 		return { expected: parsed.error.expected, kind: "malformed" };
 	}
-	const read = await readGraph(db, parsed.identity);
+	let read = await readGraph(db, parsed.identity);
 	if (!read.found) {
 		const cold = await coldLookup.begin(parsed.identity, profile);
-		return cold.kind === "miss"
-			? { kind: "unknown" }
-			: {
-					body: { input: formatId(parsed.identity), mappings: {} },
-					kind: "pending",
-					retryAfterSeconds: cold.build.retryAfterSeconds,
-					statusUrl: cold.build.statusUrl,
-				};
+		read = await readGraph(db, parsed.identity);
+		if (!read.found) {
+			return cold.kind === "miss"
+				? { kind: "unknown" }
+				: {
+						body: { input: formatId(parsed.identity), mappings: {} },
+						kind: "pending",
+						retryAfterSeconds: cold.build.retryAfterSeconds,
+						statusUrl: cold.build.statusUrl,
+					};
+		}
 	}
 	const body = serialize(read.answer);
 	const statuses = [...read.answer.links.values()].map((link) => link.status);
