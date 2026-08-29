@@ -24,15 +24,7 @@ const outcomeFor = (
 		return;
 	}
 	const statuses = [...graph.answer.links.values()].map((link) => link.status);
-	const usable =
-		graph.answer.links.size === 0 ||
-		statuses.some(
-			(status) => status === "matched" || status === "known-no-counterpart",
-		);
-	if (usable) {
-		return { kind: "complete" };
-	}
-	if (graph.pendingRef !== undefined) {
+	if (statuses.includes("pending") && graph.pendingRef !== undefined) {
 		return pending(statusUrlFor(graph.pendingRef), WARM_RETRY_AFTER_SECONDS);
 	}
 	if (graph.reviewRef !== undefined) {
