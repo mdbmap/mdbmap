@@ -13,8 +13,8 @@ type AfterPublishScheduler = (task: Promise<void>) => void;
 
 interface AfterPublishFuzzyConfig {
 	readonly clients: FuzzySearchClients;
-	readonly scheduler: AfterPublishScheduler;
 	readonly catalogues: VerificationClients;
+	readonly scheduler?: AfterPublishScheduler;
 }
 
 interface AfterPublishFuzzyInput extends AfterPublishFuzzyConfig {
@@ -90,7 +90,11 @@ const dbSubject = async (
 };
 
 const scheduleAfterPublishFuzzy = (input: AfterPublishFuzzyInput): void => {
-	input.scheduler(
+	const schedule = input.scheduler;
+	if (schedule === undefined) {
+		return;
+	}
+	schedule(
 		(async () => {
 			try {
 				const subject = await dbSubject(input.db, input.groupId);

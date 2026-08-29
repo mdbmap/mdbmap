@@ -129,7 +129,7 @@ interface OverflowContext {
 	readonly continuity: GroupCoverageKey;
 	readonly db: IngestEnv["db"];
 	readonly discovery: DiscoveryClients | undefined;
-	readonly afterPublish: IngestEnv["afterPublish"];
+	readonly afterPublish?: IngestEnv["afterPublish"];
 	readonly groupId: number;
 	readonly revision: number;
 	readonly targetService: Service;
@@ -430,8 +430,18 @@ const createBuildDeps = (
 	if (identity.kind !== "title") {
 		throw new Error("overflow deps: instalment identities are not supported");
 	}
+	let fuzzyWork: Promise<void> | undefined;
+	const afterPublish =
+		ingest.afterPublish === undefined
+			? undefined
+			: {
+					...ingest.afterPublish,
+					scheduler: (task: Promise<void>) => {
+						fuzzyWork = task;
+					},
+				};
 	const ctx: OverflowContext = {
-		afterPublish: ingest.afterPublish,
+		...(afterPublish === undefined ? {} : { afterPublish }),
 		anchor: identity.title,
 		budget: DEFAULT_BUDGET,
 		continuity: work.continuity,
@@ -446,7 +456,12 @@ const createBuildDeps = (
 		align: async ({ chain, streams }) => overflowAlign(ctx, chain, streams),
 		discover: async () => overflowDiscover(ctx),
 		fetchTarget: async (chain) => overflowFetch(ctx, chain),
-		publish: async (alignment) => overflowPublish(ctx, alignment),
+		publish: async (alignment) => {
+			await overflowPublish(ctx, alignment);
+			if (fuzzyWork !== undefined) {
+				await fuzzyWork;
+			}
+		},
 		seedPending: async () => {
 			await seedPendingCoverage(
 				ctx.db,
