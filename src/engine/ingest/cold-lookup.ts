@@ -184,18 +184,8 @@ const dispatchOverflow = async (input: {
 const settleInlinePublish = async (
 	input: InlinePublishInput,
 ): Promise<void> => {
-	try {
-		const result = await publishInline(input);
-		if (result?.kind === "refused" && result.reason !== "unavailable-target") {
-			await writeCoverageState(
-				input.ingest.db,
-				input.continuity,
-				BASELINE_REVISION,
-				input.target.service,
-				"conflict",
-			);
-		}
-	} catch (error) {
+	const result = await publishInline(input);
+	if (result?.kind === "refused" && result.reason !== "unavailable-target") {
 		await writeCoverageState(
 			input.ingest.db,
 			input.continuity,
@@ -203,7 +193,6 @@ const settleInlinePublish = async (
 			input.target.service,
 			"conflict",
 		);
-		throw error;
 	}
 };
 
