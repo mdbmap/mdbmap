@@ -1,0 +1,12 @@
+{
+	"name": "mdbmap",
+	"user": "ubuntu",
+	"install": "curl -fsSL https://bun.sh/install | bash && export BUN_INSTALL=\"$HOME/.bun\" && export PATH=\"$BUN_INSTALL/bin:$PATH\" && bun install --frozen-lockfile && bun run cf-typegen && bun run codegen",
+	"terminals": [
+		{
+			"name": "dev",
+			"command": "export PATH=\"$HOME/.bun/bin:$PATH\" && bun run dev"
+		}
+	],
+	"ports": [{ "name": "dev server", "port": 3000 }]
+}
