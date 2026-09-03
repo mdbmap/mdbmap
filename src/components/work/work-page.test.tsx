@@ -1,11 +1,15 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { renderToStaticMarkup } from "react-dom/server";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import type { PresentationOrderSlug } from "@/db/engine-schema";
 import type { WorkView } from "@/orpc/schema";
 
 import { WorkPage } from "./work-page";
+
+vi.mock("@/integrations/better-auth/header-user", () => ({
+	BetterAuthHeader: () => false,
+}));
 
 const emptyScore = { count: 0, mean: undefined };
 

@@ -1,5 +1,6 @@
 import { ThemeToggle } from "@/components/ui/theme-toggle";
 import type { PresentationOrderSlug } from "@/db/engine-schema";
+import { BetterAuthHeader } from "@/integrations/better-auth/header-user";
 import type { WorkView } from "@/orpc/schema";
 
 import { Banner } from "./banner";
@@ -14,7 +15,10 @@ function WorkHeader() {
 			<span className="text-accent font-mono text-xs font-medium tracking-[0.1em] uppercase">
 				{BRAND}
 			</span>
-			<ThemeToggle />
+			<div className="flex items-center gap-4">
+				<BetterAuthHeader />
+				<ThemeToggle />
+			</div>
 		</header>
 	);
 }

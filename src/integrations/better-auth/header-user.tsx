@@ -1,10 +1,37 @@
 import { useCallback } from "react";
+import { tv } from "tailwind-variants";
 
 import { authClient } from "@/lib/auth-client";
 
-const signOutLabel = "Sign out";
+import { AuthDialog } from "./auth-dialog.tsx";
 
-export function BetterAuthHeader() {
+const pending = tv({
+	base: "border-line bg-ink/10 size-7 animate-pulse border",
+});
+
+const sessionRow = tv({
+	base: "flex items-center gap-2.5",
+});
+
+const avatar = tv({
+	base: "border-line bg-no-still text-ink/70 flex size-7 items-center justify-center border font-mono text-[11px]",
+});
+
+const signOutButton = tv({
+	base: "text-ink/50 hover:text-accent inline-flex cursor-pointer items-center gap-2 border-none bg-transparent font-mono text-xs",
+});
+
+const SIGN_OUT = "Sign out";
+
+function userInitial(name: string | undefined): string {
+	const trimmed = name?.trim();
+	if (trimmed === undefined || trimmed.length === 0) {
+		return "?";
+	}
+	return trimmed.charAt(0).toUpperCase();
+}
+
+function BetterAuthHeader() {
 	const { data: session, isPending } = authClient.useSession();
 
 	const handleSignOut = useCallback(() => {
@@ -12,33 +39,38 @@ export function BetterAuthHeader() {
 	}, []);
 
 	if (isPending) {
-		return (
-			<div className="h-8 w-8 animate-pulse bg-neutral-100 dark:bg-neutral-800" />
-		);
+		return <div aria-hidden className={pending()} />;
 	}
 
-	if (session?.user) {
-		return (
-			<div className="flex items-center gap-2">
-				{session.user.image ? (
-					<img src={session.user.image} alt="" className="h-8 w-8" />
-				) : (
-					<div className="flex h-8 w-8 items-center justify-center bg-neutral-100 dark:bg-neutral-800">
-						<span className="text-xs font-medium text-neutral-600 dark:text-neutral-400">
-							{session.user.name?.charAt(0).toUpperCase() ?? "U"}
-						</span>
-					</div>
-				)}
-				<button
-					type="button"
-					onClick={handleSignOut}
-					className="h-9 flex-1 border border-neutral-300 bg-white px-4 text-sm font-medium text-neutral-900 transition-colors hover:bg-neutral-50 dark:border-neutral-700 dark:bg-neutral-900 dark:text-neutral-50 dark:hover:bg-neutral-800"
-				>
-					{signOutLabel}
-				</button>
-			</div>
-		);
+	const user = session?.user;
+	if (user === undefined) {
+		return <AuthDialog />;
 	}
 
-	return;
+	const { image } = user;
+	const hasImage = typeof image === "string" && image.length > 0;
+
+	return (
+		<div className={sessionRow()}>
+			{hasImage ? (
+				<img
+					alt=""
+					className="border-line size-7 border object-cover"
+					src={image}
+				/>
+			) : (
+				<div aria-hidden className={avatar()}>
+					{userInitial(user.name)}
+				</div>
+			)}
+			<span className="text-ink/70 max-w-[10rem] truncate font-mono text-xs">
+				{user.name}
+			</span>
+			<button className={signOutButton()} onClick={handleSignOut} type="button">
+				{SIGN_OUT}
+			</button>
+		</div>
+	);
 }
+
+export { BetterAuthHeader };
