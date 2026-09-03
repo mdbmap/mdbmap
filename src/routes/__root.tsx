@@ -36,7 +36,12 @@ export const Route = createRootRouteWithContext<MyRouterContext>()({
 				name: "viewport",
 			},
 			{
-				title: "TanStack Start Starter",
+				content:
+					"A personal tracker for television, film and anime, built on a cross-service metadata matcher.",
+				name: "description",
+			},
+			{
+				title: "mdbmap",
 			},
 		],
 		scripts: [
