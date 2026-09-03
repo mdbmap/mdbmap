@@ -107,12 +107,22 @@ const cacheKeyFor = (
 
 const FETCH_TIMEOUT_MS = 8000;
 
+const mergeAbortSignals = (
+	timeout: AbortSignal,
+	caller: AbortSignal | undefined,
+): AbortSignal => {
+	if (caller === undefined) {
+		return timeout;
+	}
+	return AbortSignal.any([caller, timeout]) ?? timeout;
+};
+
 const fetchWithTimeout =
 	(fetchFn: typeof fetch, ms: number): typeof fetch =>
 	async (input, init) =>
 		fetchFn(input, {
 			...init,
-			signal: AbortSignal.timeout(ms),
+			signal: mergeAbortSignals(AbortSignal.timeout(ms), init?.signal),
 		});
 
 const loadCachedOrFetch = async (
@@ -133,14 +143,12 @@ const loadCachedOrFetch = async (
 	} catch {
 		return [];
 	}
-	if (ratings.length > 0) {
-		await writeSnapshot(
-			kv,
-			key,
-			{ ratings: [...ratings], version },
-			ttlSeconds,
-		);
-	}
+	await writeSnapshot(
+		kv,
+		key,
+		{ ratings: [...ratings], version },
+		ttlSeconds,
+	);
 	return ratings;
 };
 
