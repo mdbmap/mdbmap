@@ -1,27 +1,28 @@
-import { TanStackDevtools } from "@tanstack/react-devtools";
 import { HeadContent, Scripts } from "@tanstack/react-router";
-import { TanStackRouterDevtoolsPanel } from "@tanstack/react-router-devtools";
-import type { ReactNode } from "react";
+import { lazy, Suspense } from "react";
+import type { ComponentType, ReactNode } from "react";
 
 import { getLocale } from "#/paraglide/runtime";
 import { PostHogProvider } from "@/integrations/posthog/provider";
-import { queryDevtoolsPlugin } from "@/integrations/tanstack-query/devtools";
 
-const devtoolsConfig = { position: "bottom-right" } as const;
+async function loadAppDevtools() {
+	const { AppDevtools } = await import("@/components/app-devtools");
+	return { default: AppDevtools };
+}
 
-const devtoolsPlugins = [
-	{
-		name: "Tanstack Router",
-		render: <TanStackRouterDevtoolsPanel />,
-	},
-	queryDevtoolsPlugin,
-];
+const AppDevtools: ComponentType | undefined = import.meta.env.DEV
+	? lazy(loadAppDevtools)
+	: undefined;
 
 function RootProviders({ children }: { children: ReactNode }) {
 	return (
 		<PostHogProvider>
 			{children}
-			<TanStackDevtools config={devtoolsConfig} plugins={devtoolsPlugins} />
+			{AppDevtools && (
+				<Suspense>
+					<AppDevtools />
+				</Suspense>
+			)}
 		</PostHogProvider>
 	);
 }

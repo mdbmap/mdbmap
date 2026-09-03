@@ -9,7 +9,7 @@ import { defineConfig } from "vite";
 
 const config = defineConfig({
 	plugins: [
-		devtools(),
+		devtools({ removeDevtoolsOnBuild: true }),
 		paraglideVitePlugin({
 			emitTsDeclarations: true,
 			outdir: "./src/generated/paraglide",
