@@ -258,10 +258,35 @@ function AuthModal() {
 	);
 }
 
-function AuthDialog() {
+type AuthTriggerVariant = "hero" | "inline";
+
+function AuthTrigger({
+	label,
+	variant,
+}: {
+	label: string;
+	variant: AuthTriggerVariant;
+}) {
+	if (variant === "hero") {
+		return <Button data-cta>{label}</Button>;
+	}
+	return <Button data-auth-trigger>{label}</Button>;
+}
+
+interface AuthDialogProps {
+	defaultOpen?: boolean;
+	label?: string;
+	variant?: AuthTriggerVariant;
+}
+
+function AuthDialog({
+	defaultOpen = false,
+	label = COPY.signIn,
+	variant = "inline",
+}: AuthDialogProps) {
 	return (
-		<DialogTrigger>
-			<Button data-auth-trigger>{COPY.signIn}</Button>
+		<DialogTrigger defaultOpen={defaultOpen}>
+			<AuthTrigger label={label} variant={variant} />
 			<ModalOverlay data-auth-dialog isDismissable>
 				<AuthModal />
 			</ModalOverlay>

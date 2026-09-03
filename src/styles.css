@@ -101,6 +101,33 @@
 	}
 }
 
+/* Primary call to action — one rose accent, sharp corners. */
+@layer components {
+	[data-cta] {
+		cursor: pointer;
+
+		display: inline-flex;
+		align-items: center;
+
+		padding: 0.625rem 1rem;
+		border: 1px solid var(--color-accent);
+
+		font-family: var(--font-mono);
+		font-size: 0.75rem;
+		font-weight: 500;
+		color: var(--color-bg);
+		text-decoration: none;
+		text-transform: uppercase;
+		letter-spacing: 0.08em;
+
+		background: var(--color-accent);
+	}
+
+	[data-cta]:hover {
+		background: var(--color-accent-strong);
+	}
+}
+
 /* Auth dialog — React Aria defaults styled with Rosé Pine tokens. */
 @layer components {
 	[data-auth-trigger].react-aria-Button {
