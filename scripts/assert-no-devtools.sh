@@ -43,6 +43,5 @@ echo "Client JS spot-check:"
 if [[ -d "$root/client/assets" ]]; then
 	find "$root/client/assets" -type f -name '*.js' -printf '%s\t%p\n' |
 		sort -nr |
-		head -n 5 |
-		awk '{ printf "  %.1f KiB  %s\n", $1/1024, $2 }'
+		awk 'NR <= 5 { printf "  %.1f KiB  %s\n", $1/1024, $2 }'
 fi
