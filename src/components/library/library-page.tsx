@@ -86,22 +86,16 @@ function EntryBody({ entry, hue }: { entry: LibraryEntry; hue: string }) {
 }
 
 function LibraryRow({ entry, hue }: { entry: LibraryEntry; hue: string }) {
-	const pathId = workPathId(entry.continuityId);
-	const params = useMemo(
-		() => (pathId === undefined ? undefined : { continuityId: pathId }),
-		[pathId],
-	);
+	const continuityId = workPathId(entry.continuityId);
+	if (continuityId === undefined) {
+		throw new Error(`library: unpathable continuity ${entry.continuityId}`);
+	}
+	const params = useMemo(() => ({ continuityId }), [continuityId]);
 	return (
 		<li className={row()}>
-			{params === undefined ? (
-				<div>
-					<EntryBody entry={entry} hue={hue} />
-				</div>
-			) : (
-				<Link params={params} to="/work/$continuityId">
-					<EntryBody entry={entry} hue={hue} />
-				</Link>
-			)}
+			<Link params={params} to="/work/$continuityId">
+				<EntryBody entry={entry} hue={hue} />
+			</Link>
 		</li>
 	);
 }

@@ -67,10 +67,12 @@ const clientFor = (
 	db: TestDb,
 	userId: string | undefined,
 	providers: Providers = providersUsing(titledProvider),
+	engine?: ORPCContext["engine"],
 ) =>
 	createRouterClient(router, {
 		context: {
 			db,
+			...(engine === undefined ? {} : { engine }),
 			providers,
 			resolveSession: () => (userId === undefined ? undefined : { id: userId }),
 		} satisfies ORPCContext,
@@ -306,5 +308,37 @@ describe("library.list", () => {
 			watchedTotal += entry.watchedInstalments;
 		}
 		expect(watchedTotal).toBe(101);
+	});
+
+	it("skips watch-status rows whose continuity is gone", async () => {
+		const db = await seededViewer();
+		const { continuityId } = await seedSpyXFamily(db);
+		await track(db, continuityId, new Date("2026-01-01T00:00:00Z"));
+		await track(db, "continuity:999999", new Date("2026-02-01T00:00:00Z"));
+
+		const entries = await clientFor(db, "user-1").library.list();
+
+		expect(entries.map((entry) => entry.continuityId)).toEqual([continuityId]);
+	});
+
+	it("rejects when continuity resolution fails unexpectedly", async () => {
+		const db = await seededViewer();
+		const { continuityId } = await seedSpyXFamily(db);
+		await track(db, continuityId, new Date("2026-01-01T00:00:00Z"));
+		const engine = {
+			resolveContinuity: async (requested: string) => {
+				await Promise.resolve();
+				throw new Error(`engine: boom ${requested}`);
+			},
+		};
+
+		await expect(
+			clientFor(
+				db,
+				"user-1",
+				providersUsing(titledProvider),
+				engine,
+			).library.list(),
+		).rejects.toThrow(/engine: boom/u);
 	});
 });

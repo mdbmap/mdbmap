@@ -1,10 +1,10 @@
-import { and, desc, eq } from "drizzle-orm";
+import { and, desc, eq, inArray } from "drizzle-orm";
 
+import { continuityAliases } from "@/db/engine-schema";
 import { episodeProgress, personalRating, watchStatus } from "@/db/schema";
 import type { EngineRead, ResolveResult } from "@/engine";
 import { metadataProviderFor } from "@/engine";
-import { parseContinuityKey } from "@/engine/continuity/keys";
-import { retiredContinuityKeys } from "@/engine/continuity/persist";
+import { continuityKey, parseContinuityKey } from "@/engine/continuity/keys";
 import { authed } from "@/orpc/base";
 import type { Db } from "@/orpc/context";
 import { instalmentsOf } from "@/orpc/instalments";
@@ -15,6 +15,7 @@ type WatchStatusRow = typeof watchStatus.$inferSelect;
 
 interface TrackedContinuity {
 	readonly activityAt: Date | undefined;
+	readonly activityId: number;
 	readonly locators: readonly string[];
 	readonly resolved: ResolveResult;
 	readonly row: WatchStatusRow;
@@ -22,6 +23,9 @@ interface TrackedContinuity {
 
 const rowActivity = (row: WatchStatusRow): number =>
 	row.updatedAt?.getTime() ?? row.id;
+
+const isMissingContinuity = (error: unknown): boolean =>
+	error instanceof Error && error.message.startsWith("engine: no continuity ");
 
 const preferStatusRow = (
 	canonicalId: string,
@@ -52,29 +56,36 @@ const resolveTrackedRow = async (
 		const resolved = await engine.resolveContinuity(row.continuityKey);
 		return {
 			activityAt: row.updatedAt ?? undefined,
+			activityId: row.id,
 			locators: instalmentsOf(resolved),
 			resolved,
 			row,
 		};
-	} catch {
-		return undefined;
+	} catch (error) {
+		if (isMissingContinuity(error)) {
+			return undefined;
+		}
+		throw error;
 	}
 };
 
 const latestActivity = (
 	group: readonly TrackedContinuity[],
-): Date | undefined => {
-	let latest: Date | undefined;
+): { activityAt: Date | undefined; activityId: number } => {
+	const [first] = group;
+	if (first === undefined) {
+		throw new Error("expected at least one tracked continuity");
+	}
+	let best = first;
 	for (const entry of group) {
-		const next = entry.activityAt;
-		if (next === undefined) {
-			continue;
-		}
-		if (latest === undefined || next.getTime() > latest.getTime()) {
-			latest = next;
+		if (rowActivity(entry.row) > rowActivity(best.row)) {
+			best = entry;
 		}
 	}
-	return latest;
+	return {
+		activityAt: best.row.updatedAt ?? undefined,
+		activityId: best.row.id,
+	};
 };
 
 const collapseTracked = (
@@ -86,8 +97,10 @@ const collapseTracked = (
 		if (head === undefined) {
 			continue;
 		}
+		const activity = latestActivity(group);
 		collapsed.push({
-			activityAt: latestActivity(group),
+			activityAt: activity.activityAt,
+			activityId: activity.activityId,
 			locators: head.locators,
 			resolved: head.resolved,
 			row: preferStatusRow(canonicalId, group),
@@ -99,7 +112,7 @@ const collapseTracked = (
 		if (leftMs !== rightMs) {
 			return rightMs - leftMs;
 		}
-		return right.row.id - left.row.id;
+		return right.activityId - left.activityId;
 	});
 };
 
@@ -161,23 +174,58 @@ const workRatings = async (
 	return new Map(rows.map((row) => [row.unitKey, row.score]));
 };
 
-const ratingFor = async (
+const ALIAS_CHUNK = 50;
+
+const retiredKeysBySurvivor = async (
 	db: Db,
+	survivorIds: readonly number[],
+): Promise<ReadonlyMap<number, readonly `continuity:${number}`[]>> => {
+	const bySurvivor = new Map<number, `continuity:${number}`[]>();
+	if (survivorIds.length === 0) {
+		return bySurvivor;
+	}
+	const chunks: number[][] = [];
+	for (let offset = 0; offset < survivorIds.length; offset += ALIAS_CHUNK) {
+		chunks.push(survivorIds.slice(offset, offset + ALIAS_CHUNK));
+	}
+	const pages = await Promise.all(
+		chunks.map(async (chunk) =>
+			db
+				.select({
+					retiredContinuityId: continuityAliases.retiredContinuityId,
+					survivorContinuityId: continuityAliases.survivorContinuityId,
+				})
+				.from(continuityAliases)
+				.where(inArray(continuityAliases.survivorContinuityId, chunk))
+				.all(),
+		),
+	);
+	for (const rows of pages) {
+		for (const row of rows) {
+			const list = bySurvivor.get(row.survivorContinuityId) ?? [];
+			list.push(continuityKey(row.retiredContinuityId));
+			bySurvivor.set(row.survivorContinuityId, list);
+		}
+	}
+	return bySurvivor;
+};
+
+const ratingFor = (
 	ratings: ReadonlyMap<string, number>,
+	aliases: ReadonlyMap<number, readonly `continuity:${number}`[]>,
 	tracked: TrackedContinuity,
-): Promise<number | undefined> => {
+): number | undefined => {
 	const canonicalId = tracked.resolved.continuityId;
 	const direct =
 		ratings.get(canonicalId) ?? ratings.get(tracked.row.continuityKey);
-	if (direct !== undefined || ratings.size === 0) {
+	if (direct !== undefined) {
 		return direct;
 	}
 	const parsed = parseContinuityKey(canonicalId);
 	if (parsed === undefined) {
 		return undefined;
 	}
-	const aliasKeys = await retiredContinuityKeys(db, parsed);
-	for (const key of aliasKeys) {
+	for (const key of aliases.get(parsed) ?? []) {
 		const score = ratings.get(key);
 		if (score !== undefined) {
 			return score;
@@ -200,20 +248,17 @@ const workMetadata = async (
 };
 
 const toEntry = async (
-	db: Db,
 	providers: Providers,
 	ratings: ReadonlyMap<string, number>,
+	aliases: ReadonlyMap<number, readonly `continuity:${number}`[]>,
 	watched: ReadonlySet<string>,
 	tracked: TrackedContinuity,
 ): Promise<LibraryEntry> => {
-	const [metadata, rating] = await Promise.all([
-		workMetadata(providers, tracked.resolved),
-		ratingFor(db, ratings, tracked),
-	]);
+	const metadata = await workMetadata(providers, tracked.resolved);
 	return {
 		continuityId: tracked.resolved.continuityId,
 		coverRef: metadata?.coverRef,
-		personalRating: rating,
+		personalRating: ratingFor(ratings, aliases, tracked),
 		rewatchCount: tracked.row.rewatchCount,
 		status: tracked.row.status,
 		title: metadata?.title,
@@ -233,13 +278,24 @@ const list = authed.handler(async ({ context }): Promise<LibraryEntry[]> => {
 		.orderBy(desc(watchStatus.updatedAt), desc(watchStatus.id))
 		.all();
 	const tracked = await trackedContinuities(context.engine, rows);
+	const survivorIds = [
+		...new Set(
+			tracked
+				.map((entry) => parseContinuityKey(entry.resolved.continuityId))
+				.filter((id): id is number => id !== undefined),
+		),
+	];
 	const [watched, ratings] = await Promise.all([
 		watchedLocators(context.db, userId, tracked),
 		workRatings(context.db, userId),
 	]);
+	const aliases =
+		ratings.size === 0
+			? new Map<number, readonly `continuity:${number}`[]>()
+			: await retiredKeysBySurvivor(context.db, survivorIds);
 	return Promise.all(
 		tracked.map(async (entry) =>
-			toEntry(context.db, context.providers, ratings, watched, entry),
+			toEntry(context.providers, ratings, aliases, watched, entry),
 		),
 	);
 });
