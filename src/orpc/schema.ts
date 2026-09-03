@@ -160,6 +160,7 @@ interface MintedApiKey extends ApiKeyRow {
 type ProviderRow = ProviderListItem;
 
 interface ServiceRating {
+	kind: "critic" | "user";
 	scale: number;
 	score: number;
 	service: string;

@@ -7,6 +7,7 @@ type MetadataProvider = "anidb" | "tmdb";
 interface MemberTitles {
 	anidb?: string;
 	anilist?: string;
+	imdb?: string;
 	mal?: string;
 	tmdb?: string;
 }

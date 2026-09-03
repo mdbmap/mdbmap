@@ -10,6 +10,7 @@ const defaultProviders: Providers = {
 };
 
 export { defaultProviders };
+export { createServiceRatingsProvider } from "./service-ratings.ts";
 export type {
 	CommunityScoreProvider,
 	MetadataProvider,

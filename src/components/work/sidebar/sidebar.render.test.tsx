@@ -18,6 +18,7 @@ const service = (
 	scale: number,
 	votes: number,
 ): ServiceRating => ({
+	kind: "user",
 	scale,
 	score,
 	service: name,
