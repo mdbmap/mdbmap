@@ -53,7 +53,7 @@ const stubRatings: Providers = {
 const clientFor = (
 	db: Awaited<ReturnType<typeof seeded>>["db"],
 	userId: string | undefined,
-	providers: Providers = defaultProviders,
+	providers: Providers = stubRatings,
 ) =>
 	createRouterClient(router, {
 		context: {

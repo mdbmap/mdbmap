@@ -65,11 +65,22 @@ const readSnapshot = async (
 	key: string,
 	version: number,
 ): Promise<Snapshot | undefined> => {
-	const raw = await kv.get(key);
+	let raw: string | undefined;
+	try {
+		raw = await kv.get(key);
+	} catch {
+		return undefined;
+	}
 	if (raw === undefined) {
 		return undefined;
 	}
-	const parsed = snapshotSchema.safeParse(JSON.parse(raw));
+	let decoded: unknown;
+	try {
+		decoded = JSON.parse(raw);
+	} catch {
+		return undefined;
+	}
+	const parsed = snapshotSchema.safeParse(decoded);
 	if (!parsed.success || parsed.data.version !== version) {
 		return undefined;
 	}
@@ -82,13 +93,41 @@ const writeSnapshot = async (
 	snapshot: Snapshot,
 	ttlSeconds: number,
 ): Promise<void> => {
-	await kv.put(key, JSON.stringify(snapshot), { expirationTtl: ttlSeconds });
+	try {
+		await kv.put(key, JSON.stringify(snapshot), { expirationTtl: ttlSeconds });
+	} catch {
+		// Cache writes are best-effort; live ratings still return.
+	}
 };
 
 const cacheKeyFor = (
 	service: "anidb" | "anilist" | "imdb" | "mal" | "tmdb",
 	id: string,
 ) => `${service}:${id}`;
+
+const FETCH_TIMEOUT_MS = 8_000;
+
+const withTimeout = async <T,>(
+	task: Promise<T>,
+	ms: number,
+	fallback: T,
+): Promise<T> => {
+	let timer: ReturnType<typeof setTimeout> | undefined;
+	try {
+		return await Promise.race([
+			task,
+			new Promise<T>((resolve) => {
+				timer = setTimeout(() => {
+					resolve(fallback);
+				}, ms);
+			}),
+		]);
+	} finally {
+		if (timer !== undefined) {
+			clearTimeout(timer);
+		}
+	}
+};
 
 const loadCachedOrFetch = async (
 	kv: MetadataKv,
@@ -102,8 +141,20 @@ const loadCachedOrFetch = async (
 	if (cached !== undefined) {
 		return cached.ratings;
 	}
-	const ratings = await fetchLive();
-	await writeSnapshot(kv, key, { ratings: [...ratings], version }, ttlSeconds);
+	let ratings: readonly ServiceRating[];
+	try {
+		ratings = await withTimeout(fetchLive(), FETCH_TIMEOUT_MS, []);
+	} catch {
+		return [];
+	}
+	if (ratings.length > 0) {
+		await writeSnapshot(
+			kv,
+			key,
+			{ ratings: [...ratings], version },
+			ttlSeconds,
+		);
+	}
 	return ratings;
 };
 
@@ -164,8 +215,12 @@ const enqueueMemberFetches = (
 	if (members.tmdb !== undefined && plan.tmdbApiKey !== undefined) {
 		const id = members.tmdb;
 		const apiKey = plan.tmdbApiKey;
-		enqueue(tasks, plan, byService, cacheKeyFor("tmdb", id), async () =>
-			fetchTmdb(id, unit, apiKey, plan.fetchFn, plan.tmdbBaseUrl),
+		enqueue(
+			tasks,
+			plan,
+			byService,
+			`${cacheKeyFor("tmdb", id)}:${unit.kind}`,
+			async () => fetchTmdb(id, unit, apiKey, plan.fetchFn, plan.tmdbBaseUrl),
 		);
 	}
 	if (members.imdb !== undefined) {
