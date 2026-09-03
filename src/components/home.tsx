@@ -1,3 +1,5 @@
+import { useState } from "react";
+
 import { Label } from "@/components/ui/label";
 import { Section } from "@/components/ui/section";
 import { ThemeToggle } from "@/components/ui/theme-toggle";
@@ -32,10 +34,20 @@ function Header() {
 	);
 }
 
-function HeroCta({ signinRequested }: { signinRequested: boolean }) {
+function HeroCta({
+	onSigninOpenChange,
+	signinOpen,
+}: {
+	onSigninOpenChange?: (open: boolean) => void;
+	signinOpen: boolean;
+}) {
 	const { data: session, isPending } = authClient.useSession();
+	const [sessionReady, setSessionReady] = useState(!isPending);
+	if (!isPending && !sessionReady) {
+		setSessionReady(true);
+	}
 
-	if (isPending) {
+	if (!sessionReady) {
 		return (
 			<div
 				aria-hidden
@@ -45,10 +57,14 @@ function HeroCta({ signinRequested }: { signinRequested: boolean }) {
 	}
 
 	if (session?.user === undefined) {
+		if (onSigninOpenChange === undefined) {
+			return <AuthDialog label={COPY.signIn} variant="hero" />;
+		}
 		return (
 			<AuthDialog
-				defaultOpen={signinRequested}
+				isOpen={signinOpen}
 				label={COPY.signIn}
+				onOpenChange={onSigninOpenChange}
 				variant="hero"
 			/>
 		);
@@ -61,7 +77,13 @@ function HeroCta({ signinRequested }: { signinRequested: boolean }) {
 	);
 }
 
-function Hero({ signinRequested }: { signinRequested: boolean }) {
+function Hero({
+	onSigninOpenChange,
+	signinOpen,
+}: {
+	onSigninOpenChange?: (open: boolean) => void;
+	signinOpen: boolean;
+}) {
 	return (
 		<section className="flex min-h-[60vh] flex-col justify-center">
 			<h1 className="text-accent font-mono text-5xl font-medium tracking-[-0.02em] sm:text-6xl">
@@ -74,7 +96,14 @@ function Hero({ signinRequested }: { signinRequested: boolean }) {
 				{SUPPORT}
 			</p>
 			<div className="mt-10 flex items-center gap-5">
-				<HeroCta signinRequested={signinRequested} />
+				{onSigninOpenChange === undefined ? (
+					<HeroCta signinOpen={signinOpen} />
+				) : (
+					<HeroCta
+						onSigninOpenChange={onSigninOpenChange}
+						signinOpen={signinOpen}
+					/>
+				)}
 			</div>
 		</section>
 	);
@@ -103,14 +132,23 @@ function TracksSection() {
 }
 
 export function Home({
-	signinRequested = false,
+	onSigninOpenChange,
+	signinOpen = false,
 }: {
-	signinRequested?: boolean;
+	onSigninOpenChange?: (open: boolean) => void;
+	signinOpen?: boolean;
 }) {
 	return (
 		<main className="mx-auto flex min-h-screen max-w-3xl flex-col gap-14 px-8 py-14">
 			<Header />
-			<Hero signinRequested={signinRequested} />
+			{onSigninOpenChange === undefined ? (
+				<Hero signinOpen={signinOpen} />
+			) : (
+				<Hero
+					onSigninOpenChange={onSigninOpenChange}
+					signinOpen={signinOpen}
+				/>
+			)}
 			<TracksSection />
 		</main>
 	);

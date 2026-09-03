@@ -47,14 +47,14 @@ vi.mock("react-aria-components", async () => {
 		},
 		DialogTrigger: ({
 			children,
-			defaultOpen,
+			isOpen,
 		}: {
 			children?: ReactNode;
-			defaultOpen?: boolean;
+			isOpen?: boolean;
 		}) =>
 			createElement(
 				"div",
-				{ "data-dialog-open": String(defaultOpen === true) },
+				{ "data-dialog-open": String(isOpen === true) },
 				children,
 			),
 		Form: passthrough("form"),
@@ -126,9 +126,9 @@ describe("Home", () => {
 
 	it("opens the dialog when sign-in is requested", () => {
 		useSession.mockReturnValue({ ...idleSession, data: undefined });
-		expect(renderToStaticMarkup(<Home signinRequested />)).toContain(
-			'data-dialog-open="true"',
-		);
+		expect(
+			renderToStaticMarkup(<Home onSigninOpenChange={noop} signinOpen />),
+		).toContain('data-dialog-open="true"');
 		expect(renderToStaticMarkup(<Home />)).not.toContain(
 			'data-dialog-open="true"',
 		);

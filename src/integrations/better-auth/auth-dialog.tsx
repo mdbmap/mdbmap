@@ -274,22 +274,36 @@ function AuthTrigger({
 }
 
 interface AuthDialogProps {
-	defaultOpen?: boolean;
+	isOpen?: boolean;
 	label?: string;
+	onOpenChange?: (isOpen: boolean) => void;
 	variant?: AuthTriggerVariant;
 }
 
 function AuthDialog({
-	defaultOpen = false,
+	isOpen,
 	label = COPY.signIn,
+	onOpenChange,
 	variant = "inline",
 }: AuthDialogProps) {
+	const trigger = <AuthTrigger label={label} variant={variant} />;
+	const overlay = (
+		<ModalOverlay data-auth-dialog isDismissable>
+			<AuthModal />
+		</ModalOverlay>
+	);
+	if (isOpen !== undefined && onOpenChange !== undefined) {
+		return (
+			<DialogTrigger isOpen={isOpen} onOpenChange={onOpenChange}>
+				{trigger}
+				{overlay}
+			</DialogTrigger>
+		);
+	}
 	return (
-		<DialogTrigger defaultOpen={defaultOpen}>
-			<AuthTrigger label={label} variant={variant} />
-			<ModalOverlay data-auth-dialog isDismissable>
-				<AuthModal />
-			</ModalOverlay>
+		<DialogTrigger>
+			{trigger}
+			{overlay}
 		</DialogTrigger>
 	);
 }
