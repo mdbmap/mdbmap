@@ -279,6 +279,19 @@ interface TrackingSummary {
 	status: WatchStatus | undefined;
 }
 
+// `title` and `coverRef` are absent when the metadata provider could not be
+// reached for that continuity; the rest of the row still comes from D1.
+interface LibraryEntry {
+	continuityId: string;
+	coverRef: string | undefined;
+	personalRating: number | undefined;
+	rewatchCount: number;
+	status: WatchStatus;
+	title: string | undefined;
+	totalInstalments: number;
+	watchedInstalments: number;
+}
+
 interface EpisodeWatchedResult {
 	status: WatchStatus;
 	watched: string[];
@@ -319,6 +332,7 @@ export type {
 	EpisodeView,
 	EpisodeWatchedResult,
 	FilmView,
+	LibraryEntry,
 	MintedApiKey,
 	MovieRateableUnit,
 	PartView,
