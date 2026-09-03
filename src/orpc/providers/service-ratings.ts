@@ -5,6 +5,7 @@ import type { MemberTitles } from "@/engine";
 import type { RateableUnit, ServiceRating } from "@/orpc/schema";
 
 import type { MetadataKv } from "./metadata-tmdb.ts";
+import { createRateLimiter } from "./rate-limit.ts";
 import {
 	DEFAULT_ANILIST_URL,
 	DEFAULT_IMDB_URL,
@@ -262,6 +263,11 @@ const orderRatings = (
 	return ordered;
 };
 
+const withAnidbLimiter = (anidb: AnidbClientConfig): AnidbClientConfig => ({
+	...anidb,
+	rateLimiter: anidb.rateLimiter ?? createRateLimiter({ intervalMs: 2000 }),
+});
+
 const createServiceRatingsProvider = (
 	deps: ServiceRatingsDeps,
 ): ServiceRatingsProvider => {
@@ -290,7 +296,7 @@ const createServiceRatingsProvider = (
 		await Promise.all(
 			enqueueMemberFetches(
 				{
-					anidb,
+					anidb: withAnidbLimiter(anidb),
 					anilistUrl,
 					fetchFn,
 					imdbUrl,

@@ -38,6 +38,16 @@ const serviceOrder: readonly RatedService[] = [
 
 const emptyNode: XmlNode = { attrs: {}, children: [], tag: "", text: "" };
 
+const isMissingRating = (response: Response, label: string): boolean => {
+	if (response.ok) {
+		return false;
+	}
+	if (response.status === 404) {
+		return true;
+	}
+	throw new Error(`${label}: ${response.status}`);
+};
+
 interface AnidbClientConfig {
 	baseUrl?: string;
 	client: string | undefined;
@@ -96,7 +106,7 @@ const fetchAnilist = async (
 		headers: { "Content-Type": "application/json" },
 		method: "POST",
 	});
-	if (!response.ok) {
+	if (isMissingRating(response, "anilist")) {
 		return [];
 	}
 	const parsed = anilistResponseSchema.safeParse(await response.json());
@@ -127,7 +137,7 @@ const fetchMal = async (
 	baseUrl = DEFAULT_JIKAN_URL,
 ): Promise<readonly ServiceRating[]> => {
 	const response = await fetchFn(`${baseUrl}/anime/${id}`);
-	if (!response.ok) {
+	if (isMissingRating(response, "mal")) {
 		return [];
 	}
 	const parsed = jikanAnimeSchema.safeParse(await response.json());
@@ -158,7 +168,7 @@ const fetchTmdbResource = async (
 	const response = await fetchFn(
 		`${baseUrl}/${kind}/${id}?api_key=${encodeURIComponent(apiKey)}`,
 	);
-	if (!response.ok) {
+	if (isMissingRating(response, "tmdb")) {
 		return [];
 	}
 	const parsed = tmdbVotesSchema.safeParse(await response.json());
@@ -234,10 +244,13 @@ const fetchAnidb = async (
 			request: "anime",
 		});
 		const response = await fetchFn(`${baseUrl}?${query.toString()}`);
-		if (!response.ok) {
+		if (response.ok) {
+			return response.text();
+		}
+		if (response.status === 404) {
 			return;
 		}
-		return response.text();
+		throw new Error(`anidb: ${response.status}`);
 	});
 	if (xml === undefined) {
 		return [];
@@ -264,7 +277,10 @@ const fetchImdbBundle = async (
 		url: imdbUrl,
 	});
 	const result = await client.query(TitleRatingsQuery, { id }).toPromise();
-	if (result.error !== undefined || result.data === undefined) {
+	if (result.data === undefined) {
+		if (result.error !== undefined) {
+			throw result.error;
+		}
 		return [];
 	}
 	const { title } = result.data;

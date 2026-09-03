@@ -51,49 +51,54 @@ const makeKv = () => {
 };
 
 const makeFetch = () =>
-	vi.fn(async (input: RequestInfo | URL): Promise<Response> => {
-		await Promise.resolve();
-		const url = urlOf(input);
-		if (url.includes("graphql.anilist.co")) {
-			return Response.json({
-				data: {
-					Media: {
-						averageScore: 86,
-						meanScore: 85,
-						stats: {
-							scoreDistribution: [
-								{ amount: 100_000, score: 80 },
-								{ amount: 114_500, score: 90 },
-							],
+	vi.fn(
+		async (
+			input: RequestInfo | URL,
+			_init?: RequestInit,
+		): Promise<Response> => {
+			await Promise.resolve();
+			const url = urlOf(input);
+			if (url.includes("graphql.anilist.co")) {
+				return Response.json({
+					data: {
+						Media: {
+							averageScore: 86,
+							meanScore: 85,
+							stats: {
+								scoreDistribution: [
+									{ amount: 100_000, score: 80 },
+									{ amount: 114_500, score: 90 },
+								],
+							},
 						},
 					},
-				},
-			});
-		}
-		if (url.includes("api.jikan.moe")) {
-			return Response.json({ data: { score: 8.55, scored_by: 1_182_000 } });
-		}
-		if (url.includes("api.themoviedb.org")) {
-			if (url.includes("/tv/")) {
-				return Response.json({ vote_average: 8.4, vote_count: 1287 });
+				});
 			}
-			return Response.json({ vote_average: 7.2, vote_count: 900 });
-		}
-		if (url.includes("api.anidb.net")) {
-			return new Response(anidbXml, { status: 200 });
-		}
-		if (url.includes("graphql.imdb.com")) {
-			return Response.json({
-				data: {
-					title: {
-						metacritic: { metascore: { reviewCount: 42, score: 78 } },
-						ratingsSummary: { aggregateRating: 8.3, voteCount: 95_000 },
+			if (url.includes("api.jikan.moe")) {
+				return Response.json({ data: { score: 8.55, scored_by: 1_182_000 } });
+			}
+			if (url.includes("api.themoviedb.org")) {
+				if (url.includes("/tv/")) {
+					return Response.json({ vote_average: 8.4, vote_count: 1287 });
+				}
+				return Response.json({ vote_average: 7.2, vote_count: 900 });
+			}
+			if (url.includes("api.anidb.net")) {
+				return new Response(anidbXml, { status: 200 });
+			}
+			if (url.includes("graphql.imdb.com")) {
+				return Response.json({
+					data: {
+						title: {
+							metacritic: { metascore: { reviewCount: 42, score: 78 } },
+							ratingsSummary: { aggregateRating: 8.3, voteCount: 95_000 },
+						},
 					},
-				},
-			});
-		}
-		return Response.json({ error: "not found" }, { status: 404 });
-	});
+				});
+			}
+			return Response.json({ error: "not found" }, { status: 404 });
+		},
+	);
 
 const makeProvider = (fetchFn: typeof fetch, kv: MetadataKv) =>
 	createServiceRatingsProvider({
@@ -233,5 +238,111 @@ describe("service ratings list", () => {
 		});
 		expect(second).toEqual(first);
 		expect(fetchFn).not.toHaveBeenCalled();
+	});
+
+	it("keeps other services when one upstream rejects", async () => {
+		const fetchFn = vi.fn(async (input: RequestInfo | URL): Promise<Response> => {
+			await Promise.resolve();
+			if (urlOf(input).includes("api.jikan.moe")) {
+				throw new Error("mal down");
+			}
+			return makeFetch()(input);
+		});
+		const { kv } = makeKv();
+		const ratings = await makeProvider(fetchFn, kv).ratingsFor(part, members);
+		expect(ratings.map((rating) => rating.service)).toEqual([
+			"tmdb",
+			"imdb",
+			"metacritic",
+			"anilist",
+			"anidb",
+		]);
+	});
+
+	it("does not cache a rejected fetch", async () => {
+		const fetchFn = vi.fn(async (input: RequestInfo | URL): Promise<Response> => {
+			await Promise.resolve();
+			if (urlOf(input).includes("api.jikan.moe")) {
+				return Response.json({ error: "unavailable" }, { status: 503 });
+			}
+			return Response.json({ error: "not found" }, { status: 404 });
+		});
+		const { kv, puts } = makeKv();
+		const provider = makeProvider(fetchFn, kv);
+		expect(await provider.ratingsFor(part, { mal: "50265" })).toEqual([]);
+		expect(puts).toEqual([]);
+		expect(fetchFn).toHaveBeenCalledTimes(1);
+		expect(await provider.ratingsFor(part, { mal: "50265" })).toEqual([]);
+		expect(fetchFn).toHaveBeenCalledTimes(2);
+	});
+
+	it("caches a successful empty score and skips the next upstream", async () => {
+		const fetchFn = vi.fn(async (): Promise<Response> => {
+			await Promise.resolve();
+			return Response.json({ data: {} });
+		});
+		const { kv, puts } = makeKv();
+		const provider = makeProvider(fetchFn, kv);
+		expect(await provider.ratingsFor(part, { mal: "50265" })).toEqual([]);
+		expect(puts).toEqual([{ key: "ratings:v1:mal:50265", ttl: 3600 }]);
+		fetchFn.mockClear();
+		expect(await provider.ratingsFor(part, { mal: "50265" })).toEqual([]);
+		expect(fetchFn).not.toHaveBeenCalled();
+	});
+
+	it("treats a KV get or put failure as non-fatal", async () => {
+		const fetchFn = makeFetch();
+		const kv: MetadataKv = {
+			get: async () => {
+				await Promise.resolve();
+				throw new Error("kv get");
+			},
+			put: async () => {
+				await Promise.resolve();
+				throw new Error("kv put");
+			},
+		};
+		const ratings = await makeProvider(fetchFn, kv).ratingsFor(part, {
+			mal: "50265",
+		});
+		expect(ratings).toEqual([
+			{ kind: "user", scale: 10, score: 8.55, service: "mal", votes: 1_182_000 },
+		]);
+	});
+
+	it("treats malformed cache JSON as a miss", async () => {
+		const fetchFn = makeFetch();
+		const { kv, store } = makeKv();
+		store.set("ratings:v1:mal:50265", "{not-json");
+		const ratings = await makeProvider(fetchFn, kv).ratingsFor(part, {
+			mal: "50265",
+		});
+		expect(ratings).toHaveLength(1);
+		expect(fetchFn).toHaveBeenCalled();
+		expect(store.get("ratings:v1:mal:50265")).not.toBe("{not-json");
+	});
+
+	it("separates TMDB cache entries by unit kind", async () => {
+		const fetchFn = makeFetch();
+		const { kv, puts } = makeKv();
+		const provider = makeProvider(fetchFn, kv);
+		await provider.ratingsFor(part, { tmdb: "120089" });
+		await provider.ratingsFor(movie, { tmdb: "120089" });
+		expect(puts.map((put) => put.key)).toEqual([
+			"ratings:v1:tmdb:120089:part",
+			"ratings:v1:tmdb:120089:movie",
+		]);
+		const partScores = await provider.ratingsFor(part, { tmdb: "120089" });
+		const movieScores = await provider.ratingsFor(movie, { tmdb: "120089" });
+		expect(partScores.map((rating) => rating.score)).toEqual([8.4]);
+		expect(movieScores.map((rating) => rating.score)).toEqual([7.2]);
+	});
+
+	it("passes a timeout abort signal into each upstream fetch", async () => {
+		const fetchFn = makeFetch();
+		const { kv } = makeKv();
+		await makeProvider(fetchFn, kv).ratingsFor(part, { mal: "50265" });
+		const init = fetchFn.mock.calls[0]?.[1];
+		expect(init?.signal).toBeInstanceOf(AbortSignal);
 	});
 });
