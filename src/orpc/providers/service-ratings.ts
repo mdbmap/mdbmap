@@ -122,7 +122,7 @@ const fetchWithTimeout =
 	async (input, init) =>
 		fetchFn(input, {
 			...init,
-			signal: mergeAbortSignals(AbortSignal.timeout(ms), init?.signal),
+			signal: mergeAbortSignals(AbortSignal.timeout(ms), init?.signal ?? undefined),
 		});
 
 const loadCachedOrFetch = async (
