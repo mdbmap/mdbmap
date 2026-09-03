@@ -283,6 +283,7 @@ const createServiceRatingsProvider = (
 		ttlSeconds = DEFAULT_TTL_SECONDS,
 		version = SNAPSHOT_VERSION,
 	} = deps;
+	const gatedAnidb = withAnidbLimiter(anidb);
 
 	const ratingsFor: ServiceRatingsProvider["ratingsFor"] = async (
 		unit,
@@ -296,7 +297,7 @@ const createServiceRatingsProvider = (
 		await Promise.all(
 			enqueueMemberFetches(
 				{
-					anidb: withAnidbLimiter(anidb),
+					anidb: gatedAnidb,
 					anilistUrl,
 					fetchFn,
 					imdbUrl,
