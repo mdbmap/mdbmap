@@ -3,7 +3,7 @@
 	"private": true,
 	"type": "module",
 	"scripts": {
-		"build": "vite build",
+		"build": "vite build && bash scripts/assert-no-devtools.sh",
 		"cf-typegen": "wrangler types",
 		"codegen": "graphql-codegen --config codegen.ts",
 		"codegen:watch": "graphql-codegen --config codegen.ts --watch",
