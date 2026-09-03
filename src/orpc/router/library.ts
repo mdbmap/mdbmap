@@ -1,4 +1,4 @@
-import { and, desc, eq, inArray } from "drizzle-orm";
+import { and, desc, eq } from "drizzle-orm";
 
 import { episodeProgress, personalRating, watchStatus } from "@/db/schema";
 import type { EngineRead, ResolveResult } from "@/engine";
@@ -14,37 +14,115 @@ import type { LibraryEntry } from "@/orpc/schema";
 type WatchStatusRow = typeof watchStatus.$inferSelect;
 
 interface TrackedContinuity {
+	readonly activityAt: Date | undefined;
 	readonly locators: readonly string[];
 	readonly resolved: ResolveResult;
 	readonly row: WatchStatusRow;
 }
 
-// A watch-status row whose continuity was merged away resolves to the survivor,
-// so the newest row for each survivor wins and the retired duplicate is dropped.
+const rowActivity = (row: WatchStatusRow): number =>
+	row.updatedAt?.getTime() ?? row.id;
+
+const preferStatusRow = (
+	canonicalId: string,
+	group: readonly TrackedContinuity[],
+): WatchStatusRow => {
+	for (const entry of group) {
+		if (entry.row.continuityKey === canonicalId) {
+			return entry.row;
+		}
+	}
+	let best = group[0]?.row;
+	if (best === undefined) {
+		throw new Error("expected at least one watch-status row");
+	}
+	for (const entry of group) {
+		if (rowActivity(entry.row) > rowActivity(best)) {
+			best = entry.row;
+		}
+	}
+	return best;
+};
+
+const resolveTrackedRow = async (
+	engine: EngineRead,
+	row: WatchStatusRow,
+): Promise<TrackedContinuity | undefined> => {
+	try {
+		const resolved = await engine.resolveContinuity(row.continuityKey);
+		return {
+			activityAt: row.updatedAt ?? undefined,
+			locators: instalmentsOf(resolved),
+			resolved,
+			row,
+		};
+	} catch {
+		return undefined;
+	}
+};
+
+const latestActivity = (
+	group: readonly TrackedContinuity[],
+): Date | undefined => {
+	let latest: Date | undefined;
+	for (const entry of group) {
+		const next = entry.activityAt;
+		if (next === undefined) {
+			continue;
+		}
+		if (latest === undefined || next.getTime() > latest.getTime()) {
+			latest = next;
+		}
+	}
+	return latest;
+};
+
+const collapseTracked = (
+	bySurvivor: Map<string, TrackedContinuity[]>,
+): TrackedContinuity[] => {
+	const collapsed: TrackedContinuity[] = [];
+	for (const [canonicalId, group] of bySurvivor) {
+		const [head] = group;
+		if (head === undefined) {
+			continue;
+		}
+		collapsed.push({
+			activityAt: latestActivity(group),
+			locators: head.locators,
+			resolved: head.resolved,
+			row: preferStatusRow(canonicalId, group),
+		});
+	}
+	return collapsed.toSorted((left, right) => {
+		const leftMs = left.activityAt?.getTime() ?? 0;
+		const rightMs = right.activityAt?.getTime() ?? 0;
+		if (leftMs !== rightMs) {
+			return rightMs - leftMs;
+		}
+		return right.row.id - left.row.id;
+	});
+};
+
 const trackedContinuities = async (
 	engine: EngineRead,
 	rows: readonly WatchStatusRow[],
 ): Promise<TrackedContinuity[]> => {
 	const settled = await Promise.all(
-		rows.map(async (row): Promise<TrackedContinuity | undefined> => {
-			try {
-				const resolved = await engine.resolveContinuity(row.continuityKey);
-				return { locators: instalmentsOf(resolved), resolved, row };
-			} catch {
-				return undefined;
-			}
-		}),
+		rows.map(async (row) => resolveTrackedRow(engine, row)),
 	);
-	const bySurvivor = new Map<string, TrackedContinuity>();
+	const bySurvivor = new Map<string, TrackedContinuity[]>();
 	for (const tracked of settled) {
-		if (
-			tracked !== undefined &&
-			!bySurvivor.has(tracked.resolved.continuityId)
-		) {
-			bySurvivor.set(tracked.resolved.continuityId, tracked);
+		if (tracked === undefined) {
+			continue;
+		}
+		const group = bySurvivor.get(tracked.resolved.continuityId);
+		if (group === undefined) {
+			bySurvivor.set(tracked.resolved.continuityId, [tracked]);
+		} else {
+			group.push(tracked);
 		}
 	}
-	return [...bySurvivor.values()];
+	return collapseTracked(bySurvivor);
 };
 
 const watchedLocators = async (
@@ -52,23 +130,18 @@ const watchedLocators = async (
 	userId: string,
 	tracked: readonly TrackedContinuity[],
 ): Promise<ReadonlySet<string>> => {
-	const locators = [
-		...new Set(tracked.flatMap((entry) => [...entry.locators])),
-	];
-	if (locators.length === 0) {
+	const locatorSet = new Set(tracked.flatMap((entry) => [...entry.locators]));
+	if (locatorSet.size === 0) {
 		return new Set();
 	}
 	const rows = await db
 		.select({ locator: episodeProgress.instalmentLocator })
 		.from(episodeProgress)
-		.where(
-			and(
-				eq(episodeProgress.userId, userId),
-				inArray(episodeProgress.instalmentLocator, locators),
-			),
-		)
+		.where(eq(episodeProgress.userId, userId))
 		.all();
-	return new Set(rows.map((row) => row.locator));
+	return new Set(
+		rows.map((row) => row.locator).filter((locator) => locatorSet.has(locator)),
+	);
 };
 
 const workRatings = async (
@@ -113,8 +186,6 @@ const ratingFor = async (
 	return undefined;
 };
 
-// One unreachable metadata provider must not blank the whole library, so a
-// failed fetch leaves that row untitled instead of rejecting the list.
 const workMetadata = async (
 	providers: Providers,
 	resolved: ResolveResult,

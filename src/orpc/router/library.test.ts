@@ -1,6 +1,7 @@
 import { createRouterClient } from "@orpc/server";
 import { describe, expect, it } from "vitest";
 
+import { continuityAliases } from "@/db/engine-schema";
 import {
 	episodeProgress,
 	personalRating,
@@ -10,9 +11,11 @@ import {
 import { freshDb } from "@/db/test-helpers";
 import type { ResolveResult } from "@/engine";
 import { createEngine } from "@/engine";
+import { parseContinuityKey } from "@/engine/continuity/keys";
 import {
 	seedCrossGroupContinuity,
 	seedSpyXFamily,
+	seedTmdbContinuity,
 } from "@/engine/test-continuity";
 import type { ORPCContext } from "@/orpc/context";
 import { instalmentsOf } from "@/orpc/instalments";
@@ -86,14 +89,14 @@ const track = async (
 	db: TestDb,
 	continuityKey: string,
 	updatedAt: Date,
-	rewatchCount = 0,
+	options: { rewatchCount?: number; status?: "completed" | "watching" } = {},
 ) => {
 	await db
 		.insert(watchStatus)
 		.values({
 			continuityKey,
-			rewatchCount,
-			status: "watching",
+			rewatchCount: options.rewatchCount ?? 0,
+			status: options.status ?? "watching",
 			updatedAt,
 			userId: "user-1",
 		})
@@ -103,11 +106,32 @@ const track = async (
 const locatorsFor = async (db: TestDb, continuityId: string) =>
 	instalmentsOf(await createEngine(db).resolveContinuity(continuityId));
 
+const retireInto = async (
+	db: TestDb,
+	survivorKey: string,
+	retiredKey: string,
+) => {
+	const survivorId = parseContinuityKey(survivorKey);
+	const retiredId = parseContinuityKey(retiredKey);
+	if (survivorId === undefined || retiredId === undefined) {
+		throw new Error("expected numeric continuity keys");
+	}
+	await db
+		.insert(continuityAliases)
+		.values({
+			retiredContinuityId: retiredId,
+			survivorContinuityId: survivorId,
+		})
+		.run();
+};
+
 describe("library.list", () => {
 	it("summarises a tracked continuity with progress and personal rating", async () => {
 		const db = await seededViewer();
 		const { continuityId } = await seedSpyXFamily(db);
-		await track(db, continuityId, new Date("2026-01-01T00:00:00Z"), 2);
+		await track(db, continuityId, new Date("2026-01-01T00:00:00Z"), {
+			rewatchCount: 2,
+		});
 		const locators = await locatorsFor(db, continuityId);
 		await db
 			.insert(episodeProgress)
@@ -202,5 +226,85 @@ describe("library.list", () => {
 		await expect(clientFor(db, undefined).library.list()).rejects.toThrow(
 			/sign in/iu,
 		);
+	});
+
+	it("collapses merged continuities and prefers the survivor status", async () => {
+		const db = await seededViewer();
+		const survivor = await seedSpyXFamily(db);
+		const retired = await seedCrossGroupContinuity(db);
+		await retireInto(db, survivor.continuityId, retired.continuityId);
+		await track(db, survivor.continuityId, new Date("2026-01-01T00:00:00Z"), {
+			status: "completed",
+		});
+		await track(db, retired.continuityId, new Date("2026-03-01T00:00:00Z"), {
+			status: "watching",
+		});
+
+		const entries = await clientFor(db, "user-1").library.list();
+
+		expect(entries).toHaveLength(1);
+		expect(entries[0]?.continuityId).toBe(survivor.continuityId);
+		expect(entries[0]?.status).toBe("completed");
+	});
+
+	it("returns a personal rating stored under a retired continuity key", async () => {
+		const db = await seededViewer();
+		const survivor = await seedSpyXFamily(db);
+		const retired = await seedCrossGroupContinuity(db);
+		await retireInto(db, survivor.continuityId, retired.continuityId);
+		await track(db, survivor.continuityId, new Date("2026-01-01T00:00:00Z"));
+		await db
+			.insert(personalRating)
+			.values({
+				score: 8,
+				unitKey: retired.continuityId,
+				unitKind: "work",
+				userId: "user-1",
+			})
+			.run();
+
+		const entries = await clientFor(db, "user-1").library.list();
+
+		expect(entries).toEqual([
+			expect.objectContaining({
+				continuityId: survivor.continuityId,
+				personalRating: 8,
+			}),
+		]);
+	});
+
+	it("loads progress for libraries whose instalment set exceeds D1 bind limits", async () => {
+		const db = await seededViewer();
+		const seeded = await Promise.all(
+			Array.from({ length: 101 }, async (_slot, index) =>
+				seedTmdbContinuity(db, "movie", String(90_000 + index)),
+			),
+		);
+		await Promise.all(
+			seeded.map(async ({ continuityId }, index) => {
+				await track(
+					db,
+					continuityId,
+					new Date(`2026-01-01T00:00:${String(index % 60).padStart(2, "0")}Z`),
+				);
+				const [locator] = await locatorsFor(db, continuityId);
+				if (locator === undefined) {
+					throw new Error("expected a film locator");
+				}
+				await db
+					.insert(episodeProgress)
+					.values({ instalmentLocator: locator, userId: "user-1" })
+					.run();
+			}),
+		);
+
+		const entries = await clientFor(db, "user-1").library.list();
+
+		expect(entries).toHaveLength(101);
+		let watchedTotal = 0;
+		for (const entry of entries) {
+			watchedTotal += entry.watchedInstalments;
+		}
+		expect(watchedTotal).toBe(101);
 	});
 });
