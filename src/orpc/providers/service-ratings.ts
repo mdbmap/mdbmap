@@ -107,16 +107,13 @@ const cacheKeyFor = (
 
 const FETCH_TIMEOUT_MS = 8000;
 
-const fetchWithTimeout = (fetchFn: typeof fetch, ms: number): typeof fetch => {
-	return (input, init) => {
-		const timeout = AbortSignal.timeout(ms);
-		const signal =
-			init?.signal === undefined
-				? timeout
-				: AbortSignal.any([init.signal, timeout]);
-		return fetchFn(input, { ...init, signal });
-	};
-};
+const fetchWithTimeout =
+	(fetchFn: typeof fetch, ms: number): typeof fetch =>
+	async (input, init) =>
+		fetchFn(input, {
+			...init,
+			signal: AbortSignal.timeout(ms),
+		});
 
 const loadCachedOrFetch = async (
 	kv: MetadataKv,
