@@ -13,11 +13,8 @@ import {
 	TextField,
 } from "react-aria-components";
 
-import { authClient } from "@/lib/auth-client";
-
-import { messageForAuthError } from "./auth-error.ts";
-
-type AuthMode = "sign-in" | "sign-up";
+import { submitAuth } from "./submit-auth.ts";
+import type { AuthFields, AuthMode } from "./submit-auth.ts";
 
 const COPY = {
 	createAccount: "Create account",
@@ -29,12 +26,6 @@ const COPY = {
 	signIn: "Sign in",
 	submitting: "Working…",
 } as const;
-
-interface AuthFields {
-	email: string;
-	name: string;
-	password: string;
-}
 
 const emptyFields = (): AuthFields => ({
 	email: "",
@@ -118,27 +109,6 @@ function AuthFormFields({
 			/>
 		</>
 	);
-}
-
-async function submitAuth(
-	mode: AuthMode,
-	fields: AuthFields,
-): Promise<string | undefined> {
-	const result =
-		mode === "sign-up"
-			? await authClient.signUp.email({
-					email: fields.email,
-					name: fields.name,
-					password: fields.password,
-				})
-			: await authClient.signIn.email({
-					email: fields.email,
-					password: fields.password,
-				});
-	if (result.error) {
-		return messageForAuthError(result.error);
-	}
-	return undefined;
 }
 
 function useAuthFields() {
