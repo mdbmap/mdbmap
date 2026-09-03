@@ -13,6 +13,7 @@ import {
 	TextField,
 } from "react-aria-components";
 
+import { messageForAuthError } from "./auth-error.ts";
 import { submitAuth } from "./submit-auth.ts";
 import type { AuthFields, AuthMode } from "./submit-auth.ts";
 
@@ -178,6 +179,17 @@ function AuthDialogView({
 	);
 }
 
+async function runAuthSubmit(
+	mode: AuthMode,
+	fields: AuthFields,
+): Promise<string | undefined> {
+	try {
+		return await submitAuth(mode, fields);
+	} catch {
+		return messageForAuthError({});
+	}
+}
+
 interface AuthDialogFormProps {
 	close: () => void;
 }
@@ -203,7 +215,7 @@ function AuthDialogForm({ close }: AuthDialogFormProps) {
 			setPending(true);
 			setError(undefined);
 			void (async () => {
-				const nextError = await submitAuth(mode, fields);
+				const nextError = await runAuthSubmit(mode, fields);
 				setPending(false);
 				if (nextError !== undefined) {
 					setError(nextError);
