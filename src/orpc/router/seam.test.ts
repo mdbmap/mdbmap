@@ -43,7 +43,10 @@ const stubRating = {
 const stubRatings: Providers = {
 	...defaultProviders,
 	serviceRatings: {
-		ratingsFor:  () => [stubRating],
+		ratingsFor: async () => {
+			await Promise.resolve();
+			return [stubRating];
+		},
 	},
 };
 
