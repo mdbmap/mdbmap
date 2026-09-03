@@ -1,4 +1,4 @@
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import type { SyntheticEvent } from "react";
 import {
 	Button,
@@ -13,8 +13,7 @@ import {
 	TextField,
 } from "react-aria-components";
 
-import { messageForAuthError } from "./auth-error.ts";
-import { submitAuth } from "./submit-auth.ts";
+import { startAuthAttempt } from "./auth-attempt.ts";
 import type { AuthFields, AuthMode } from "./submit-auth.ts";
 
 const COPY = {
@@ -172,32 +171,39 @@ function AuthDialogView({
 					{pending ? COPY.submitting : heading}
 				</Button>
 			</Form>
-			<button data-auth-switch type="button" onClick={handleToggleMode}>
+			<button
+				data-auth-switch
+				disabled={pending}
+				type="button"
+				onClick={handleToggleMode}
+			>
 				{switchLabel}
 			</button>
 		</>
 	);
 }
 
-async function runAuthSubmit(
-	mode: AuthMode,
-	fields: AuthFields,
-): Promise<string | undefined> {
-	try {
-		return await submitAuth(mode, fields);
-	} catch {
-		return messageForAuthError({});
-	}
-}
-
 interface AuthDialogFormProps {
 	close: () => void;
+}
+
+function useAliveRef() {
+	const alive = useRef(true);
+	useEffect(() => {
+		alive.current = true;
+		return () => {
+			alive.current = false;
+		};
+	}, []);
+	return alive;
 }
 
 function AuthDialogForm({ close }: AuthDialogFormProps) {
 	const [mode, setMode] = useState<AuthMode>("sign-in");
 	const [error, setError] = useState<string | undefined>();
 	const [pending, setPending] = useState(false);
+	const inFlight = useRef(false);
+	const mounted = useAliveRef();
 	const { fields, handleEmail, handleName, handlePassword, resetFields } =
 		useAuthFields();
 
@@ -209,23 +215,18 @@ function AuthDialogForm({ close }: AuthDialogFormProps) {
 	const handleSubmit = useCallback(
 		(event: SyntheticEvent<HTMLFormElement>) => {
 			event.preventDefault();
-			if (pending) {
-				return;
-			}
-			setPending(true);
-			setError(undefined);
-			void (async () => {
-				const nextError = await runAuthSubmit(mode, fields);
-				setPending(false);
-				if (nextError !== undefined) {
-					setError(nextError);
-					return;
-				}
-				resetFields();
-				close();
-			})();
+			startAuthAttempt({
+				close,
+				fields,
+				inFlight,
+				mode,
+				mounted,
+				resetFields,
+				setError,
+				setPending,
+			});
 		},
-		[close, fields, mode, pending, resetFields],
+		[close, fields, inFlight, mode, mounted, resetFields],
 	);
 
 	return (

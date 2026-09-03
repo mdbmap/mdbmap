@@ -256,7 +256,12 @@
 		background: transparent;
 	}
 
-	[data-auth-dialog] [data-auth-switch]:hover {
+	[data-auth-dialog] [data-auth-switch]:disabled {
+		cursor: not-allowed;
+		opacity: 0.5;
+	}
+
+	[data-auth-dialog] [data-auth-switch]:hover:not(:disabled) {
 		color: var(--color-accent);
 	}
 }

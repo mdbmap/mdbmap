@@ -31,13 +31,13 @@ describe("submitAuth", () => {
 		await expect(submitAuth("sign-in", fields)).resolves.toBeUndefined();
 	});
 
-	it("maps handled auth errors", async () => {
-		signInEmail.mockResolvedValue({
+	it("maps duplicate email on sign-up", async () => {
+		signUpEmail.mockResolvedValue({
 			data: undefined,
-			error: { code: "INVALID_EMAIL_OR_PASSWORD" },
+			error: { code: "USER_ALREADY_EXISTS" },
 		});
-		await expect(submitAuth("sign-in", fields)).resolves.toBe(
-			"Invalid email or password.",
+		await expect(submitAuth("sign-up", fields)).resolves.toBe(
+			"An account with this email already exists.",
 		);
 	});
 
