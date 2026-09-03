@@ -105,28 +105,17 @@ const cacheKeyFor = (
 	id: string,
 ) => `${service}:${id}`;
 
-const FETCH_TIMEOUT_MS = 8_000;
+const FETCH_TIMEOUT_MS = 8000;
 
-const withTimeout = async <T,>(
-	task: Promise<T>,
-	ms: number,
-	fallback: T,
-): Promise<T> => {
-	let timer: ReturnType<typeof setTimeout> | undefined;
-	try {
-		return await Promise.race([
-			task,
-			new Promise<T>((resolve) => {
-				timer = setTimeout(() => {
-					resolve(fallback);
-				}, ms);
-			}),
-		]);
-	} finally {
-		if (timer !== undefined) {
-			clearTimeout(timer);
-		}
-	}
+const fetchWithTimeout = (fetchFn: typeof fetch, ms: number): typeof fetch => {
+	return (input, init) => {
+		const timeout = AbortSignal.timeout(ms);
+		const signal =
+			init?.signal === undefined
+				? timeout
+				: AbortSignal.any([init.signal, timeout]);
+		return fetchFn(input, { ...init, signal });
+	};
 };
 
 const loadCachedOrFetch = async (
@@ -143,7 +132,7 @@ const loadCachedOrFetch = async (
 	}
 	let ratings: readonly ServiceRating[];
 	try {
-		ratings = await withTimeout(fetchLive(), FETCH_TIMEOUT_MS, []);
+		ratings = await fetchLive();
 	} catch {
 		return [];
 	}
@@ -212,6 +201,7 @@ const enqueueMemberFetches = (
 	byService: Map<RatedService, ServiceRating>,
 ): Promise<void>[] => {
 	const tasks: Promise<void>[] = [];
+	const fetchFn = fetchWithTimeout(plan.fetchFn, FETCH_TIMEOUT_MS);
 	if (members.tmdb !== undefined && plan.tmdbApiKey !== undefined) {
 		const id = members.tmdb;
 		const apiKey = plan.tmdbApiKey;
@@ -220,25 +210,25 @@ const enqueueMemberFetches = (
 			plan,
 			byService,
 			`${cacheKeyFor("tmdb", id)}:${unit.kind}`,
-			async () => fetchTmdb(id, unit, apiKey, plan.fetchFn, plan.tmdbBaseUrl),
+			async () => fetchTmdb(id, unit, apiKey, fetchFn, plan.tmdbBaseUrl),
 		);
 	}
 	if (members.imdb !== undefined) {
 		const id = members.imdb;
 		enqueue(tasks, plan, byService, cacheKeyFor("imdb", id), async () =>
-			fetchImdbBundle(id, plan.fetchFn, plan.imdbUrl),
+			fetchImdbBundle(id, fetchFn, plan.imdbUrl),
 		);
 	}
 	if (members.mal !== undefined) {
 		const id = members.mal;
 		enqueue(tasks, plan, byService, cacheKeyFor("mal", id), async () =>
-			fetchMal(id, plan.fetchFn, plan.jikanUrl),
+			fetchMal(id, fetchFn, plan.jikanUrl),
 		);
 	}
 	if (members.anilist !== undefined) {
 		const id = members.anilist;
 		enqueue(tasks, plan, byService, cacheKeyFor("anilist", id), async () =>
-			fetchAnilist(id, plan.fetchFn, plan.anilistUrl),
+			fetchAnilist(id, fetchFn, plan.anilistUrl),
 		);
 	}
 	if (
@@ -248,7 +238,7 @@ const enqueueMemberFetches = (
 	) {
 		const id = members.anidb;
 		enqueue(tasks, plan, byService, cacheKeyFor("anidb", id), async () =>
-			fetchAnidb(id, plan.anidb, plan.fetchFn),
+			fetchAnidb(id, plan.anidb, fetchFn),
 		);
 	}
 	return tasks;
