@@ -24,9 +24,10 @@ import type {
 type TitleRow = typeof serviceTitles.$inferSelect;
 type UnitId = string;
 
-// Services the seam surfaces as members; other spokes in a group (imdb, tvdb,
-// kitsu) resolve too but have no MemberTitles slot to carry them.
-const memberServices = ["anidb", "anilist", "mal", "tmdb"] as const;
+// Services the seam surfaces as members; other spokes in a group (tvdb, kitsu)
+// resolve too but have no MemberTitles slot to carry them. IMDb feeds both the
+// IMDb user rating and Metacritic critic score (ADR-0007).
+const memberServices = ["anidb", "anilist", "imdb", "mal", "tmdb"] as const;
 type MemberService = (typeof memberServices)[number];
 
 const animeServices = new Set<string>(["anidb", "anilist", "kitsu", "mal"]);

@@ -12,6 +12,8 @@ import { createEngine } from "@/engine";
 import { seedSpyXFamily } from "@/engine/test-continuity";
 import type { ORPCContext } from "@/orpc/context";
 import { instalmentsOf } from "@/orpc/instalments";
+import { defaultProviders } from "@/orpc/providers";
+import type { Providers } from "@/orpc/providers";
 
 import { router } from "./index.ts";
 
@@ -30,13 +32,33 @@ const locatorsFor = async (
 	continuityId: string,
 ) => instalmentsOf(await createEngine(db).resolveContinuity(continuityId));
 
+const stubRating = {
+	kind: "user" as const,
+	scale: 10,
+	score: 8.5,
+	service: "mal",
+	votes: 1000,
+};
+
+const stubRatings: Providers = {
+	...defaultProviders,
+	serviceRatings: {
+		ratingsFor: async () => {
+			await Promise.resolve();
+			return [stubRating];
+		},
+	},
+};
+
 const clientFor = (
 	db: Awaited<ReturnType<typeof seeded>>["db"],
 	userId: string | undefined,
+	providers: Providers = stubRatings,
 ) =>
 	createRouterClient(router, {
 		context: {
 			db,
+			providers,
 			resolveSession: () => (userId === undefined ? undefined : { id: userId }),
 		} satisfies ORPCContext,
 	});
@@ -119,7 +141,7 @@ describe("tracking + work.get seam", () => {
 
 	it("serves metadata and ratings but no viewer when unauthenticated", async () => {
 		const { continuityId, db } = await seeded();
-		const client = clientFor(db, undefined);
+		const client = clientFor(db, undefined, stubRatings);
 
 		await db
 			.insert(personalRating)
