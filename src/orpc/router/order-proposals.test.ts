@@ -296,3 +296,23 @@ describe("orderProposals happy path", () => {
 		});
 	});
 });
+
+describe("orderProposals.listPending", () => {
+	it("returns pending proposals for admins only", async () => {
+		const db = await freshDb();
+		const seeded = await seedContinuity(db, 2);
+		const member = clientFor(db, memberUser);
+		const admin = clientFor(db, adminUser);
+		await member.orderProposals.create({
+			continuityId: seeded.continuityId,
+			name: "Queue me",
+			rationale: "Needs review",
+			segmentIds: seeded.segments.map((segment) => segment.id),
+		});
+		await expect(member.orderProposals.listPending()).rejects.toMatchObject({
+			code: "FORBIDDEN",
+		});
+		const pending = await admin.orderProposals.listPending();
+		expect(pending.map((row) => row.name)).toContain("Queue me");
+	});
+});
