@@ -390,12 +390,13 @@ describe("library.list", () => {
 			.run();
 		const client = clientFor(db, "user-1");
 		const byTitle = await client.library.list({ sort: "title" });
-		const titles = byTitle.map((row) => row.title ?? "");
-		expect(titles).toEqual(
-			[...titles].toSorted((left, right) =>
-				left.localeCompare(right, undefined, { sensitivity: "base" }),
-			),
+		const expectedTitles = [
+			`Work ${spy.continuityId}`,
+			`Work ${tmdb.continuityId}`,
+		].toSorted((left, right) =>
+			left.localeCompare(right, undefined, { sensitivity: "base" }),
 		);
+		expect(byTitle.map((row) => row.title)).toEqual(expectedTitles);
 		const byRating = await client.library.list({ sort: "rating" });
 		expect(byRating.map((row) => row.personalRating)).toEqual([9, 4]);
 	});

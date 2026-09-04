@@ -312,13 +312,18 @@ const sortEntries = (
 	entries: LibraryEntry[],
 	sort: LibrarySort | undefined,
 ): LibraryEntry[] => {
-	if (sort === undefined || sort === "activity") {
-		return entries;
+	switch (sort) {
+		case undefined:
+		case "activity": {
+			return entries;
+		}
+		case "title": {
+			return entries.toSorted(compareTitle);
+		}
+		case "rating": {
+			return entries.toSorted(compareRating);
+		}
 	}
-	if (sort === "title") {
-		return entries.toSorted(compareTitle);
-	}
-	return entries.toSorted(compareRating);
 };
 
 const list = authed
@@ -332,15 +337,19 @@ const list = authed
 			.orderBy(desc(watchStatus.updatedAt), desc(watchStatus.id))
 			.all();
 		const tracked = await trackedContinuities(context.engine, rows);
+		const scoped =
+			input.status === undefined
+				? tracked
+				: tracked.filter((entry) => entry.row.status === input.status);
 		const survivorIds = [
 			...new Set(
-				tracked
+				scoped
 					.map((entry) => parseContinuityKey(entry.resolved.continuityId))
 					.filter((id): id is number => id !== undefined),
 			),
 		];
 		const [watched, ratings] = await Promise.all([
-			watchedLocators(context.db, userId, tracked),
+			watchedLocators(context.db, userId, scoped),
 			workRatings(context.db, userId),
 		]);
 		const aliases =
@@ -348,15 +357,11 @@ const list = authed
 				? new Map<number, readonly `continuity:${number}`[]>()
 				: await retiredKeysBySurvivor(context.db, survivorIds);
 		const entries = await Promise.all(
-			tracked.map(async (entry) =>
+			scoped.map(async (entry) =>
 				toEntry(context.providers, ratings, aliases, watched, entry),
 			),
 		);
-		const filtered =
-			input.status === undefined
-				? entries
-				: entries.filter((entry) => entry.status === input.status);
-		return sortEntries(filtered, input.sort);
+		return sortEntries(entries, input.sort);
 	});
 
 const library = { list };

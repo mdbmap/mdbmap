@@ -12,11 +12,6 @@ import { orpc } from "@/orpc/client";
 // Sign-in is the AuthDialog on the home page, not a route of its own.
 const SIGN_IN_HREF = "/?signin=1";
 
-const libraryLoaderDeps = (opts: { search: LibrarySearch }): LibrarySearch => ({
-	...(opts.search.sort === undefined ? {} : { sort: opts.search.sort }),
-	...(opts.search.status === undefined ? {} : { status: opts.search.status }),
-});
-
 export const Route = createFileRoute("/library")({
 	beforeLoad: async () => {
 		if (!(await viewerIsSignedIn())) {
@@ -26,8 +21,9 @@ export const Route = createFileRoute("/library")({
 	component: LibraryRoute,
 	loader: async ({ context, deps }) =>
 		context.queryClient.ensureQueryData(
-			orpc.library.list.queryOptions({ input: libraryListInput(deps) }),
+			orpc.library.list.queryOptions({ input: deps }),
 		),
-	loaderDeps: libraryLoaderDeps,
+	loaderDeps: ({ search }: { search: LibrarySearch }) =>
+		libraryListInput(search),
 	validateSearch: parseLibrarySearch,
 });
