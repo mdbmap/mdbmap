@@ -12,6 +12,12 @@ const noop = () => {
 	/* empty */
 };
 
+vi.mock("@tanstack/react-router", () => ({
+	Link: ({ children, to }: { children: ReactNode; to: string }) => (
+		<a href={to}>{children}</a>
+	),
+}));
+
 vi.mock("@/lib/auth-client", () => ({
 	authClient: {
 		signIn: { email: vi.fn() },
@@ -88,6 +94,8 @@ describe("BetterAuthHeader", () => {
 		expect(html).toContain("Ada");
 		expect(html).toContain("Settings");
 		expect(html).toContain("Sign out");
+		expect(html).toContain("Settings");
+		expect(html).toContain('href="/settings"');
 		expect(html).not.toContain("Sign in");
 	});
 });
