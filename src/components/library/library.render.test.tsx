@@ -112,6 +112,11 @@ describe("LibraryPage rows", () => {
 		expect(html).toContain("Watching");
 		expect(html).toContain("Recent activity");
 	});
+
+	it("links to the stats page from the header", () => {
+		expect(html).toContain("Stats");
+		expect(html).toContain('href="/stats"');
+	});
 });
 
 describe("LibraryPage empty states", () => {
