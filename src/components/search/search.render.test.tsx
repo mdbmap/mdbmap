@@ -29,6 +29,15 @@ vi.mock("@/integrations/better-auth/header-user", () => ({
 	BetterAuthHeader: () => false,
 }));
 
+vi.mock("@/lib/auth-client", () => ({
+	authClient: {
+		useSession: () => ({
+			data: undefined,
+			isPending: false,
+		}),
+	},
+}));
+
 vi.mock("./use-open-hit", () => ({
 	useOpenHit: () => ({
 		onOpen: () => {
@@ -100,6 +109,11 @@ describe("SearchPage idle", () => {
 		expect(html).toContain("Type a title to search.");
 		expect(html).toContain('type="search"');
 		expect(html).not.toContain("/work/");
+	});
+
+	it("links the brand home and search in the site header", () => {
+		expect(html).toContain('href="/"');
+		expect(html).toContain('href="/search"');
 	});
 });
 

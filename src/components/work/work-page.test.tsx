@@ -1,4 +1,5 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import type { ReactNode } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
 
@@ -7,8 +8,23 @@ import type { WorkView } from "@/orpc/schema";
 
 import { WorkPage } from "./work-page";
 
+vi.mock("@tanstack/react-router", () => ({
+	Link: ({ children, to }: { children: ReactNode; to: string }) => (
+		<a href={to}>{children}</a>
+	),
+}));
+
 vi.mock("@/integrations/better-auth/header-user", () => ({
 	BetterAuthHeader: () => false,
+}));
+
+vi.mock("@/lib/auth-client", () => ({
+	authClient: {
+		useSession: () => ({
+			data: undefined,
+			isPending: false,
+		}),
+	},
 }));
 
 const emptyScore = { count: 0, mean: undefined };
@@ -95,6 +111,12 @@ describe("WorkPage shell", () => {
 		expect(html).toContain("Cast");
 		expect(html).toContain("You");
 		expect(html).toContain("this part");
+	});
+
+	it("links the brand home and search in the site header", () => {
+		expect(html).toContain('href="/"');
+		expect(html).toContain('href="/search"');
+		expect(html).not.toContain('href="/library"');
 	});
 });
 

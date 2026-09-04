@@ -31,6 +31,15 @@ vi.mock("@/integrations/better-auth/header-user", () => ({
 	BetterAuthHeader: () => false,
 }));
 
+vi.mock("@/lib/auth-client", () => ({
+	authClient: {
+		useSession: () => ({
+			data: undefined,
+			isPending: false,
+		}),
+	},
+}));
+
 const NO_ENTRIES: LibraryEntry[] = [];
 
 const entry = (overrides: Partial<LibraryEntry> = {}): LibraryEntry => ({
@@ -92,6 +101,12 @@ describe("LibraryPage rows", () => {
 	it("counts the tracked works in the header", () => {
 		expect(html).toContain("3 works");
 	});
+
+	it("links the brand home and search in the site header", () => {
+		expect(html).toContain('href="/"');
+		expect(html).toContain('href="/search"');
+		expect(html).not.toContain('href="/library"');
+	});
 });
 
 describe("LibraryPage empty state", () => {
@@ -103,7 +118,7 @@ describe("LibraryPage empty state", () => {
 		expect(html).toContain("Search catalogues");
 		expect(html).toContain('href="/search"');
 		expect(html).toContain("data-cta");
-		expect(html).not.toContain('href="/"');
+		expect(html).toContain('href="/"');
 		expect(html).not.toContain("/work/");
 	});
 });

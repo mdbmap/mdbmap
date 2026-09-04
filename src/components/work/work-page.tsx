@@ -1,37 +1,10 @@
-import { ThemeToggle } from "@/components/ui/theme-toggle";
+import { SiteHeader } from "@/components/site-header";
 import type { PresentationOrderSlug } from "@/db/engine-schema";
-import { BetterAuthHeader } from "@/integrations/better-auth/header-user";
 import type { WorkView } from "@/orpc/schema";
 
 import { Banner } from "./banner";
 import { WorkLayout } from "./layout";
 import { totalEpisodes } from "./parts";
-
-const BRAND = "mdbmap";
-const SEARCH_NAV = "Search";
-const SEARCH_PATH = "/search";
-
-function WorkHeader() {
-	return (
-		<header className="flex items-center justify-between px-8 py-3.5">
-			<nav className="flex items-center gap-5">
-				<span className="text-accent font-mono text-xs font-medium tracking-[0.1em] uppercase">
-					{BRAND}
-				</span>
-				<a
-					className="text-ink/50 hover:text-accent font-mono text-xs tracking-[0.1em] uppercase"
-					href={SEARCH_PATH}
-				>
-					{SEARCH_NAV}
-				</a>
-			</nav>
-			<div className="flex items-center gap-4">
-				<BetterAuthHeader />
-				<ThemeToggle />
-			</div>
-		</header>
-	);
-}
 
 interface WorkPageProps {
 	onSelectOrder?: ((order: PresentationOrderSlug) => void) | undefined;
@@ -48,7 +21,7 @@ export function WorkPage({
 }: WorkPageProps) {
 	return (
 		<main className="mx-auto min-h-screen max-w-[1200px] pb-24">
-			<WorkHeader />
+			<SiteHeader />
 			<Banner
 				episodeTotal={totalEpisodes(work.parts)}
 				header={work.header}

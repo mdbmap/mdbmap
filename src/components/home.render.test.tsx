@@ -12,6 +12,12 @@ const noop = () => {
 	/* empty */
 };
 
+vi.mock("@tanstack/react-router", () => ({
+	Link: ({ children, to }: { children: ReactNode; to: string }) => (
+		<a href={to}>{children}</a>
+	),
+}));
+
 vi.mock("@/lib/auth-client", () => ({
 	authClient: {
 		signIn: { email: vi.fn() },
@@ -94,6 +100,7 @@ describe("Home", () => {
 		expect(html).toContain("Television");
 		expect(html).toContain("Film");
 		expect(html).toContain("Anime");
+		expect(html).toContain('href="/"');
 		expect(html).toContain('href="/search"');
 		expect(html).not.toContain("Design system");
 	});
@@ -119,6 +126,7 @@ describe("Home CTAs", () => {
 		const html = renderToStaticMarkup(<Home />);
 		expect(html).toContain("Sign in to start tracking");
 		expect(html).toContain("Search catalogues");
+		expect(html).toContain('href="/"');
 		expect(html).toContain('href="/search"');
 		expect(html).not.toContain('href="/library"');
 	});
@@ -126,6 +134,7 @@ describe("Home CTAs", () => {
 	it("offers library and search when signed in", () => {
 		useSession.mockReturnValue(signedIn);
 		const html = renderToStaticMarkup(<Home />);
+		expect(html).toContain('href="/"');
 		expect(html).toContain('href="/library"');
 		expect(html).toContain("Open your library");
 		expect(html).toContain("Search catalogues");
@@ -143,6 +152,8 @@ describe("Home CTAs", () => {
 		expect(html).toContain("animate-pulse");
 		expect(html).not.toContain("Sign in to start tracking");
 		expect(html).not.toContain("Search catalogues");
+		expect(html).toContain('href="/"');
+		expect(html).toContain('href="/search"');
 		expect(html).not.toContain('href="/library"');
 	});
 });
