@@ -9,7 +9,6 @@ import {
 import type { WatchStatus } from "@/db/schema";
 import { episodeProgress, personalRating, watchStatus } from "@/db/schema";
 import type { EngineRead, ResolveResult, Segment } from "@/engine";
-import { metadataProviderFor } from "@/engine";
 import { parseContinuityKey } from "@/engine/continuity/keys";
 import { isMissingContinuity } from "@/engine/continuity/missing";
 import {

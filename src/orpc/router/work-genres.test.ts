@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 
 import { freshDb } from "@/db/test-helpers";
 import { seedSpyXFamily } from "@/engine/test-continuity";
-import type { ORPCContext } from "@/orpc/context";
+import type { ORPCContext, SessionUser } from "@/orpc/context";
 import { defaultProviders } from "@/orpc/providers";
 import type { Providers, WorkMetadata } from "@/orpc/providers";
 import type { Similar } from "@/orpc/schema";
@@ -30,12 +30,13 @@ const metadataFor = (ifYouLiked: readonly Similar[]): WorkMetadata => ({
 const clientFor = (
 	db: Awaited<ReturnType<typeof freshDb>>,
 	providers: Providers,
+	user?: SessionUser,
 ) =>
 	createRouterClient(router, {
 		context: {
 			db,
 			providers,
-			resolveSession: () => {},
+			resolveSession: () => user,
 		} satisfies ORPCContext,
 	});
 
