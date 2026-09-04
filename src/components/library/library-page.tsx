@@ -19,6 +19,8 @@ const EMPTY_BODY =
 const EMPTY_CTA = "Search catalogues";
 const SEARCH_NAV = "Search";
 const SEARCH_PATH = "/search";
+const STATS_NAV = "Stats";
+const STATS_PATH = "/stats";
 const UNTITLED = "Title unavailable";
 const UNRATED = "—";
 const OUT_OF_TEN = "/10";
@@ -102,6 +104,16 @@ function LibraryRow({ entry, hue }: { entry: LibraryEntry; hue: string }) {
 	);
 }
 
+function StatsNavLink() {
+	return (
+		<Link to={STATS_PATH}>
+			<span className="text-ink/50 hover:text-accent font-mono text-xs tracking-[0.1em] uppercase">
+				{STATS_NAV}
+			</span>
+		</Link>
+	);
+}
+
 function LibraryHeader() {
 	return (
 		<header className="flex items-center justify-between px-8 py-3.5">
@@ -115,6 +127,7 @@ function LibraryHeader() {
 				>
 					{SEARCH_NAV}
 				</a>
+				<StatsNavLink />
 			</nav>
 			<div className="flex items-center gap-4">
 				<BetterAuthHeader />

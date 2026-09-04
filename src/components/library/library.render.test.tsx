@@ -92,6 +92,11 @@ describe("LibraryPage rows", () => {
 	it("counts the tracked works in the header", () => {
 		expect(html).toContain("3 works");
 	});
+
+	it("links to the stats page from the header", () => {
+		expect(html).toContain("Stats");
+		expect(html).toContain('href="/stats"');
+	});
 });
 
 describe("LibraryPage empty state", () => {
