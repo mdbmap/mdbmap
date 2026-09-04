@@ -22,6 +22,7 @@ const part = (key: string): PartView => ({
 
 const work = (): WorkView => ({
 	cast: [],
+	communityScore: emptyScore,
 	continuityId: "continuity:x",
 	header: {
 		backdropRef: undefined,

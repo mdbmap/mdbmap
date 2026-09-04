@@ -45,6 +45,7 @@ function Sidebar({ order, work }: WorkLayoutProps) {
 	return (
 		<div className="flex flex-col gap-6 px-8 pt-6">
 			<YouBlock
+				communityScore={work.communityScore}
 				continuityId={work.continuityId}
 				order={order}
 				parts={work.parts}

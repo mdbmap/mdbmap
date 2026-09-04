@@ -5,8 +5,14 @@ import { totalEpisodes } from "@/components/work/parts";
 import type { PresentationOrderSlug } from "@/db/engine-schema";
 import type { WatchStatus } from "@/db/schema";
 import { useRequireAuth } from "@/integrations/better-auth/require-auth";
-import type { RateableUnit, ViewerTracking, WorkBlock } from "@/orpc/schema";
+import type {
+	CommunityScore,
+	RateableUnit,
+	ViewerTracking,
+	WorkBlock,
+} from "@/orpc/schema";
 
+import { CommunityRow } from "./community-row";
 import { ScoreSelect } from "./score-select";
 import { StatusSelect } from "./status-select";
 import { useWorkTracking } from "./use-work-tracking";
@@ -61,13 +67,20 @@ function RewatchStepper({ count, onChange }: RewatchStepperProps) {
 }
 
 interface YouBlockProps {
+	communityScore: CommunityScore;
 	continuityId: string;
 	order?: PresentationOrderSlug | undefined;
 	parts: WorkBlock[];
 	viewer: ViewerTracking | undefined;
 }
 
-function YouBlock({ continuityId, order, parts, viewer }: YouBlockProps) {
+function YouBlock({
+	communityScore,
+	continuityId,
+	order,
+	parts,
+	viewer,
+}: YouBlockProps) {
 	const { authDialog, requireAuth } = useRequireAuth();
 	const { setRating, setRewatch, setStatus } = useWorkTracking(
 		continuityId,
@@ -110,7 +123,8 @@ function YouBlock({ continuityId, order, parts, viewer }: YouBlockProps) {
 	return (
 		<div>
 			<Label>{HEADING}</Label>
-			<div className="mt-2 flex items-baseline gap-1.5">
+			<CommunityRow count={communityScore.count} mean={communityScore.mean} />
+			<div className="mt-3 flex items-baseline gap-1.5">
 				<ScoreSelect
 					label="Your score"
 					onChange={rateWork}

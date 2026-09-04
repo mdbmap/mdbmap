@@ -99,6 +99,9 @@ describe("tracking + work.get seam", () => {
 
 		await client.tracking.setRating({ score: 9, unit });
 		expect(await db.select().from(personalRating).all()).toHaveLength(1);
+		const rated = await client.work.get({ continuityId });
+		expect(rated.communityScore).toEqual({ count: 1, mean: 9 });
+		expect(rated.viewer?.personalRating).toBe(9);
 
 		await client.tracking.setRating({ unit });
 		expect(await db.select().from(personalRating).all()).toHaveLength(0);
@@ -156,6 +159,7 @@ describe("tracking + work.get seam", () => {
 		const view = await client.work.get({ continuityId });
 		expect(view.viewer).toBeUndefined();
 		expect(view.header.title).toBe("Spy × Family");
+		expect(view.communityScore).toEqual({ count: 0, mean: undefined });
 		expect(view.parts[0]?.serviceRatings.length).toBeGreaterThan(0);
 		expect(view.parts[0]?.communityScore.count).toBeGreaterThan(0);
 		expect(view.parts[0]?.episodes.every((episode) => !episode.watched)).toBe(
