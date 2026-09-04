@@ -531,9 +531,8 @@
 					"name": "processed_at",
 					"type": "integer",
 					"primaryKey": false,
-					"notNull": true,
-					"autoincrement": false,
-					"default": "(unixepoch())"
+					"notNull": false,
+					"autoincrement": false
 				},
 				"type": {
 					"name": "type",

@@ -29,16 +29,12 @@ const linkedCustomerId = (
 	return value;
 };
 
-const resolveReturnOrigin = (headers: Headers | undefined): string => {
+const resolveReturnOrigin = (): string => {
 	const configured = env.SERVER_URL;
-	if (configured !== undefined) {
-		return configured.replace(/\/$/u, "");
+	if (configured === undefined) {
+		throw billingConfigError("SERVER_URL is not configured.");
 	}
-	const origin = headers?.get("origin");
-	if (origin !== null && origin !== undefined && origin.length > 0) {
-		return origin.replace(/\/$/u, "");
-	}
-	throw billingConfigError("SERVER_URL is not configured.");
+	return configured.replace(/\/$/u, "");
 };
 
 const createCheckoutSession = async (
@@ -46,7 +42,6 @@ const createCheckoutSession = async (
 	input: { headers: Headers | undefined; userId: string },
 	stripe?: Stripe,
 ): Promise<CheckoutResult> => {
-	const returnOrigin = resolveReturnOrigin(input.headers);
 	const existing = await db
 		.select({
 			status: syncEntitlement.status,
@@ -58,6 +53,7 @@ const createCheckoutSession = async (
 	if (existing?.status === "active") {
 		throw billingAlreadyActiveError();
 	}
+	const returnOrigin = resolveReturnOrigin();
 
 	const client = stripe ?? createStripe();
 	const params: Stripe.Checkout.SessionCreateParams = {
@@ -86,7 +82,6 @@ const createPortalSession = async (
 	input: { headers: Headers | undefined; userId: string },
 	stripe?: Stripe,
 ): Promise<PortalResult> => {
-	const returnOrigin = resolveReturnOrigin(input.headers);
 	const existing = await db
 		.select({ stripeCustomerId: syncEntitlement.stripeCustomerId })
 		.from(syncEntitlement)
@@ -96,6 +91,7 @@ const createPortalSession = async (
 	if (customerId === undefined) {
 		throw billingCustomerMissingError();
 	}
+	const returnOrigin = resolveReturnOrigin();
 	const client = stripe ?? createStripe();
 	const session = await client.billingPortal.sessions.create({
 		customer: customerId,

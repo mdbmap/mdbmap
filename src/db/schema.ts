@@ -243,7 +243,7 @@ const syncEntitlement = sqliteTable("sync_entitlement", {
 // ADR-0009: webhook handlers are idempotent on Stripe event id.
 const stripeWebhookEvent = sqliteTable("stripe_webhook_event", {
 	id: text().primaryKey(),
-	processedAt: timestamp("processed_at"),
+	processedAt: integer("processed_at", { mode: "timestamp" }),
 	type: text().notNull(),
 });
 

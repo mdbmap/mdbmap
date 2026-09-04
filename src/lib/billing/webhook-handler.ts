@@ -46,6 +46,9 @@ const handleStripeWebhook = async (
 	};
 	try {
 		const result = await applyStripeEvent(db, stripeEvent);
+		if (result === "in_flight") {
+			return Response.json({ result }, { status: 500 });
+		}
 		return Response.json({ result }, { status: 200 });
 	} catch (error) {
 		if (error instanceof BillingError && error.code === "unresolved_subject") {

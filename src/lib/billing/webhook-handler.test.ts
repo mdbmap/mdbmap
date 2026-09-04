@@ -14,6 +14,7 @@ vi.mock("./stripe-client.ts", () => ({
 						object: {
 							client_reference_id: "user-1",
 							customer: "cus_1",
+							payment_status: "paid",
 							subscription: "sub_1",
 						},
 					},

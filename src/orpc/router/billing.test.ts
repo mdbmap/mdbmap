@@ -1,5 +1,5 @@
 import { createRouterClient } from "@orpc/server";
-import { describe, expect, it } from "vitest";
+import { beforeAll, describe, expect, it, vi } from "vitest";
 
 import { syncEntitlement, user } from "@/db/schema";
 import { freshDb } from "@/db/test-helpers";
@@ -29,6 +29,10 @@ const clientFor = (
 			resolveSession: () => (userId === undefined ? undefined : { id: userId }),
 		} satisfies ORPCContext,
 	});
+
+beforeAll(() => {
+	vi.stubEnv("SERVER_URL", "https://example.test");
+});
 
 describe("billing.status", () => {
 	it("rejects an unauthenticated caller", async () => {

@@ -2,9 +2,14 @@ import { eq } from "drizzle-orm";
 
 import type { Db } from "@/db";
 import type { SyncEntitlementStatus } from "@/db/schema";
-import { stripeWebhookEvent, syncEntitlement } from "@/db/schema";
+import { syncEntitlement } from "@/db/schema";
 
 import { unresolvedBillingSubjectError } from "./errors.ts";
+import {
+	claimStripeEvent,
+	completeStripeEventClaim,
+	releaseStripeEventClaim,
+} from "./stripe-event-claim.ts";
 
 interface StripeEventLike {
 	data: { object: Record<string, unknown> };
@@ -12,7 +17,7 @@ interface StripeEventLike {
 	type: string;
 }
 
-type ApplyResult = "applied" | "duplicate" | "ignored";
+type ApplyResult = "applied" | "duplicate" | "ignored" | "in_flight";
 
 interface EntitlementWrite {
 	status: SyncEntitlementStatus;
@@ -128,7 +133,7 @@ const userIdForCustomer = async (
 const checkoutPaymentSettled = (object: Record<string, unknown>): boolean => {
 	const paymentStatus = asString(object["payment_status"]);
 	if (paymentStatus === undefined) {
-		return true;
+		return false;
 	}
 	return PAID_CHECKOUT_STATUSES.has(paymentStatus);
 };
@@ -236,73 +241,53 @@ const applySubscription = async (
 	return "applied";
 };
 
-const claimStripeEvent = async (
+const dispatchStripeEvent = async (
 	db: Db,
 	event: StripeEventLike,
-): Promise<boolean> => {
-	const claimed = await db
-		.insert(stripeWebhookEvent)
-		.values({ id: event.id, type: event.type })
-		.onConflictDoNothing()
-		.returning({ id: stripeWebhookEvent.id })
-		.all();
-	return claimed.length > 0;
-};
-
-const releaseStripeEventClaim = async (
-	db: Db,
-	eventId: string,
-): Promise<void> => {
-	await db
-		.delete(stripeWebhookEvent)
-		.where(eq(stripeWebhookEvent.id, eventId))
-		.run();
+): Promise<"applied" | "ignored" | "unresolved"> => {
+	const { object } = event.data;
+	switch (event.type) {
+		case "checkout.session.async_payment_succeeded":
+		case "checkout.session.completed": {
+			return applyCheckoutSessionCompleted(db, object);
+		}
+		case "customer.subscription.created": {
+			return applySubscription(db, object);
+		}
+		case "customer.subscription.updated": {
+			return applySubscription(db, object, {
+				ignoreStaleReactivation: true,
+			});
+		}
+		case "customer.subscription.deleted": {
+			return applySubscription(db, object, {
+				statusOverride: "inactive",
+			});
+		}
+		default: {
+			return "ignored";
+		}
+	}
 };
 
 const applyStripeEvent = async (
 	db: Db,
 	event: StripeEventLike,
 ): Promise<ApplyResult> => {
-	const claimed = await claimStripeEvent(db, event);
-	if (!claimed) {
+	const claim = await claimStripeEvent(db, event);
+	if (claim === "duplicate") {
 		return "duplicate";
+	}
+	if (claim === "in_flight") {
+		return "in_flight";
 	}
 
 	try {
-		const { object } = event.data;
-		let outcome: "applied" | "ignored" | "unresolved" = "ignored";
-		switch (event.type) {
-			case "checkout.session.async_payment_succeeded":
-			case "checkout.session.completed": {
-				outcome = await applyCheckoutSessionCompleted(db, object);
-				break;
-			}
-			case "customer.subscription.created": {
-				outcome = await applySubscription(db, object);
-				break;
-			}
-			case "customer.subscription.updated": {
-				outcome = await applySubscription(db, object, {
-					ignoreStaleReactivation: true,
-				});
-				break;
-			}
-			case "customer.subscription.deleted": {
-				outcome = await applySubscription(db, object, {
-					statusOverride: "inactive",
-				});
-				break;
-			}
-			default: {
-				outcome = "ignored";
-				break;
-			}
-		}
-
+		const outcome = await dispatchStripeEvent(db, event);
 		if (outcome === "unresolved" && HANDLED_EVENT_TYPES.has(event.type)) {
 			throw unresolvedBillingSubjectError(event.type);
 		}
-
+		await completeStripeEventClaim(db, event.id);
 		return outcome === "applied" ? "applied" : "ignored";
 	} catch (error) {
 		await releaseStripeEventClaim(db, event.id);
