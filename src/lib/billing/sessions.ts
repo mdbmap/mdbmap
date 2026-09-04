@@ -70,7 +70,9 @@ const createCheckoutSession = async (
 		params.customer = customerId;
 	}
 
-	const session = await client.checkout.sessions.create(params);
+	const session = await client.checkout.sessions.create(params, {
+		idempotencyKey: `sync-checkout:${input.userId}`,
+	});
 	if (session.url === null || session.url.length === 0) {
 		throw billingConfigError("Stripe Checkout did not return a URL.");
 	}
