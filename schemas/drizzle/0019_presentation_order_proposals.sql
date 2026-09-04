@@ -13,7 +13,7 @@ CREATE TABLE `presentation_order_proposals` (
 	CONSTRAINT "presentation_order_proposals_status" CHECK("presentation_order_proposals"."status" in ('pending', 'accepted', 'rejected'))
 );
 --> statement-breakpoint
-CREATE INDEX `presentation_order_proposals_continuity_id_idx` ON `presentation_order_proposals` (`continuity_id`);
+CREATE INDEX `presentation_order_proposals_continuity_id_idx` ON `presentation_order_proposals` (`continuity_id`);--> statement-breakpoint
 CREATE INDEX `presentation_order_proposals_status_id_idx` ON `presentation_order_proposals` (`status`,`id`);
 --> statement-breakpoint
 CREATE TABLE `presentation_order_proposal_items` (

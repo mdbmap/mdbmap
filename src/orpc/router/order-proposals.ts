@@ -89,30 +89,19 @@ const assertSegmentsForContinuity = async (
 	continuityId: number,
 	segmentIds: readonly number[],
 ): Promise<void> => {
-	const chunkSize = 100;
-	const chunks = Array.from(
-		{ length: Math.ceil(segmentIds.length / chunkSize) },
-		(_ignored, index) =>
-			segmentIds.slice(index * chunkSize, (index + 1) * chunkSize),
-	);
-	const chunkRows = await Promise.all(
-		chunks.map(async (chunk) =>
-			db
-				.select({
-					continuityId: continuitySegments.continuityId,
-					id: continuitySegments.id,
-				})
-				.from(continuitySegments)
-				.where(inArray(continuitySegments.id, [...chunk]))
-				.all(),
-		),
-	);
-	const byId = new Map(
-		chunkRows.flat().map((row) => [row.id, row.continuityId]),
-	);
-	if (segmentIds.some((segmentId) => byId.get(segmentId) !== continuityId)) {
+	const continuityRows = await db
+		.select({ id: continuitySegments.id })
+		.from(continuitySegments)
+		.where(eq(continuitySegments.continuityId, continuityId))
+		.all();
+	const continuityIds = new Set(continuityRows.map((row) => row.id));
+	if (
+		segmentIds.length !== continuityIds.size ||
+		new Set(segmentIds).size !== segmentIds.length ||
+		segmentIds.some((segmentId) => !continuityIds.has(segmentId))
+	) {
 		throw new ORPCError("BAD_REQUEST", {
-			message: "Proposal segment does not belong to continuity.",
+			message: "Proposal must include each continuity segment exactly once.",
 		});
 	}
 };
