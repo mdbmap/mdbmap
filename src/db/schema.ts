@@ -240,6 +240,38 @@ const syncEntitlement = sqliteTable("sync_entitlement", {
 		.references(() => user.id, { onDelete: "cascade" }),
 });
 
+// ADR-0007 outbound sync: one linked account per provider per user. Secrets
+// use the same AES-GCM envelope as llm_provider (ADR-0005); cursor/lastError
+// stay plaintext for operator-facing status without decrypt.
+const syncAccountProviders = ["anilist", "mal", "simkl", "trakt"] as const;
+type SyncAccountProvider = (typeof syncAccountProviders)[number];
+
+const syncAccountLink = sqliteTable(
+	"sync_account_link",
+	{
+		ciphertext: text().notNull(),
+		cursor: text(),
+		dataIv: text("data_iv").notNull(),
+		externalAccountId: text("external_account_id"),
+		id: integer({ mode: "number" }).primaryKey({ autoIncrement: true }),
+		lastError: text("last_error"),
+		linkedAt: timestamp("linked_at"),
+		provider: text({ enum: syncAccountProviders }).notNull(),
+		updatedAt: timestamp("updated_at").$onUpdateFn(() => new Date()),
+		userId: text("user_id")
+			.notNull()
+			.references(() => user.id, { onDelete: "cascade" }),
+		wrapIv: text("wrap_iv").notNull(),
+		wrappedKey: text("wrapped_key").notNull(),
+	},
+	(table) => [
+		uniqueIndex("sync_account_link_user_provider_uidx").on(
+			table.userId,
+			table.provider,
+		),
+	],
+);
+
 // ADR-0009: webhook handlers are idempotent on Stripe event id.
 const stripeWebhookEvent = sqliteTable("stripe_webhook_event", {
 	id: text().primaryKey(),
@@ -261,6 +293,8 @@ export {
 	DEFAULT_RESEARCH_TIMING,
 	session,
 	stripeWebhookEvent,
+	syncAccountLink,
+	syncAccountProviders,
 	syncEntitlement,
 	syncEntitlementStatuses,
 	user,
@@ -277,6 +311,7 @@ export type {
 	RateableUnitKey,
 	RateableUnitKind,
 	ResearchTiming,
+	SyncAccountProvider,
 	SyncEntitlementStatus,
 	WatchStatus,
 };
