@@ -1,10 +1,12 @@
 import type {
+	MediaKind,
 	MemberTitles,
 	MetadataProvider as MetadataProviderKind,
 	ResolveResult,
 } from "@/engine";
 import type { Db } from "@/orpc/context";
 import type {
+	CatalogueTitle,
 	CommunityScore,
 	Credit,
 	RateableUnit,
@@ -73,13 +75,36 @@ interface CommunityScoreProvider {
 	) => Promise<CommunityScore>;
 }
 
+interface CatalogueSearchHit {
+	catalogue: CatalogueTitle;
+	coverRef: string | undefined;
+	mediaKind: MediaKind;
+	title: string;
+	year: number | undefined;
+}
+
+interface CatalogueSearchOptions {
+	mediaKind?: MediaKind;
+}
+
+interface CatalogueSearchProvider {
+	search: (
+		query: string,
+		options?: CatalogueSearchOptions,
+	) => Promise<readonly CatalogueSearchHit[]>;
+}
+
 interface Providers {
+	catalogueSearch: CatalogueSearchProvider;
 	community: CommunityScoreProvider;
 	metadata: MetadataRegistry;
 	serviceRatings: ServiceRatingsProvider;
 }
 
 export type {
+	CatalogueSearchHit,
+	CatalogueSearchOptions,
+	CatalogueSearchProvider,
 	CommunityScoreProvider,
 	EpisodeMetadata,
 	MetadataProvider,

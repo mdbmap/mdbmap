@@ -4,6 +4,7 @@ import { library } from "./library";
 import { moderation } from "./moderation";
 import { orders } from "./orders";
 import { providers } from "./providers";
+import { search } from "./search";
 import { tracking } from "./tracking";
 import { work } from "./work";
 
@@ -14,6 +15,7 @@ export const router = {
 	moderation,
 	orders,
 	providers,
+	search,
 	tracking,
 	work,
 };
