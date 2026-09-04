@@ -1,27 +1,14 @@
 import { createRouterClient } from "@orpc/server";
-import { asc, eq } from "drizzle-orm";
+import { eq } from "drizzle-orm";
 import { describe, expect, it } from "vitest";
 
-import {
-	continuitySegments,
-	presentationOrderProposals,
-	serviceTitles,
-	titleGroups,
-} from "@/db/engine-schema";
+import { presentationOrderProposals } from "@/db/engine-schema";
 import { freshDb } from "@/db/test-helpers";
-import { ensureGroupContinuity } from "@/engine/continuity/persist";
 import type { ORPCContext, SessionUser } from "@/orpc/context";
 
 import { router } from "./index.ts";
+import { seedContinuity } from "./order-proposals.seed.ts";
 import { CreateProposalInput, ProposalIdInput } from "./order-proposals.ts";
-
-const one = <Row>(rows: readonly Row[]): Row => {
-	const [row] = rows;
-	if (row === undefined) {
-		throw new Error("expected inserted row");
-	}
-	return row;
-};
 
 const clientFor = (
 	db: Awaited<ReturnType<typeof freshDb>>,
@@ -33,40 +20,6 @@ const clientFor = (
 			resolveSession: () => user,
 		} satisfies ORPCContext,
 	});
-
-const seedContinuity = async (
-	db: Awaited<ReturnType<typeof freshDb>>,
-	count: number,
-) => {
-	const group = one(
-		await db
-			.insert(titleGroups)
-			.values({ source: "t1-structure" })
-			.returning()
-			.all(),
-	);
-	await Promise.all(
-		Array.from({ length: count }, async (_ignored, ordinal) =>
-			db
-				.insert(serviceTitles)
-				.values({
-					groupId: group.id,
-					ordinal,
-					service: "tmdb",
-					serviceId: `tv:${group.id}-${ordinal + 1}`,
-				})
-				.run(),
-		),
-	);
-	const continuityId = await ensureGroupContinuity(db, group.id);
-	const segments = await db
-		.select({ id: continuitySegments.id, titleId: continuitySegments.titleId })
-		.from(continuitySegments)
-		.where(eq(continuitySegments.continuityId, continuityId))
-		.orderBy(asc(continuitySegments.releaseOrdinal))
-		.all();
-	return { continuityId, segments };
-};
 
 const memberUser: SessionUser = { id: "user-1" };
 const adminUser: SessionUser = { id: "admin-1", role: "admin" };
@@ -111,6 +64,32 @@ describe("orderProposals input boundary", () => {
 				segmentIds: Array.from({ length: 33 }, (_ignored, index) => index + 1),
 			}).segmentIds,
 		).toHaveLength(33);
+	});
+
+	it("creates through the router at the D1-safe cap and rejects over-cap", async () => {
+		const db = await freshDb();
+		const { continuityId, segments } = await seedContinuity(db, 33);
+		expect(segments).toHaveLength(33);
+		const member = clientFor(db, memberUser);
+		const segmentIds = segments.map((segment) => segment.id);
+
+		const created = await member.orderProposals.create({
+			continuityId,
+			name: "Full continuity order",
+			rationale: "Every segment once at the bind cap",
+			segmentIds,
+		});
+		expect(created.items).toHaveLength(33);
+		expect(created.items.map((item) => item.segmentId)).toEqual(segmentIds);
+
+		await expect(
+			member.orderProposals.create({
+				continuityId,
+				name: "Over cap",
+				rationale: "One past the bind budget",
+				segmentIds: [...segmentIds, (segmentIds[0] ?? 0) + 10_000],
+			}),
+		).rejects.toThrow();
 	});
 });
 
