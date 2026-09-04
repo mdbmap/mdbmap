@@ -14,6 +14,7 @@ import { retiredContinuityKeys } from "@/engine/continuity/persist";
 import { authed } from "@/orpc/base";
 import type { Db } from "@/orpc/context";
 import { instalmentsOf } from "@/orpc/instalments";
+import { persistProgressAndStatus } from "@/orpc/persist-progress";
 import type {
 	EpisodeWatchedResult,
 	NoteResult,
@@ -25,11 +26,44 @@ import type {
 import {
 	RemoveTrackingInput,
 	SetEpisodeWatchedInput,
+	SetPartWatchedInput,
 	SetNoteInput,
 	SetRatingInput,
 	SetRewatchInput,
 	SetStatusInput,
 } from "@/orpc/schema";
+
+// All instalments watched ⇒ completed; any progress ⇒ watching.
+const PROGRESS_CHUNK = 50;
+
+const watchedAmong = async (
+	db: Db,
+	userId: string,
+	locators: readonly string[],
+): Promise<string[]> => {
+	if (locators.length === 0) {
+		return [];
+	}
+	const chunks: string[][] = [];
+	for (let offset = 0; offset < locators.length; offset += PROGRESS_CHUNK) {
+		chunks.push(locators.slice(offset, offset + PROGRESS_CHUNK));
+	}
+	const pages = await Promise.all(
+		chunks.map(async (chunk) =>
+			db
+				.select({ locator: episodeProgress.instalmentLocator })
+				.from(episodeProgress)
+				.where(
+					and(
+						eq(episodeProgress.userId, userId),
+						inArray(episodeProgress.instalmentLocator, chunk),
+					),
+				)
+				.all(),
+		),
+	);
+	return [...new Set(pages.flatMap((rows) => rows.map((row) => row.locator)))];
+};
 
 // All instalments watched ⇒ completed; any progress ⇒ watching.
 const deriveWholeSeriesStatus = async (
@@ -38,26 +72,47 @@ const deriveWholeSeriesStatus = async (
 	userId: string,
 	continuityId: string,
 ): Promise<EpisodeWatchedResult> => {
-	const locators = instalmentsOf(await engine.resolveContinuity(continuityId));
-	const rows =
-		locators.length === 0
-			? []
-			: await db
-					.select({ locator: episodeProgress.instalmentLocator })
-					.from(episodeProgress)
-					.where(
-						and(
-							eq(episodeProgress.userId, userId),
-							inArray(episodeProgress.instalmentLocator, locators),
-						),
-					)
-					.all();
-	const watchedSet = new Set(rows.map((row) => row.locator));
+	const locators = [
+		...new Set(instalmentsOf(await engine.resolveContinuity(continuityId))),
+	];
+	const watched = await watchedAmong(db, userId, locators);
 	const status: WatchStatus =
-		locators.length > 0 && watchedSet.size === locators.length
+		locators.length > 0 && watched.length === locators.length
 			? "completed"
 			: "watching";
-	return { status, watched: [...watchedSet] };
+	return { status, watched };
+};
+
+const ownedLocators = (
+	owned: readonly string[],
+	requested: readonly string[],
+): string[] => {
+	const ownedSet = new Set(owned);
+	return [...new Set(requested.filter((locator) => ownedSet.has(locator)))];
+};
+
+const persistOwnedProgress = async (
+	db: Db,
+	engine: EngineRead,
+	userId: string,
+	continuityId: string,
+	owned: readonly string[],
+	requested: readonly string[],
+	watched: boolean,
+): Promise<EpisodeWatchedResult> => {
+	const locators = ownedLocators(owned, requested);
+	if (locators.length === 0) {
+		return deriveWholeSeriesStatus(db, engine, userId, continuityId);
+	}
+	await persistProgressAndStatus({
+		continuityId,
+		db,
+		locators,
+		owned,
+		userId,
+		watched,
+	});
+	return deriveWholeSeriesStatus(db, engine, userId, continuityId);
 };
 
 const readSummary = async (db: Db, userId: string, continuityKey: string) =>
@@ -255,48 +310,34 @@ const setEpisodeWatched = authed
 	.input(SetEpisodeWatchedInput)
 	.handler(async ({ context, input }): Promise<EpisodeWatchedResult> => {
 		const userId = context.user.id;
-		const continuityId = await canonicalContinuityId(
-			context.engine,
-			input.continuityId,
-		);
-		await (
-			input.watched
-				? context.db
-						.insert(episodeProgress)
-						.values({ instalmentLocator: input.instalmentLocator, userId })
-						.onConflictDoNothing({
-							target: [
-								episodeProgress.userId,
-								episodeProgress.instalmentLocator,
-							],
-						})
-				: context.db
-						.delete(episodeProgress)
-						.where(
-							and(
-								eq(episodeProgress.userId, userId),
-								eq(episodeProgress.instalmentLocator, input.instalmentLocator),
-							),
-						)
-		).run();
-
-		const derived = await deriveWholeSeriesStatus(
+		const resolved = await context.engine.resolveContinuity(input.continuityId);
+		const { continuityId } = resolved;
+		return persistOwnedProgress(
 			context.db,
 			context.engine,
 			userId,
 			continuityId,
+			instalmentsOf(resolved),
+			[input.instalmentLocator],
+			input.watched,
 		);
+	});
 
-		await context.db
-			.insert(watchStatus)
-			.values({ continuityKey: continuityId, status: derived.status, userId })
-			.onConflictDoUpdate({
-				set: { status: derived.status },
-				target: [watchStatus.userId, watchStatus.continuityKey],
-			})
-			.run();
-
-		return derived;
+const setPartWatched = authed
+	.input(SetPartWatchedInput)
+	.handler(async ({ context, input }): Promise<EpisodeWatchedResult> => {
+		const userId = context.user.id;
+		const resolved = await context.engine.resolveContinuity(input.continuityId);
+		const { continuityId } = resolved;
+		return persistOwnedProgress(
+			context.db,
+			context.engine,
+			userId,
+			continuityId,
+			instalmentsOf(resolved),
+			input.instalmentLocators,
+			input.watched,
+		);
 	});
 
 const setRating = authed
@@ -407,6 +448,7 @@ const tracking = {
 	remove,
 	setEpisodeWatched,
 	setNote,
+	setPartWatched,
 	setRating,
 	setRewatch,
 	setStatus,
