@@ -303,8 +303,16 @@ interface ViewerTracking {
 	watched: string[];
 }
 
+interface CatalogueLink {
+	href: string;
+	id: string;
+	label: string;
+	service: "anidb" | "anilist" | "imdb" | "mal" | "tmdb";
+}
+
 interface WorkView {
 	cast: Credit[];
+	catalogues: CatalogueLink[];
 	communityScore: CommunityScore;
 	continuityId: string;
 	header: WorkHeader;
@@ -379,6 +387,7 @@ export {
 export type {
 	AdminIngestStartResult,
 	ApiKeyRow,
+	CatalogueLink,
 	CatalogueTitle,
 	CommunityScore,
 	Credit,

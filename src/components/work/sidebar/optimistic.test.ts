@@ -54,6 +54,7 @@ const film = (locator: string): FilmView => ({
 
 const work = (): WorkView => ({
 	cast: [],
+	catalogues: [],
 	communityScore: emptyScore,
 	continuityId: "continuity:x",
 	header: {

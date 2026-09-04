@@ -5,12 +5,14 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { usePartSelectionStore } from "@/components/work/part-state";
 import type {
+	CatalogueLink,
 	CommunityScore,
 	PartView,
 	ServiceRating,
 	ViewerTracking,
 } from "@/orpc/schema";
 
+import { Catalogues } from "./catalogues";
 import { CommunityBlock } from "./community-block";
 import { PartDetails, PartPanel } from "./part-panel";
 import { YouBlock } from "./you-block";
@@ -327,5 +329,40 @@ describe("PartPanel", () => {
 			<PartPanel continuityId="continuity:x" parts={parts} />,
 		);
 		expect(html).not.toContain("data-auth-dialog");
+	});
+});
+
+const anidbLink: CatalogueLink = {
+	href: "https://anidb.net/anime/16947",
+	id: "16947",
+	label: "AniDB",
+	service: "anidb",
+};
+
+const malCour: CatalogueLink = {
+	href: "https://myanimelist.net/anime/50265",
+	id: "50265",
+	label: "MAL · Cour 1",
+	service: "mal",
+};
+
+const counterpartLinks = [anidbLink, malCour];
+const noCatalogues: CatalogueLink[] = [];
+
+describe("Catalogues", () => {
+	it("renders each counterpart as an external link with its href", () => {
+		const html = render(<Catalogues catalogues={counterpartLinks} />);
+		expect(html).toContain("Catalogues");
+		expect(html).toContain("AniDB");
+		expect(html).toContain("16947");
+		expect(html).toContain('href="https://anidb.net/anime/16947"');
+		expect(html).toContain('href="https://myanimelist.net/anime/50265"');
+		expect(html).toContain('rel="noreferrer noopener"');
+		expect(html).toContain('target="_blank"');
+		expect(html).toContain("MAL · Cour 1");
+	});
+
+	it("hides the section when there are no counterpart links", () => {
+		expect(render(<Catalogues catalogues={noCatalogues} />)).toBe("");
 	});
 });
