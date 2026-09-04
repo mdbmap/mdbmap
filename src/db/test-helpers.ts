@@ -30,6 +30,7 @@ const wipeOrder = [
 	"personal_rating",
 	"watch_status",
 	"stripe_webhook_event",
+	"sync_account_link",
 	"sync_entitlement",
 	"llm_provider",
 	"research_policy",
