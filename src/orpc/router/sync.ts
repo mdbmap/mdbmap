@@ -1,7 +1,8 @@
 import { ORPCError } from "@orpc/server";
+import { eq } from "drizzle-orm";
 import { z } from "zod";
 
-import { syncAccountProviders } from "@/db/schema";
+import { syncAccountProviders, watchStatus } from "@/db/schema";
 import { env } from "@/env";
 import {
 	linkSyncAccount,
@@ -78,6 +79,8 @@ const PushInput = z
 	})
 	.strict();
 
+const EmptyInput = z.object({}).strict();
+
 const push = authed.input(PushInput).handler(async ({ context, input }) => {
 	await requireSyncEntitlement(context.db, context.user.id);
 	return pushContinuity({
@@ -89,6 +92,64 @@ const push = authed.input(PushInput).handler(async ({ context, input }) => {
 	});
 });
 
-const sync = { connect, disconnect, list, push };
+const PUSH_LIBRARY_CONCURRENCY = 3;
+
+const mapPool = async <T, R>(
+	items: readonly T[],
+	concurrency: number,
+	mapper: (item: T, index: number) => Promise<R>,
+): Promise<R[]> => {
+	if (items.length === 0) {
+		return [];
+	}
+	const results: R[] = Array.from({ length: items.length });
+	let nextIndex = 0;
+	const worker = async (): Promise<void> => {
+		const index = nextIndex;
+		nextIndex += 1;
+		if (index >= items.length) {
+			return;
+		}
+		const item = items[index];
+		if (item === undefined) {
+			return;
+		}
+		results[index] = await mapper(item, index);
+		await worker();
+	};
+	await Promise.all(
+		Array.from({ length: Math.min(concurrency, items.length) }, worker),
+	);
+	return results;
+};
+
+const pushLibrary = authed.input(EmptyInput).handler(async ({ context }) => {
+	await requireSyncEntitlement(context.db, context.user.id);
+	const masterKeyBase64 = masterKeyOf(context.providerConfigMasterKey);
+	const rows = await context.db
+		.select({ continuityKey: watchStatus.continuityKey })
+		.from(watchStatus)
+		.where(eq(watchStatus.userId, context.user.id))
+		.all();
+	const continuityIds = [...new Set(rows.map((row) => row.continuityKey))];
+	const results = await mapPool(
+		continuityIds,
+		PUSH_LIBRARY_CONCURRENCY,
+		async (continuityId) =>
+			pushContinuity({
+				continuityId,
+				db: context.db,
+				engine: context.engine,
+				masterKeyBase64,
+				userId: context.user.id,
+			}),
+	);
+	return {
+		continuityCount: continuityIds.length,
+		results,
+	};
+});
+
+const sync = { connect, disconnect, list, push, pushLibrary };
 
 export { sync };

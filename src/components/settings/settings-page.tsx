@@ -8,6 +8,8 @@ import { ThemeToggle } from "@/components/ui/theme-toggle";
 import { BetterAuthHeader } from "@/integrations/better-auth/header-user";
 import { orpc } from "@/orpc/client";
 
+import { SyncTargetsActions } from "./sync-targets-actions.tsx";
+
 const BRAND = "mdbmap";
 const TITLE = "Settings";
 const TAGLINE = "Manage sync billing for this account.";
@@ -182,11 +184,15 @@ function BillingActions() {
 }
 
 function SettingsPage() {
+	const statusQuery = useQuery(orpc.billing.status.queryOptions());
+	const entitlement = statusQuery.data?.status ?? "inactive";
+
 	return (
 		<main className={page()}>
 			<SettingsHeader />
 			<SettingsIntro />
 			<BillingActions />
+			<SyncTargetsActions entitlement={entitlement} />
 		</main>
 	);
 }
