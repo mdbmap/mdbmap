@@ -6,12 +6,14 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { usePartSelectionStore } from "@/components/work/part-state";
 import type {
 	CatalogueLink,
+	CommunityScore,
 	PartView,
 	ServiceRating,
 	ViewerTracking,
 } from "@/orpc/schema";
 
 import { Catalogues } from "./catalogues";
+import { CommunityBlock } from "./community-block";
 import { PartDetails, PartPanel } from "./part-panel";
 import { YouBlock } from "./you-block";
 
@@ -82,6 +84,8 @@ vi.mock("react-aria-components", async () => {
 
 const NO_PARTS: PartView[] = [];
 const noRate = vi.fn<(score: number | undefined) => void>();
+const emptyCommunity: CommunityScore = { count: 0, mean: undefined };
+const populatedCommunity: CommunityScore = { count: 48_000, mean: 8.6 };
 
 const service = (
 	name: string,
@@ -172,6 +176,8 @@ describe("YouBlock", () => {
 		expect(html).toContain('value="8"');
 		expect(html).toContain("selected");
 		expect(html).not.toContain("data-auth-dialog");
+		expect(html).not.toContain("mdbmap average");
+		expect(html).not.toContain("mdbmap · whole series");
 	});
 
 	it("falls back to zero progress when the viewer is untracked", () => {
@@ -212,6 +218,28 @@ describe("YouBlock", () => {
 	});
 });
 
+describe("CommunityBlock", () => {
+	it("shows an empty community mean and count 0 when nobody has rated", () => {
+		const html = render(<CommunityBlock score={emptyCommunity} />);
+		expect(html).toContain("mdbmap · whole series");
+		expect(html).toContain("mdbmap average");
+		expect(html).toContain("—");
+		expect(html).toContain('data-votes="0"');
+		expect(html).not.toContain("You · whole series");
+	});
+
+	it("shows the work-level community mean and count", () => {
+		const html = render(<CommunityBlock score={populatedCommunity} />);
+		expect(html).toContain("mdbmap · whole series");
+		expect(html).toContain("mdbmap average");
+		expect(html).toContain("8.6");
+		expect(html).toContain("48K");
+		expect(html).toContain('data-votes="48000"');
+		expect(html).not.toContain("You · whole series");
+		expect(html).not.toContain("mal");
+	});
+});
+
 describe("PartPanel", () => {
 	afterEach(() => {
 		usePartSelectionStore.setState({ selectedKey: undefined });
@@ -248,6 +276,11 @@ describe("PartPanel", () => {
 		expect(html).toContain("8.11");
 		expect(html).toContain("anidb");
 		expect(html).not.toContain("Season 2 · this part");
+	});
+
+	it("renders a part score select for the given part", () => {
+		const html = render(<PartDetails onRate={noRate} part={partOne} />);
+		expect(html).toContain('aria-label="Your score for Part 1"');
 	});
 
 	it("shows a placeholder when there are no parts", () => {

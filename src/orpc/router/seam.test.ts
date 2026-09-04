@@ -99,6 +99,9 @@ describe("tracking + work.get seam", () => {
 
 		await client.tracking.setRating({ score: 9, unit });
 		expect(await db.select().from(personalRating).all()).toHaveLength(1);
+		const rated = await client.work.get({ continuityId });
+		expect(rated.communityScore).toEqual({ count: 1, mean: 9 });
+		expect(rated.viewer?.personalRating).toBe(9);
 
 		await client.tracking.setRating({ unit });
 		expect(await db.select().from(personalRating).all()).toHaveLength(0);
@@ -109,6 +112,37 @@ describe("tracking + work.get seam", () => {
 		await expect(
 			client.tracking.setRating({ score: 0, unit }),
 		).rejects.toThrow();
+	});
+
+	it("persists an episode rating and surfaces it on work.get", async () => {
+		const { continuityId, db } = await seeded();
+		const client = clientFor(db, "user-1");
+		const view = await client.work.get({ continuityId });
+		const episode = view.parts
+			.flatMap((part) => (part.kind === "part" ? part.episodes : []))
+			.at(0);
+		expect(episode).toBeDefined();
+		if (episode === undefined) {
+			return;
+		}
+
+		await client.tracking.setRating({
+			score: 7,
+			unit: episode.rateableUnit,
+		});
+		const rated = await client.work.get({ continuityId });
+		const ratedEpisode = rated.parts
+			.flatMap((part) => (part.kind === "part" ? part.episodes : []))
+			.find((row) => row.instalmentLocator === episode.instalmentLocator);
+		expect(ratedEpisode?.personalRating).toBe(7);
+		expect(ratedEpisode?.rateableUnit).toEqual(episode.rateableUnit);
+
+		await client.tracking.setRating({ unit: episode.rateableUnit });
+		const cleared = await client.work.get({ continuityId });
+		const clearedEpisode = cleared.parts
+			.flatMap((part) => (part.kind === "part" ? part.episodes : []))
+			.find((row) => row.instalmentLocator === episode.instalmentLocator);
+		expect(clearedEpisode?.personalRating).toBeUndefined();
 	});
 
 	it("reads legacy tracking through the canonical continuity", async () => {
@@ -156,6 +190,7 @@ describe("tracking + work.get seam", () => {
 		const view = await client.work.get({ continuityId });
 		expect(view.viewer).toBeUndefined();
 		expect(view.header.title).toBe("Spy × Family");
+		expect(view.communityScore).toEqual({ count: 0, mean: undefined });
 		expect(view.parts[0]?.serviceRatings.length).toBeGreaterThan(0);
 		expect(view.parts[0]?.communityScore.count).toBeGreaterThan(0);
 		expect(view.parts[0]?.episodes.every((episode) => !episode.watched)).toBe(

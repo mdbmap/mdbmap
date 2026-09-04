@@ -20,6 +20,7 @@ const episode = (number: number, watched: boolean): EpisodeView => ({
 const work = (): WorkView => ({
 	cast: [],
 	catalogues: [],
+	communityScore: emptyScore,
 	continuityId: "continuity:x",
 	header: {
 		backdropRef: undefined,

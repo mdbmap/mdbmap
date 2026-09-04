@@ -90,11 +90,11 @@ const idleSession = {
 	refetch: noopClose,
 };
 
-const episode = (locator: string, title: string): EpisodeView => ({
+const episode = (locator: string, title: string, number = 1): EpisodeView => ({
 	airDate: "2022-04-09",
 	communityScore: emptyScore,
 	instalmentLocator: locator,
-	number: 1,
+	number,
 	personalRating: undefined,
 	rateableUnit: { key: `episode:${locator}`, kind: "episode" },
 	title,
@@ -118,6 +118,10 @@ const part = (label: string, title: string): PartView => ({
 const partOne = part("Part 1", "Operation Strix");
 const partTwo = part("Part 2", "The Counterespionage");
 const parts = [partOne, partTwo];
+const ratedPartOneEpisodes: EpisodeView[] = [
+	{ ...episode("Part 1:1", "Operation Strix", 1), personalRating: 8 },
+	episode("Part 1:2", "Secure a Wife", 2),
+];
 
 const dawn: FilmView = {
 	airDate: "2020-01-17",
@@ -137,6 +141,10 @@ const dawn: FilmView = {
 };
 
 const noop = vi.fn<(instalmentLocator: string, watched: boolean) => void>();
+const noopRate =
+	vi.fn<
+		(unit: EpisodeView["rateableUnit"], score: number | undefined) => void
+	>();
 const noopOrder = vi.fn<(order: "release" | "watch") => void>();
 const bothOrders = ["release", "watch"] as const;
 const releaseOnly = ["release"] as const;
@@ -193,10 +201,30 @@ describe("Episodes", () => {
 		);
 		expect(index).toBe(0);
 		const html = renderToStaticMarkup(
-			<EpisodeList episodes={partOne.episodes} onToggle={noop} />,
+			<EpisodeList
+				episodes={partOne.episodes}
+				onRate={noopRate}
+				onToggle={noop}
+			/>,
 		);
 		expect(html).toContain("Operation Strix");
 		expect(html).not.toContain("The Counterespionage");
+	});
+
+	it("renders a score select reflecting each episode rating", () => {
+		const html = renderToStaticMarkup(
+			<EpisodeList
+				episodes={ratedPartOneEpisodes}
+				onRate={noopRate}
+				onToggle={noop}
+			/>,
+		);
+		expect(html).toMatch(
+			/aria-label="Your score for episode 01"[^>]*>[\s\S]*?<option value="8" selected="">/u,
+		);
+		expect(html).toMatch(
+			/aria-label="Your score for episode 02"[^>]*>[\s\S]*?<option value="" selected="">/u,
+		);
 	});
 
 	it("embeds a sign-in dialog for signed-out episode watched toggles", () => {
@@ -234,6 +262,7 @@ describe("Episodes films", () => {
 		expect(html).toContain("Part 1");
 		expect(html).toContain("Dawn of the Deep Soul");
 		expect(html).toContain('aria-label="Mark Dawn of the Deep Soul watched"');
+		expect(html).toContain('aria-label="Your score for Dawn of the Deep Soul"');
 		expect(html).toContain("0 of 1 watched");
 		expect(html).not.toContain("Operation Strix");
 	});

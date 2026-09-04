@@ -301,6 +301,7 @@ interface CatalogueLink {
 interface WorkView {
 	cast: Credit[];
 	catalogues: CatalogueLink[];
+	communityScore: CommunityScore;
 	continuityId: string;
 	header: WorkHeader;
 	ifYouLiked: Similar[];

@@ -34,6 +34,7 @@ const part = (
 const work: WorkView = {
 	cast: [{ name: "Takuya Eguchi", ref: undefined, role: "Loid Forger" }],
 	catalogues: [],
+	communityScore: emptyScore,
 	continuityId: "continuity:spy-x-family",
 	header: {
 		backdropRef: "anidb:16947/backdrop",
