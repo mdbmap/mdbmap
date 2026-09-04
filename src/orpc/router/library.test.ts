@@ -141,6 +141,7 @@ describe("library.list", () => {
 				locators.slice(0, 3).map((instalmentLocator) => ({
 					instalmentLocator,
 					userId: "user-1",
+					watchedAt: new Date("2026-04-09T12:00:00.000Z"),
 				})),
 			)
 			.run();
@@ -160,8 +161,10 @@ describe("library.list", () => {
 			{
 				continuityId,
 				coverRef: `https://img.test/${continuityId}.jpg`,
+				finishedAt: undefined,
 				personalRating: 9,
 				rewatchCount: 2,
+				startedAt: "2026-04-09",
 				status: "watching",
 				title: `Work ${continuityId}`,
 				totalInstalments: locators.length,
@@ -169,6 +172,39 @@ describe("library.list", () => {
 			},
 		]);
 		expect(locators.length).toBeGreaterThan(3);
+	});
+
+	it("sets finishedAt when every instalment is watched", async () => {
+		const db = await seededViewer();
+		const { continuityId } = await seedTmdbContinuity(db, "movie", "603");
+		await track(db, continuityId, new Date("2026-01-01T00:00:00Z"), {
+			status: "completed",
+		});
+		const locators = await locatorsFor(db, continuityId);
+		const [locator] = locators;
+		if (locator === undefined) {
+			throw new Error("expected a film locator");
+		}
+		await db
+			.insert(episodeProgress)
+			.values({
+				instalmentLocator: locator,
+				userId: "user-1",
+				watchedAt: new Date("2026-04-09T12:00:00.000Z"),
+			})
+			.run();
+
+		const entries = await clientFor(db, "user-1").library.list();
+
+		expect(entries).toEqual([
+			expect.objectContaining({
+				continuityId,
+				finishedAt: "2026-04-09",
+				startedAt: "2026-04-09",
+				status: "completed",
+				watchedInstalments: 1,
+			}),
+		]);
 	});
 
 	it("orders tracked works by most recent activity first", async () => {

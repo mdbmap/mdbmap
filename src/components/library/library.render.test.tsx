@@ -36,8 +36,10 @@ const NO_ENTRIES: LibraryEntry[] = [];
 const entry = (overrides: Partial<LibraryEntry> = {}): LibraryEntry => ({
 	continuityId: "continuity:12",
 	coverRef: undefined,
+	finishedAt: undefined,
 	personalRating: undefined,
 	rewatchCount: 0,
+	startedAt: undefined,
 	status: "watching",
 	title: "Spy × Family",
 	totalInstalments: 37,
@@ -46,7 +48,11 @@ const entry = (overrides: Partial<LibraryEntry> = {}): LibraryEntry => ({
 });
 
 const entries: LibraryEntry[] = [
-	entry({ personalRating: 8, rewatchCount: 2 }),
+	entry({
+		personalRating: 8,
+		rewatchCount: 2,
+		startedAt: "2026-04-09",
+	}),
 	entry({
 		continuityId: "continuity:34",
 		coverRef: "https://img.test/abyss.jpg",
@@ -57,6 +63,8 @@ const entries: LibraryEntry[] = [
 	}),
 	entry({
 		continuityId: "continuity:56",
+		finishedAt: "2020-01-17",
+		startedAt: "2020-01-17",
 		title: undefined,
 		totalInstalments: 1,
 		watchedInstalments: 1,
@@ -68,7 +76,9 @@ describe("LibraryPage rows", () => {
 
 	it("lists each tracked work with status, progress and rating", () => {
 		expect(html).toContain("Spy × Family");
-		expect(html).toContain("watching · 25 / 37 · rewatch ×2");
+		expect(html).toContain(
+			"watching · 25 / 37 · rewatch ×2 · started 2026-04-09",
+		);
 		expect(html).toContain("8/10");
 		expect(html).toContain("Made in Abyss");
 		expect(html).toContain("on hold · 0 / 13");
@@ -87,6 +97,7 @@ describe("LibraryPage rows", () => {
 
 	it("falls back to a placeholder title when metadata is missing", () => {
 		expect(html).toContain("Title unavailable");
+		expect(html).toContain("finished 2020-01-17");
 	});
 
 	it("counts the tracked works in the header", () => {

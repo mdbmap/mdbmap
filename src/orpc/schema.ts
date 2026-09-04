@@ -314,8 +314,10 @@ interface TrackingSummary {
 interface LibraryEntry {
 	continuityId: string;
 	coverRef: string | undefined;
+	finishedAt: string | undefined;
 	personalRating: number | undefined;
 	rewatchCount: number;
+	startedAt: string | undefined;
 	status: WatchStatus;
 	title: string | undefined;
 	totalInstalments: number;

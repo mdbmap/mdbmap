@@ -1,7 +1,7 @@
 import { and, desc, eq, inArray } from "drizzle-orm";
 
 import { continuityAliases } from "@/db/engine-schema";
-import { episodeProgress, personalRating, watchStatus } from "@/db/schema";
+import { personalRating, watchStatus } from "@/db/schema";
 import type { EngineRead, ResolveResult } from "@/engine";
 import { metadataProviderFor } from "@/engine";
 import { continuityKey, parseContinuityKey } from "@/engine/continuity/keys";
@@ -10,6 +10,9 @@ import type { Db } from "@/orpc/context";
 import { instalmentsOf } from "@/orpc/instalments";
 import type { Providers, WorkMetadata } from "@/orpc/providers";
 import type { LibraryEntry } from "@/orpc/schema";
+import { watchSpan } from "@/orpc/watch-span";
+import { watchedProgress } from "@/orpc/watched-progress";
+import type { WatchedProgress } from "@/orpc/watched-progress";
 
 type WatchStatusRow = typeof watchStatus.$inferSelect;
 
@@ -138,25 +141,6 @@ const trackedContinuities = async (
 	return collapseTracked(bySurvivor);
 };
 
-const watchedLocators = async (
-	db: Db,
-	userId: string,
-	tracked: readonly TrackedContinuity[],
-): Promise<ReadonlySet<string>> => {
-	const locatorSet = new Set(tracked.flatMap((entry) => [...entry.locators]));
-	if (locatorSet.size === 0) {
-		return new Set();
-	}
-	const rows = await db
-		.select({ locator: episodeProgress.instalmentLocator })
-		.from(episodeProgress)
-		.where(eq(episodeProgress.userId, userId))
-		.all();
-	return new Set(
-		rows.map((row) => row.locator).filter((locator) => locatorSet.has(locator)),
-	);
-};
-
 const workRatings = async (
 	db: Db,
 	userId: string,
@@ -251,20 +235,23 @@ const toEntry = async (
 	providers: Providers,
 	ratings: ReadonlyMap<string, number>,
 	aliases: ReadonlyMap<number, readonly `continuity:${number}`[]>,
-	watched: ReadonlySet<string>,
+	progress: WatchedProgress,
 	tracked: TrackedContinuity,
 ): Promise<LibraryEntry> => {
 	const metadata = await workMetadata(providers, tracked.resolved);
+	const span = watchSpan(tracked.locators, progress.watchedAt);
 	return {
 		continuityId: tracked.resolved.continuityId,
 		coverRef: metadata?.coverRef,
+		finishedAt: span.finishedAt,
 		personalRating: ratingFor(ratings, aliases, tracked),
 		rewatchCount: tracked.row.rewatchCount,
+		startedAt: span.startedAt,
 		status: tracked.row.status,
 		title: metadata?.title,
 		totalInstalments: tracked.locators.length,
 		watchedInstalments: tracked.locators.filter((locator) =>
-			watched.has(locator),
+			progress.locators.has(locator),
 		).length,
 	};
 };
@@ -285,8 +272,8 @@ const list = authed.handler(async ({ context }): Promise<LibraryEntry[]> => {
 				.filter((id): id is number => id !== undefined),
 		),
 	];
-	const [watched, ratings] = await Promise.all([
-		watchedLocators(context.db, userId, tracked),
+	const [progress, ratings] = await Promise.all([
+		watchedProgress(context.db, userId, tracked),
 		workRatings(context.db, userId),
 	]);
 	const aliases =
@@ -295,7 +282,7 @@ const list = authed.handler(async ({ context }): Promise<LibraryEntry[]> => {
 			: await retiredKeysBySurvivor(context.db, survivorIds);
 	return Promise.all(
 		tracked.map(async (entry) =>
-			toEntry(context.providers, ratings, aliases, watched, entry),
+			toEntry(context.providers, ratings, aliases, progress, entry),
 		),
 	);
 });
