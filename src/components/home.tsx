@@ -17,9 +17,13 @@ const SEARCH_PATH = "/search";
 
 const COPY = {
 	library: "Open your library",
+	search: "Search catalogues",
 	signIn: "Sign in to start tracking",
 	tracks: "Tracks",
 } as const;
+
+const searchLinkClass =
+	"text-ink/50 hover:text-accent font-mono text-xs tracking-[0.1em] uppercase";
 
 const tracked = [
 	{ detail: "seasons and episodes", kind: "Television" },
@@ -41,6 +45,14 @@ function Header() {
 				<ThemeToggle />
 			</div>
 		</header>
+	);
+}
+
+function SearchLink() {
+	return (
+		<a className={searchLinkClass} href={SEARCH_PATH}>
+			{COPY.search}
+		</a>
 	);
 }
 
@@ -67,23 +79,32 @@ function HeroCta({
 	}
 
 	if (session?.user === undefined) {
-		if (onSigninOpenChange === undefined) {
-			return <AuthDialog label={COPY.signIn} variant="hero" />;
-		}
+		const dialog =
+			onSigninOpenChange === undefined ? (
+				<AuthDialog label={COPY.signIn} variant="hero" />
+			) : (
+				<AuthDialog
+					isOpen={signinOpen}
+					label={COPY.signIn}
+					onOpenChange={onSigninOpenChange}
+					variant="hero"
+				/>
+			);
 		return (
-			<AuthDialog
-				isOpen={signinOpen}
-				label={COPY.signIn}
-				onOpenChange={onSigninOpenChange}
-				variant="hero"
-			/>
+			<>
+				{dialog}
+				<SearchLink />
+			</>
 		);
 	}
 
 	return (
-		<a data-cta href={LIBRARY_PATH}>
-			{COPY.library}
-		</a>
+		<>
+			<a data-cta href={LIBRARY_PATH}>
+				{COPY.library}
+			</a>
+			<SearchLink />
+		</>
 	);
 }
 
