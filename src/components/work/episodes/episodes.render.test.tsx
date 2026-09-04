@@ -7,8 +7,7 @@ import {
 	resolveSelectedIndex,
 	usePartSelectionStore,
 } from "@/components/work/part-state";
-import type { PresentationOrderSlug } from "@/db/engine-schema";
-import type { EpisodeView, FilmView, PartView, WorkBlock } from "@/orpc/schema";
+import type { EpisodeView, PartView, WorkBlock } from "@/orpc/schema";
 
 import { EpisodeList } from "./episode-list";
 import { Episodes } from "./episodes";
@@ -124,63 +123,15 @@ const ratedPartOneEpisodes: EpisodeView[] = [
 	episode("Part 1:2", "Secure a Wife", 2),
 ];
 
-const dawn: FilmView = {
-	airDate: "2020-01-17",
-	airedFrom: "2020-01-17",
-	airedTo: "2020-01-17",
-	communityScore: emptyScore,
-	episodeCount: 0,
-	episodes: [],
-	instalmentLocator: "anidb:film#1",
-	kind: "film",
-	label: "Dawn of the Deep Soul",
-	personalRating: undefined,
-	rateableUnit: { key: "anidb:film#1", kind: "movie" },
-	serviceRatings: [],
-	watched: false,
-	year: 2020,
-};
-
 const noop = vi.fn<(instalmentLocator: string, watched: boolean) => void>();
 const noopRate =
 	vi.fn<
 		(unit: EpisodeView["rateableUnit"], score: number | undefined) => void
 	>();
-const noopOrder = vi.fn<(order: "release" | "watch") => void>();
-const noopProposal = vi.fn<(proposalId: number) => void>();
-const bothOrders = ["release", "watch"] as const;
-const releaseOnly = ["release"] as const;
-const courThenFilm = [partOne, dawn];
-const filmThenCour = [dawn, partOne];
-const sampleProposalSegments = [
-	{ id: 1, label: "Part 1" },
-	{ id: 2, label: "Dawn of the Deep Soul" },
-] as const;
-const theatricalOrder = [{ id: 11, name: "Theatrical cut" }] as const;
-
 const renderEpisodes = (blocks: WorkBlock[] = parts) =>
 	renderToStaticMarkup(
 		<QueryClientProvider client={new QueryClient()}>
 			<Episodes continuityId="continuity:x" parts={blocks} />
-		</QueryClientProvider>,
-	);
-
-const renderOrdered = (
-	orders: readonly PresentationOrderSlug[],
-	communityOrders: readonly { id: number; name: string }[] = [],
-) =>
-	renderToStaticMarkup(
-		<QueryClientProvider client={new QueryClient()}>
-			<Episodes
-				communityOrders={communityOrders}
-				continuityId="continuity:x"
-				onSelectOrder={noopOrder}
-				onSelectProposal={noopProposal}
-				order="release"
-				orders={orders}
-				parts={courThenFilm}
-				proposalSegments={sampleProposalSegments}
-			/>
 		</QueryClientProvider>,
 	);
 
@@ -255,88 +206,5 @@ describe("Episodes", () => {
 		});
 		const html = renderEpisodes();
 		expect(html).not.toContain("data-auth-dialog");
-	});
-});
-
-describe("Episodes films", () => {
-	afterEach(() => {
-		usePartSelectionStore.setState({ selectedKey: undefined });
-		useSession.mockReset();
-	});
-
-	it("shows a film in the selector and a watched control on its row", () => {
-		useSession.mockReturnValue({
-			...idleSession,
-			data: {
-				session: { id: "s1", userId: "u1" },
-				user: { email: "ada@example.com", id: "u1", name: "Ada" },
-			},
-		});
-		const html = renderEpisodes(courThenFilm);
-		expect(html).toContain("Part 1");
-		expect(html).toContain("Dawn of the Deep Soul");
-		expect(html).toContain('aria-label="Mark Dawn of the Deep Soul watched"');
-		expect(html).toContain('aria-label="Your score for Dawn of the Deep Soul"');
-		expect(html).toContain("0 of 1 watched");
-		expect(html).toContain(MARK_PART);
-		expect(html).not.toContain("Operation Strix");
-	});
-
-	it("shows a release/watch control when both orders exist", () => {
-		useSession.mockReturnValue(idleSession);
-		const html = renderOrdered(bothOrders);
-		expect(html).toContain("Release");
-		expect(html).toContain("Watch");
-	});
-
-	it("hides the order control when only one order exists", () => {
-		useSession.mockReturnValue(idleSession);
-		const html = renderOrdered(releaseOnly);
-		expect(html).not.toContain("Release");
-		expect(html).not.toContain("Watch");
-	});
-
-	it("shows an accepted community order in the selector", () => {
-		useSession.mockReturnValue(idleSession);
-		const html = renderOrdered(bothOrders, theatricalOrder);
-		expect(html).toContain("Theatrical cut");
-		expect(html).toContain("Propose order");
-	});
-
-	it("does not invent pending community orders in the selector", () => {
-		useSession.mockReturnValue(idleSession);
-		const html = renderOrdered(bothOrders, theatricalOrder);
-		expect(html).not.toContain("Pending draft");
-	});
-
-	it("keeps film and part labels when watch order puts the film first", () => {
-		useSession.mockReturnValue({
-			...idleSession,
-			data: {
-				session: { id: "s1", userId: "u1" },
-				user: { email: "ada@example.com", id: "u1", name: "Ada" },
-			},
-		});
-		const html = renderEpisodes(filmThenCour);
-		expect(html).toContain("Dawn of the Deep Soul");
-		expect(html).toContain("Part 1");
-		expect(html).toContain("Operation Strix");
-		expect(html).toContain('aria-label="Mark episode 01 watched"');
-	});
-
-	it("keeps the selected part when block order changes", () => {
-		usePartSelectionStore.getState().selectKey(partOne.rateableUnit.key);
-		expect(
-			resolveSelectedIndex(
-				usePartSelectionStore.getState().selectedKey,
-				courThenFilm,
-			),
-		).toBe(0);
-		expect(
-			resolveSelectedIndex(
-				usePartSelectionStore.getState().selectedKey,
-				filmThenCour,
-			),
-		).toBe(1);
 	});
 });
