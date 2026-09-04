@@ -9,13 +9,19 @@ import {
 	encryptEnvelope,
 } from "@/lib/provider-config/crypto.ts";
 
+const SecretStringSchema = z.string().trim().min(1);
+
 const SyncAccountCredentialsSchema = z
 	.object({
-		accessToken: z.string().min(1).optional(),
-		apiKey: z.string().min(1).optional(),
-		refreshToken: z.string().min(1).optional(),
+		accessToken: SecretStringSchema.optional(),
+		apiKey: SecretStringSchema.optional(),
+		refreshToken: SecretStringSchema.optional(),
 	})
-	.strict();
+	.strict()
+	.refine(
+		(value) => value.accessToken !== undefined || value.apiKey !== undefined,
+		"Provide an access token or API key.",
+	);
 
 type SyncAccountCredentials = z.infer<typeof SyncAccountCredentialsSchema>;
 
@@ -23,7 +29,7 @@ interface SyncAccountPublic {
 	readonly cursor: string | null;
 	readonly externalAccountId: string | null;
 	readonly lastError: string | null;
-	readonly linkedAt: Date | null;
+	readonly linkedAt: Date;
 	readonly provider: SyncAccountProvider;
 }
 
@@ -42,7 +48,7 @@ const toPublic = (row: {
 	cursor: string | null;
 	externalAccountId: string | null;
 	lastError: string | null;
-	linkedAt: Date | null;
+	linkedAt: Date;
 	provider: SyncAccountProvider;
 }): SyncAccountPublic => ({
 	cursor: row.cursor,
@@ -97,8 +103,9 @@ const linkSyncAccount = async (
 	db: Db,
 	input: LinkSyncAccountInput,
 ): Promise<SyncAccountPublic> => {
+	const credentials = SyncAccountCredentialsSchema.parse(input.credentials);
 	const envelope = await encryptEnvelope(
-		JSON.stringify(input.credentials),
+		JSON.stringify(credentials),
 		input.masterKeyBase64,
 		aadFor(input.userId, input.provider),
 	);
@@ -113,7 +120,9 @@ const linkSyncAccount = async (
 		.insert(syncAccountLink)
 		.values({
 			...envelopeColumns,
-			externalAccountId: input.externalAccountId,
+			...(input.externalAccountId === undefined
+				? {}
+				: { externalAccountId: input.externalAccountId }),
 			linkedAt,
 			provider: input.provider,
 			userId: input.userId,
@@ -121,7 +130,9 @@ const linkSyncAccount = async (
 		.onConflictDoUpdate({
 			set: {
 				...envelopeColumns,
-				externalAccountId: input.externalAccountId,
+				...(input.externalAccountId === undefined
+					? {}
+					: { externalAccountId: input.externalAccountId }),
 				lastError: sql`NULL`,
 				linkedAt,
 			},
@@ -190,6 +201,7 @@ export {
 	linkSyncAccount,
 	listSyncAccounts,
 	readSyncAccountCredentials,
+	SyncAccountCredentialsSchema,
 	unlinkSyncAccount,
 };
 export type { LinkSyncAccountInput, SyncAccountCredentials, SyncAccountPublic };

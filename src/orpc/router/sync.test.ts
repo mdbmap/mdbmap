@@ -81,9 +81,19 @@ describe("sync account entitlement gate", () => {
 				userId: "user-1",
 			})
 			.run();
-		await expect(clientFor(db, "user-1").sync.list()).rejects.toMatchObject({
+		const client = clientFor(db, "user-1");
+		await expect(client.sync.list()).rejects.toMatchObject({
 			code: "FORBIDDEN",
 		});
+		await expect(
+			client.sync.connect({
+				credentials: { accessToken: "tok" },
+				provider: "anilist",
+			}),
+		).rejects.toMatchObject({ code: "FORBIDDEN" });
+		await expect(
+			client.sync.disconnect({ provider: "anilist" }),
+		).rejects.toMatchObject({ code: "FORBIDDEN" });
 	});
 });
 

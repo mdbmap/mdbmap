@@ -6,6 +6,7 @@ import { env } from "@/env";
 import {
 	linkSyncAccount,
 	listSyncAccounts,
+	SyncAccountCredentialsSchema,
 	unlinkSyncAccount,
 } from "@/lib/sync-accounts";
 import { authed } from "@/orpc/base";
@@ -17,18 +18,8 @@ const SyncProviderInput = z.object({
 
 const ConnectInput = z
 	.object({
-		credentials: z
-			.object({
-				accessToken: z.string().min(1).optional(),
-				apiKey: z.string().min(1).optional(),
-				refreshToken: z.string().min(1).optional(),
-			})
-			.refine(
-				(value) =>
-					value.accessToken !== undefined || value.apiKey !== undefined,
-				"Provide an access token or API key.",
-			),
-		externalAccountId: z.string().min(1).optional(),
+		credentials: SyncAccountCredentialsSchema,
+		externalAccountId: z.string().trim().min(1).optional(),
 		provider: z.enum(syncAccountProviders),
 	})
 	.strict();
@@ -52,19 +43,8 @@ const connect = authed
 	.input(ConnectInput)
 	.handler(async ({ context, input }) => {
 		await requireSyncEntitlement(context.db, context.user.id);
-		const credentials = {
-			...(input.credentials.accessToken === undefined
-				? {}
-				: { accessToken: input.credentials.accessToken }),
-			...(input.credentials.apiKey === undefined
-				? {}
-				: { apiKey: input.credentials.apiKey }),
-			...(input.credentials.refreshToken === undefined
-				? {}
-				: { refreshToken: input.credentials.refreshToken }),
-		};
 		return linkSyncAccount(context.db, {
-			credentials,
+			credentials: input.credentials,
 			...(input.externalAccountId === undefined
 				? {}
 				: { externalAccountId: input.externalAccountId }),
