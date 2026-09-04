@@ -30,6 +30,11 @@ const WorkGetInput = z.object({
 	order: z.enum(presentationOrderSlugs).optional(),
 });
 
+const SearchQueryInput = z.object({
+	mediaKind: z.enum(["anime", "film", "tv"]).optional(),
+	query: z.string(),
+});
+
 const SetStatusInput = z.object({
 	continuityId: z.string().min(1),
 	status: WatchStatusSchema,
@@ -195,6 +200,17 @@ interface Similar {
 	title: string;
 }
 
+type CatalogueTitle = z.infer<typeof CatalogueTitleInput>;
+
+interface SearchHit {
+	catalogue: CatalogueTitle;
+	continuityId: string | undefined;
+	coverRef: string | undefined;
+	mediaKind: MediaKind;
+	title: string;
+	year: number | undefined;
+}
+
 interface WorkHeader {
 	backdropRef: string | undefined;
 	coverRef: string | undefined;
@@ -305,6 +321,7 @@ interface RatingResult {
 export {
 	ApiKeyPlanSchema,
 	CandidateIdInput,
+	CatalogueTitleInput,
 	CreateProviderInput,
 	IngestStartInput,
 	ManualPairInput,
@@ -314,6 +331,7 @@ export {
 	RemoveProviderInput,
 	ResearchTimingSchema,
 	RevokeApiKeyInput,
+	SearchQueryInput,
 	SetEpisodeWatchedInput,
 	SetRatingInput,
 	SetResearchTimingInput,
@@ -327,6 +345,7 @@ export {
 export type {
 	AdminIngestStartResult,
 	ApiKeyRow,
+	CatalogueTitle,
 	CommunityScore,
 	Credit,
 	EpisodeView,
@@ -339,6 +358,7 @@ export type {
 	ProviderRow,
 	RateableUnit,
 	RatingResult,
+	SearchHit,
 	ServiceRating,
 	Similar,
 	TrackingSummary,
