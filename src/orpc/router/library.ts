@@ -9,7 +9,8 @@ import { authed } from "@/orpc/base";
 import type { Db } from "@/orpc/context";
 import { instalmentsOf } from "@/orpc/instalments";
 import type { Providers, WorkMetadata } from "@/orpc/providers";
-import type { LibraryEntry } from "@/orpc/schema";
+import type { LibraryEntry, LibrarySort } from "@/orpc/schema";
+import { LibraryListInput } from "@/orpc/schema";
 
 type WatchStatusRow = typeof watchStatus.$inferSelect;
 
@@ -269,36 +270,94 @@ const toEntry = async (
 	};
 };
 
-const list = authed.handler(async ({ context }): Promise<LibraryEntry[]> => {
-	const userId = context.user.id;
-	const rows = await context.db
-		.select()
-		.from(watchStatus)
-		.where(eq(watchStatus.userId, userId))
-		.orderBy(desc(watchStatus.updatedAt), desc(watchStatus.id))
-		.all();
-	const tracked = await trackedContinuities(context.engine, rows);
-	const survivorIds = [
-		...new Set(
-			tracked
-				.map((entry) => parseContinuityKey(entry.resolved.continuityId))
-				.filter((id): id is number => id !== undefined),
-		),
-	];
-	const [watched, ratings] = await Promise.all([
-		watchedLocators(context.db, userId, tracked),
-		workRatings(context.db, userId),
-	]);
-	const aliases =
-		ratings.size === 0
-			? new Map<number, readonly `continuity:${number}`[]>()
-			: await retiredKeysBySurvivor(context.db, survivorIds);
-	return Promise.all(
-		tracked.map(async (entry) =>
-			toEntry(context.providers, ratings, aliases, watched, entry),
-		),
-	);
-});
+const untitledTitle = "";
+
+const compareTitle = (left: LibraryEntry, right: LibraryEntry): number => {
+	const leftTitle = left.title ?? untitledTitle;
+	const rightTitle = right.title ?? untitledTitle;
+	if (leftTitle === untitledTitle && rightTitle !== untitledTitle) {
+		return 1;
+	}
+	if (rightTitle === untitledTitle && leftTitle !== untitledTitle) {
+		return -1;
+	}
+	const byTitle = leftTitle.localeCompare(rightTitle, undefined, {
+		sensitivity: "base",
+	});
+	if (byTitle !== 0) {
+		return byTitle;
+	}
+	return left.continuityId.localeCompare(right.continuityId);
+};
+
+const compareRating = (left: LibraryEntry, right: LibraryEntry): number => {
+	const leftRating = left.personalRating;
+	const rightRating = right.personalRating;
+	if (leftRating === undefined && rightRating === undefined) {
+		return left.continuityId.localeCompare(right.continuityId);
+	}
+	if (leftRating === undefined) {
+		return 1;
+	}
+	if (rightRating === undefined) {
+		return -1;
+	}
+	if (leftRating !== rightRating) {
+		return rightRating - leftRating;
+	}
+	return left.continuityId.localeCompare(right.continuityId);
+};
+
+const sortEntries = (
+	entries: LibraryEntry[],
+	sort: LibrarySort | undefined,
+): LibraryEntry[] => {
+	if (sort === undefined || sort === "activity") {
+		return entries;
+	}
+	if (sort === "title") {
+		return entries.toSorted(compareTitle);
+	}
+	return entries.toSorted(compareRating);
+};
+
+const list = authed
+	.input(LibraryListInput)
+	.handler(async ({ context, input }): Promise<LibraryEntry[]> => {
+		const userId = context.user.id;
+		const rows = await context.db
+			.select()
+			.from(watchStatus)
+			.where(eq(watchStatus.userId, userId))
+			.orderBy(desc(watchStatus.updatedAt), desc(watchStatus.id))
+			.all();
+		const tracked = await trackedContinuities(context.engine, rows);
+		const survivorIds = [
+			...new Set(
+				tracked
+					.map((entry) => parseContinuityKey(entry.resolved.continuityId))
+					.filter((id): id is number => id !== undefined),
+			),
+		];
+		const [watched, ratings] = await Promise.all([
+			watchedLocators(context.db, userId, tracked),
+			workRatings(context.db, userId),
+		]);
+		const aliases =
+			ratings.size === 0
+				? new Map<number, readonly `continuity:${number}`[]>()
+				: await retiredKeysBySurvivor(context.db, survivorIds);
+		const entries = await Promise.all(
+			tracked.map(async (entry) =>
+				toEntry(context.providers, ratings, aliases, watched, entry),
+			),
+		);
+		const filtered =
+			input.status === undefined
+				? entries
+				: entries.filter((entry) => entry.status === input.status);
+		return sortEntries(filtered, input.sort);
+	});
 
 const library = { list };
 

@@ -91,7 +91,10 @@ const track = async (
 	db: TestDb,
 	continuityKey: string,
 	updatedAt: Date,
-	options: { rewatchCount?: number; status?: "completed" | "watching" } = {},
+	options: {
+		rewatchCount?: number;
+		status?: "completed" | "dropped" | "watching";
+	} = {},
 ) => {
 	await db
 		.insert(watchStatus)
@@ -154,7 +157,7 @@ describe("library.list", () => {
 			})
 			.run();
 
-		const entries = await clientFor(db, "user-1").library.list();
+		const entries = await clientFor(db, "user-1").library.list({});
 
 		expect(entries).toEqual([
 			{
@@ -178,7 +181,7 @@ describe("library.list", () => {
 		await track(db, older.continuityId, new Date("2026-01-01T00:00:00Z"));
 		await track(db, newer.continuityId, new Date("2026-02-01T00:00:00Z"));
 
-		const entries = await clientFor(db, "user-1").library.list();
+		const entries = await clientFor(db, "user-1").library.list({});
 
 		expect(entries.map((entry) => entry.continuityId)).toEqual([
 			newer.continuityId,
@@ -190,7 +193,7 @@ describe("library.list", () => {
 		const db = await seededViewer();
 		await seedSpyXFamily(db);
 
-		expect(await clientFor(db, "user-1").library.list()).toEqual([]);
+		expect(await clientFor(db, "user-1").library.list({})).toEqual([]);
 	});
 
 	it("keeps the row when its metadata provider fails", async () => {
@@ -202,7 +205,7 @@ describe("library.list", () => {
 			db,
 			"user-1",
 			providersUsing(brokenProvider),
-		).library.list();
+		).library.list({});
 
 		expect(entries).toHaveLength(1);
 		expect(entries[0]?.continuityId).toBe(continuityId);
@@ -219,13 +222,13 @@ describe("library.list", () => {
 		const { continuityId } = await seedSpyXFamily(db);
 		await track(db, continuityId, new Date("2026-01-01T00:00:00Z"));
 
-		expect(await clientFor(db, "user-2").library.list()).toEqual([]);
+		expect(await clientFor(db, "user-2").library.list({})).toEqual([]);
 	});
 
 	it("rejects a viewer without a session", async () => {
 		const db = await seededViewer();
 
-		await expect(clientFor(db, undefined).library.list()).rejects.toThrow(
+		await expect(clientFor(db, undefined).library.list({})).rejects.toThrow(
 			/sign in/iu,
 		);
 	});
@@ -242,7 +245,7 @@ describe("library.list", () => {
 			status: "watching",
 		});
 
-		const entries = await clientFor(db, "user-1").library.list();
+		const entries = await clientFor(db, "user-1").library.list({});
 
 		expect(entries).toHaveLength(1);
 		expect(entries[0]?.continuityId).toBe(survivor.continuityId);
@@ -265,7 +268,7 @@ describe("library.list", () => {
 			})
 			.run();
 
-		const entries = await clientFor(db, "user-1").library.list();
+		const entries = await clientFor(db, "user-1").library.list({});
 
 		expect(entries).toEqual([
 			expect.objectContaining({
@@ -300,7 +303,7 @@ describe("library.list", () => {
 			}),
 		);
 
-		const entries = await clientFor(db, "user-1").library.list();
+		const entries = await clientFor(db, "user-1").library.list({});
 
 		expect(entries).toHaveLength(101);
 		let watchedTotal = 0;
@@ -316,7 +319,7 @@ describe("library.list", () => {
 		await track(db, continuityId, new Date("2026-01-01T00:00:00Z"));
 		await track(db, "continuity:999999", new Date("2026-02-01T00:00:00Z"));
 
-		const entries = await clientFor(db, "user-1").library.list();
+		const entries = await clientFor(db, "user-1").library.list({});
 
 		expect(entries.map((entry) => entry.continuityId)).toEqual([continuityId]);
 	});
@@ -338,7 +341,62 @@ describe("library.list", () => {
 				"user-1",
 				providersUsing(titledProvider),
 				engine,
-			).library.list(),
+			).library.list({}),
 		).rejects.toThrow(/engine: boom/u);
+	});
+
+	it("filters by status", async () => {
+		const db = await seededViewer();
+		const spy = await seedSpyXFamily(db);
+		const tmdb = await seedTmdbContinuity(db, "movie", "550");
+		await track(db, spy.continuityId, new Date("2024-01-02T00:00:00.000Z"), {
+			status: "watching",
+		});
+		await track(db, tmdb.continuityId, new Date("2024-01-01T00:00:00.000Z"), {
+			status: "completed",
+		});
+		const client = clientFor(db, "user-1");
+		const watching = await client.library.list({ status: "watching" });
+		expect(watching).toHaveLength(1);
+		expect(watching[0]?.status).toBe("watching");
+		const completed = await client.library.list({ status: "completed" });
+		expect(completed).toHaveLength(1);
+		expect(completed[0]?.status).toBe("completed");
+		expect(await client.library.list({ status: "dropped" })).toEqual([]);
+	});
+
+	it("sorts by title and personal rating", async () => {
+		const db = await seededViewer();
+		const spy = await seedSpyXFamily(db);
+		const tmdb = await seedTmdbContinuity(db, "movie", "550");
+		await track(db, spy.continuityId, new Date("2024-01-02T00:00:00.000Z"));
+		await track(db, tmdb.continuityId, new Date("2024-01-03T00:00:00.000Z"));
+		await db
+			.insert(personalRating)
+			.values([
+				{
+					score: 4,
+					unitKey: spy.continuityId,
+					unitKind: "work",
+					userId: "user-1",
+				},
+				{
+					score: 9,
+					unitKey: tmdb.continuityId,
+					unitKind: "work",
+					userId: "user-1",
+				},
+			])
+			.run();
+		const client = clientFor(db, "user-1");
+		const byTitle = await client.library.list({ sort: "title" });
+		const titles = byTitle.map((row) => row.title ?? "");
+		expect(titles).toEqual(
+			[...titles].toSorted((left, right) =>
+				left.localeCompare(right, undefined, { sensitivity: "base" }),
+			),
+		);
+		const byRating = await client.library.list({ sort: "rating" });
+		expect(byRating.map((row) => row.personalRating)).toEqual([9, 4]);
 	});
 });

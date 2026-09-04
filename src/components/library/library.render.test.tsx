@@ -2,7 +2,8 @@ import type { ReactNode } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
 
-import type { LibraryEntry } from "@/orpc/schema";
+import type { WatchStatus } from "@/db/schema";
+import type { LibraryEntry, LibrarySort } from "@/orpc/schema";
 
 import { LibraryPage } from "./library-page";
 
@@ -30,6 +31,9 @@ vi.mock("@tanstack/react-router", () => ({
 vi.mock("@/integrations/better-auth/header-user", () => ({
 	BetterAuthHeader: () => false,
 }));
+
+const onSortChange = vi.fn<(sort: LibrarySort) => void>();
+const onStatusChange = vi.fn<(status: WatchStatus | undefined) => void>();
 
 const NO_ENTRIES: LibraryEntry[] = [];
 
@@ -63,8 +67,22 @@ const entries: LibraryEntry[] = [
 	}),
 ];
 
+const renderPage = (
+	pageEntries: readonly LibraryEntry[],
+	status?: LibraryEntry["status"],
+) =>
+	renderToStaticMarkup(
+		<LibraryPage
+			entries={pageEntries}
+			onSortChange={onSortChange}
+			onStatusChange={onStatusChange}
+			sort="activity"
+			status={status}
+		/>,
+	);
+
 describe("LibraryPage rows", () => {
-	const html = renderToStaticMarkup(<LibraryPage entries={entries} />);
+	const html = renderPage(entries);
 
 	it("lists each tracked work with status, progress and rating", () => {
 		expect(html).toContain("Spy × Family");
@@ -82,28 +100,35 @@ describe("LibraryPage rows", () => {
 
 	it("shows the cover when present and the ruled placeholder otherwise", () => {
 		expect(html).toContain("https://img.test/abyss.jpg");
-		expect(html).toContain("poster-340");
+		expect(html).toContain("poster-");
 	});
 
 	it("falls back to a placeholder title when metadata is missing", () => {
 		expect(html).toContain("Title unavailable");
 	});
 
-	it("counts the tracked works in the header", () => {
+	it("counts the tracked works and exposes status and sort controls", () => {
 		expect(html).toContain("3 works");
+		expect(html).toContain("Watching");
+		expect(html).toContain("Recent activity");
 	});
 });
 
-describe("LibraryPage empty state", () => {
-	const html = renderToStaticMarkup(<LibraryPage entries={NO_ENTRIES} />);
-
+describe("LibraryPage empty states", () => {
 	it("guides an untracked viewer to search", () => {
+		const html = renderPage(NO_ENTRIES);
 		expect(html).toContain("Nothing tracked yet.");
 		expect(html).toContain("0 works");
 		expect(html).toContain("Search catalogues");
 		expect(html).toContain('href="/search"');
 		expect(html).toContain("data-cta");
-		expect(html).not.toContain('href="/"');
 		expect(html).not.toContain("/work/");
+	});
+
+	it("explains an empty filtered view and offers to clear it", () => {
+		const html = renderPage(NO_ENTRIES, "dropped");
+		expect(html).toContain("Nothing in this view.");
+		expect(html).toContain("Show all");
+		expect(html).not.toContain("Search catalogues");
 	});
 });

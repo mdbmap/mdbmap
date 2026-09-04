@@ -1,11 +1,21 @@
 import { createFileRoute, redirect } from "@tanstack/react-router";
 
+import {
+	libraryListInput,
+	parseLibrarySearch,
+} from "@/components/library/library-params";
+import type { LibrarySearch } from "@/components/library/library-params";
 import { LibraryRoute } from "@/components/library/library-route";
 import { viewerIsSignedIn } from "@/lib/viewer-session";
 import { orpc } from "@/orpc/client";
 
 // Sign-in is the AuthDialog on the home page, not a route of its own.
 const SIGN_IN_HREF = "/?signin=1";
+
+const libraryLoaderDeps = (opts: { search: LibrarySearch }): LibrarySearch => ({
+	...(opts.search.sort === undefined ? {} : { sort: opts.search.sort }),
+	...(opts.search.status === undefined ? {} : { status: opts.search.status }),
+});
 
 export const Route = createFileRoute("/library")({
 	beforeLoad: async () => {
@@ -14,6 +24,10 @@ export const Route = createFileRoute("/library")({
 		}
 	},
 	component: LibraryRoute,
-	loader: async ({ context }) =>
-		context.queryClient.ensureQueryData(orpc.library.list.queryOptions()),
+	loader: async ({ context, deps }) =>
+		context.queryClient.ensureQueryData(
+			orpc.library.list.queryOptions({ input: libraryListInput(deps) }),
+		),
+	loaderDeps: libraryLoaderDeps,
+	validateSearch: parseLibrarySearch,
 });
