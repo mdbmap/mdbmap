@@ -34,7 +34,7 @@ function useWorkTracking(
 	const queryKey = orpc.work.get.queryKey({
 		input: workGetInput(continuityId, order),
 	});
-	const libraryQueryKey = orpc.library.list.queryOptions().queryKey;
+	const libraryQueryKey = orpc.library.list.key();
 
 	const patch = async (
 		transform: (work: WorkView) => WorkView,
