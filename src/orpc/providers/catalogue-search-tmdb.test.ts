@@ -98,6 +98,34 @@ describe("tmdb catalogue search movie", () => {
 	});
 });
 
+describe("tmdb catalogue search null fields", () => {
+	it("treats null poster_path and release_date as missing", async () => {
+		const fetchFn = vi.fn(
+			async (_input: RequestInfo | URL): Promise<Response> => {
+				await Promise.resolve();
+				return new Response(
+					'{"results":[{"id":11,"poster_path":null,"release_date":null,"title":"Untitled"}]}',
+					{ headers: { "Content-Type": "application/json" } },
+				);
+			},
+		);
+		const search = createTmdbCatalogueSearch({
+			apiKey: "test-key",
+			fetchFn,
+		});
+
+		await expect(search.search("untitled", "movie")).resolves.toEqual([
+			{
+				catalogue: { id: "11", namespace: "movie", service: "tmdb" },
+				coverRef: undefined,
+				mediaKind: "film",
+				title: "Untitled",
+				year: undefined,
+			},
+		]);
+	});
+});
+
 describe("tmdb catalogue search tv", () => {
 	it("maps tv hits to catalogue identity", async () => {
 		const fetchFn = vi.fn(

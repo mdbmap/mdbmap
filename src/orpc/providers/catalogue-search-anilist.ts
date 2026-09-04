@@ -4,11 +4,13 @@ import type { CatalogueSearchHit } from "./types.ts";
 
 const DEFAULT_ANILIST_URL = "https://graphql.anilist.co";
 const DEFAULT_LIMIT = 20;
+const DEFAULT_TIMEOUT_MS = 8000;
 
 interface AnilistSearchDeps {
 	baseUrl?: string;
 	fetchFn?: typeof fetch;
 	limit?: number;
+	timeoutMs?: number;
 }
 
 const anilistTitleSchema = z.object({
@@ -94,6 +96,7 @@ const createAnilistCatalogueSearch = (
 		baseUrl = DEFAULT_ANILIST_URL,
 		fetchFn = fetch,
 		limit = DEFAULT_LIMIT,
+		timeoutMs = DEFAULT_TIMEOUT_MS,
 	} = deps;
 
 	const search = async (
@@ -106,6 +109,7 @@ const createAnilistCatalogueSearch = (
 			}),
 			headers: { "Content-Type": "application/json" },
 			method: "POST",
+			signal: AbortSignal.timeout(timeoutMs),
 		});
 		if (!response.ok) {
 			throw new Error(`anilist: ${response.status} for search`);

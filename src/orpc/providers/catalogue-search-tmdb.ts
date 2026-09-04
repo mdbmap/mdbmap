@@ -5,21 +5,23 @@ import type { CatalogueSearchHit } from "./types.ts";
 const DEFAULT_BASE_URL = "https://api.themoviedb.org/3";
 const YEAR_LENGTH = 4;
 const DEFAULT_LIMIT = 20;
+const DEFAULT_TIMEOUT_MS = 8000;
 
 interface TmdbSearchDeps {
 	apiKey: string | undefined;
 	baseUrl?: string;
 	fetchFn?: typeof fetch;
 	limit?: number;
+	timeoutMs?: number;
 }
 
 const tmdbSearchItemSchema = z.object({
-	first_air_date: z.string().optional(),
+	first_air_date: z.string().nullish(),
 	id: z.number(),
 	media_type: z.enum(["movie", "tv", "person"]).optional(),
 	name: z.string().optional(),
-	poster_path: z.string().optional(),
-	release_date: z.string().optional(),
+	poster_path: z.string().nullish(),
+	release_date: z.string().nullish(),
 	title: z.string().optional(),
 });
 
@@ -29,11 +31,13 @@ const tmdbSearchResponseSchema = z.object({
 
 type TmdbSearchItem = z.infer<typeof tmdbSearchItemSchema>;
 
-const imageRef = (path: string | undefined): string | undefined =>
-	path === undefined || path === "" ? undefined : `tmdb:${path}`;
+const imageRef = (path: string | null | undefined): string | undefined =>
+	path === undefined || path === null || path === ""
+		? undefined
+		: `tmdb:${path}`;
 
-const yearOf = (date: string | undefined): number | undefined => {
-	if (date === undefined) {
+const yearOf = (date: string | null | undefined): number | undefined => {
+	if (date === undefined || date === null) {
 		return undefined;
 	}
 	const head = date.slice(0, YEAR_LENGTH);
@@ -72,6 +76,7 @@ interface HttpContext {
 	apiKey: string | undefined;
 	baseUrl: string;
 	fetchFn: typeof fetch;
+	timeoutMs: number;
 }
 
 const getJson = async <Schema extends z.ZodType>(
@@ -85,6 +90,7 @@ const getJson = async <Schema extends z.ZodType>(
 	const separator = path.includes("?") ? "&" : "?";
 	const response = await http.fetchFn(
 		`${http.baseUrl}${path}${separator}api_key=${http.apiKey}`,
+		{ signal: AbortSignal.timeout(http.timeoutMs) },
 	);
 	if (!response.ok) {
 		throw new Error(`tmdb: ${response.status} for ${path}`);
@@ -154,8 +160,9 @@ const createTmdbCatalogueSearch = (
 		baseUrl = DEFAULT_BASE_URL,
 		fetchFn = fetch,
 		limit = DEFAULT_LIMIT,
+		timeoutMs = DEFAULT_TIMEOUT_MS,
 	} = deps;
-	const http: HttpContext = { apiKey, baseUrl, fetchFn };
+	const http: HttpContext = { apiKey, baseUrl, fetchFn, timeoutMs };
 
 	const search = async (
 		query: string,

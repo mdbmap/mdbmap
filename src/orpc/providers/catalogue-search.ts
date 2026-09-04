@@ -33,6 +33,17 @@ const interleave = (
 	return merged;
 };
 
+const settledHits = (
+	result: PromiseSettledResult<readonly CatalogueSearchHit[]>,
+	label: string,
+): readonly CatalogueSearchHit[] => {
+	if (result.status === "fulfilled") {
+		return result.value;
+	}
+	console.error(`catalogue-search: ${label} failed`, result.reason);
+	return [];
+};
+
 const createCatalogueSearchProvider = (
 	deps: CatalogueSearchDeps = {},
 ): CatalogueSearchProvider => {
@@ -59,11 +70,15 @@ const createCatalogueSearchProvider = (
 		if (mediaKind === "tv") {
 			return tmdb.search(query, "tv");
 		}
-		const [tmdbHits, anilistHits] = await Promise.all([
+		const [tmdbResult, anilistResult] = await Promise.allSettled([
 			tmdb.search(query, "multi"),
 			anilist.search(query),
 		]);
-		return interleave(tmdbHits, anilistHits, limit);
+		return interleave(
+			settledHits(tmdbResult, "tmdb"),
+			settledHits(anilistResult, "anilist"),
+			limit,
+		);
 	};
 
 	return { search };

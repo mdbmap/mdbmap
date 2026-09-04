@@ -46,4 +46,27 @@ describe("createCatalogueSearchProvider unfiltered merge", () => {
 		const results = await provider.search("query");
 		expect(results.map((hit) => hit.title)).toEqual(["T1", "A1", "T2", "A2"]);
 	});
+
+	it("keeps fulfilled hits when one provider rejects", async () => {
+		const tmdbHits = [film("10", "T1"), film("20", "T2")];
+		const anilist: AnilistCatalogueSearch = {
+			search: (_query: string): readonly CatalogueSearchHit[] => {
+				throw new Error("anilist down");
+			},
+		};
+		const tmdb: TmdbCatalogueSearch = {
+			search: (
+				_query: string,
+				_scope: TmdbSearchScope,
+			): readonly CatalogueSearchHit[] => tmdbHits,
+		};
+		const provider = createCatalogueSearchProvider({
+			anilist,
+			limit: 4,
+			tmdb,
+		});
+
+		const results = await provider.search("query");
+		expect(results.map((hit) => hit.title)).toEqual(["T1", "T2"]);
+	});
 });
