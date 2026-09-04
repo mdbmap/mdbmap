@@ -89,15 +89,27 @@ const assertSegmentsForContinuity = async (
 	continuityId: number,
 	segmentIds: readonly number[],
 ): Promise<void> => {
-	const rows = await db
-		.select({
-			continuityId: continuitySegments.continuityId,
-			id: continuitySegments.id,
-		})
-		.from(continuitySegments)
-		.where(inArray(continuitySegments.id, [...segmentIds]))
-		.all();
-	const byId = new Map(rows.map((row) => [row.id, row.continuityId]));
+	const chunkSize = 100;
+	const chunks = Array.from(
+		{ length: Math.ceil(segmentIds.length / chunkSize) },
+		(_ignored, index) =>
+			segmentIds.slice(index * chunkSize, (index + 1) * chunkSize),
+	);
+	const chunkRows = await Promise.all(
+		chunks.map(async (chunk) =>
+			db
+				.select({
+					continuityId: continuitySegments.continuityId,
+					id: continuitySegments.id,
+				})
+				.from(continuitySegments)
+				.where(inArray(continuitySegments.id, [...chunk]))
+				.all(),
+		),
+	);
+	const byId = new Map(
+		chunkRows.flat().map((row) => [row.id, row.continuityId]),
+	);
 	if (segmentIds.some((segmentId) => byId.get(segmentId) !== continuityId)) {
 		throw new ORPCError("BAD_REQUEST", {
 			message: "Proposal segment does not belong to continuity.",
@@ -326,8 +338,8 @@ const review = async (
 		.returning({ id: presentationOrderProposals.id })
 		.all();
 	if (updated.length === 0) {
-		throw new ORPCError("BAD_REQUEST", {
-			message: "Only pending proposals can be reviewed.",
+		throw new ORPCError("CONFLICT", {
+			message: "Proposal was already reviewed.",
 		});
 	}
 	return loadProposal(db, proposalId);
