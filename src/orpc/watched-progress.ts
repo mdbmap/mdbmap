@@ -1,4 +1,4 @@
-import { eq } from "drizzle-orm";
+import { and, eq, inArray } from "drizzle-orm";
 
 import { episodeProgress } from "@/db/schema";
 import type { Db } from "@/orpc/context";
@@ -12,6 +12,16 @@ interface WatchedProgress {
 	readonly watchedAt: ReadonlyMap<string, Date>;
 }
 
+const LOCATOR_CHUNK = 50;
+
+const locatorChunks = (locators: readonly string[]): string[][] => {
+	const chunks: string[][] = [];
+	for (let offset = 0; offset < locators.length; offset += LOCATOR_CHUNK) {
+		chunks.push(locators.slice(offset, offset + LOCATOR_CHUNK));
+	}
+	return chunks;
+};
+
 const watchedProgress = async (
 	db: Db,
 	userId: string,
@@ -21,20 +31,26 @@ const watchedProgress = async (
 	if (locatorSet.size === 0) {
 		return { locators: new Set(), watchedAt: new Map() };
 	}
-	const rows = await db
-		.select({
-			locator: episodeProgress.instalmentLocator,
-			watchedAt: episodeProgress.watchedAt,
-		})
-		.from(episodeProgress)
-		.where(eq(episodeProgress.userId, userId))
-		.all();
+	const pages = await Promise.all(
+		locatorChunks([...locatorSet]).map(async (chunk) =>
+			db
+				.select({
+					locator: episodeProgress.instalmentLocator,
+					watchedAt: episodeProgress.watchedAt,
+				})
+				.from(episodeProgress)
+				.where(
+					and(
+						eq(episodeProgress.userId, userId),
+						inArray(episodeProgress.instalmentLocator, chunk),
+					),
+				)
+				.all(),
+		),
+	);
 	const locators = new Set<string>();
 	const watchedAt = new Map<string, Date>();
-	for (const row of rows) {
-		if (!locatorSet.has(row.locator)) {
-			continue;
-		}
+	for (const row of pages.flat()) {
 		locators.add(row.locator);
 		watchedAt.set(row.locator, row.watchedAt);
 	}
