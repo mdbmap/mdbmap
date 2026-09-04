@@ -12,6 +12,7 @@ import {
 	listSyncAccounts,
 	readSyncAccountCredentials,
 	unlinkSyncAccount,
+	updateSyncAccountCursor,
 } from "./store.ts";
 
 const seedUser = async (db: Awaited<ReturnType<typeof freshDb>>) => {
@@ -49,6 +50,7 @@ describe("sync account store link", () => {
 		});
 		expect(linked.cursor).toBeNull();
 		expect(linked.lastError).toBeNull();
+		expect(linked.lastSuccessfulAt).toBeNull();
 		expect(linked.linkedAt).toBeInstanceOf(Date);
 
 		await expect(
@@ -150,6 +152,7 @@ describe("sync account store upsert and unlink", () => {
 		});
 		expect(relinked.externalAccountId).toBe("acct-2");
 		expect(relinked.cursor).toBeNull();
+		expect(relinked.lastSuccessfulAt).toBeNull();
 	});
 
 	it("unlinks a provider and reports missing rows", async () => {
@@ -162,5 +165,24 @@ describe("sync account store upsert and unlink", () => {
 		await expect(unlinkSyncAccount(db, "user-1", "trakt")).resolves.toBe(true);
 		await expect(unlinkSyncAccount(db, "user-1", "trakt")).resolves.toBe(false);
 		await expect(listSyncAccounts(db, "user-1")).resolves.toEqual([]);
+	});
+
+	it("records lastSuccessfulAt when the cursor advances", async () => {
+		await linkSyncAccount(db, {
+			credentials: { accessToken: "tok" },
+			masterKeyBase64: masterKey,
+			provider: "anilist",
+			userId: "user-1",
+		});
+		await updateSyncAccountCursor(
+			db,
+			"user-1",
+			"anilist",
+			"continuity:1@stamp",
+		);
+		const [account] = await listSyncAccounts(db, "user-1");
+		expect(account?.cursor).toBe("continuity:1@stamp");
+		expect(account?.lastError).toBeNull();
+		expect(account?.lastSuccessfulAt).toBeInstanceOf(Date);
 	});
 });

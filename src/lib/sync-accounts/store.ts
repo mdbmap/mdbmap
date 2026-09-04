@@ -29,6 +29,7 @@ interface SyncAccountPublic {
 	readonly cursor: string | null;
 	readonly externalAccountId: string | null;
 	readonly lastError: string | null;
+	readonly lastSuccessfulAt: Date | null;
 	readonly linkedAt: Date;
 	readonly provider: SyncAccountProvider;
 }
@@ -48,12 +49,14 @@ const toPublic = (row: {
 	cursor: string | null;
 	externalAccountId: string | null;
 	lastError: string | null;
+	lastSuccessfulAt: Date | null;
 	linkedAt: Date;
 	provider: SyncAccountProvider;
 }): SyncAccountPublic => ({
 	cursor: row.cursor,
 	externalAccountId: row.externalAccountId,
 	lastError: row.lastError,
+	lastSuccessfulAt: row.lastSuccessfulAt,
 	linkedAt: row.linkedAt,
 	provider: row.provider,
 });
@@ -62,6 +65,7 @@ const publicColumns = {
 	cursor: syncAccountLink.cursor,
 	externalAccountId: syncAccountLink.externalAccountId,
 	lastError: syncAccountLink.lastError,
+	lastSuccessfulAt: syncAccountLink.lastSuccessfulAt,
 	linkedAt: syncAccountLink.linkedAt,
 	provider: syncAccountLink.provider,
 } as const;
@@ -152,7 +156,9 @@ const linkSyncAccount = async (
 				...(input.externalAccountId === undefined
 					? {}
 					: { externalAccountId: input.externalAccountId }),
-				...(externalAccountChanged ? { cursor: sql`NULL` } : {}),
+				...(externalAccountChanged
+					? { cursor: sql`NULL`, lastSuccessfulAt: sql`NULL` }
+					: {}),
 				lastError: sql`NULL`,
 				linkedAt,
 			},
@@ -225,7 +231,7 @@ const updateSyncAccountCursor = async (
 ): Promise<void> => {
 	await db
 		.update(syncAccountLink)
-		.set({ cursor, lastError: sql`NULL` })
+		.set({ cursor, lastError: sql`NULL`, lastSuccessfulAt: new Date() })
 		.where(
 			and(
 				eq(syncAccountLink.userId, userId),

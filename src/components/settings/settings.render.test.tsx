@@ -65,6 +65,33 @@ vi.mock("@/orpc/client", () => ({
 				}),
 			},
 		},
+		sync: {
+			connect: {
+				mutationOptions: (options?: object) => ({
+					mutationFn: noop,
+					...options,
+				}),
+			},
+			disconnect: {
+				mutationOptions: (options?: object) => ({
+					mutationFn: noop,
+					...options,
+				}),
+			},
+			list: {
+				queryKey: () => ["sync", "list"],
+				queryOptions: () => ({
+					queryFn: () => [],
+					queryKey: ["sync", "list"],
+				}),
+			},
+			pushLibrary: {
+				mutationOptions: (options?: object) => ({
+					mutationFn: noop,
+					...options,
+				}),
+			},
+		},
 	},
 }));
 
