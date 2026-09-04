@@ -1,8 +1,9 @@
 import { useCallback } from "react";
 import { tv } from "tailwind-variants";
 
-import { ScoreSelect } from "@/components/work/sidebar/score-select";
 import type { FilmView, RateableUnit } from "@/orpc/schema";
+
+import { RowScore } from "./row-score";
 
 const title = tv({
 	base: "min-w-0 truncate",
@@ -13,30 +14,6 @@ interface FilmRowProps {
 	film: FilmView;
 	onRate: (unit: RateableUnit, score: number | undefined) => void;
 	onToggle: (instalmentLocator: string, watched: boolean) => void;
-}
-
-function FilmScore({
-	airDate,
-	label,
-	onChange,
-	value,
-}: {
-	airDate: string | undefined;
-	label: string;
-	onChange: (score: number | undefined) => void;
-	value: number | undefined;
-}) {
-	return (
-		<span className="text-ink/45 flex items-center gap-2.5 justify-self-end font-mono text-[11px]">
-			<ScoreSelect
-				label={`Your score for ${label}`}
-				onChange={onChange}
-				size="inline"
-				value={value}
-			/>
-			{airDate}
-		</span>
-	);
 }
 
 function FilmRow({ film, onRate, onToggle }: FilmRowProps) {
@@ -62,9 +39,9 @@ function FilmRow({ film, onRate, onToggle }: FilmRowProps) {
 					type="checkbox"
 				/>
 				<span className={title({ on: watched })}>{label}</span>
-				<FilmScore
+				<RowScore
 					airDate={film.airDate}
-					label={label}
+					label={`Your score for ${label}`}
 					onChange={handleRate}
 					value={film.personalRating}
 				/>

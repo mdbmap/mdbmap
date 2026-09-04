@@ -45,9 +45,6 @@ function applyRating(
 		}
 		if (unit.kind === "episode") {
 			for (const part of draft.parts) {
-				if (part.kind !== "part") {
-					continue;
-				}
 				for (const episode of part.episodes) {
 					if (episode.rateableUnit.key === unit.key) {
 						episode.personalRating = score;

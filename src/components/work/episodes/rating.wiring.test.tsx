@@ -4,6 +4,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { usePartSelectionStore } from "@/components/work/part-state";
+import { PartPanel } from "@/components/work/sidebar/part-panel";
 import type {
 	EpisodeView,
 	FilmView,
@@ -89,7 +90,7 @@ vi.mock("react-aria-components", async () => {
 	};
 });
 
-vi.mock("@/components/work/sidebar/score-select", () => ({
+vi.mock("@/components/work/score-select", () => ({
 	ScoreSelect: ({
 		label,
 		onChange,
@@ -108,7 +109,7 @@ vi.mock("@/components/work/sidebar/score-select", () => ({
 	},
 }));
 
-vi.mock("@/components/work/sidebar/use-work-tracking", () => ({
+vi.mock("@/components/work/use-work-tracking", () => ({
 	useWorkTracking: () => ({
 		setRating,
 		setRewatch: vi.fn(),
@@ -239,6 +240,21 @@ describe("episode and film rating wiring", () => {
 		capturedScores[0]?.(9);
 		expect(setRating).toHaveBeenCalledWith(
 			{ key: "anidb:1#1", kind: "episode" },
+			9,
+		);
+	});
+	it("routes part ScoreSelect through setRating when signed in", () => {
+		useSession.mockReturnValue(signedIn);
+		usePartSelectionStore.getState().selectKey(partOne.rateableUnit.key);
+		renderToStaticMarkup(
+			<QueryClientProvider client={new QueryClient()}>
+				<PartPanel continuityId="continuity:x" parts={partOnly} />
+			</QueryClientProvider>,
+		);
+		expect(capturedScores.length).toBeGreaterThan(0);
+		capturedScores[0]?.(9);
+		expect(setRating).toHaveBeenCalledWith(
+			{ key: "part:Part 1", kind: "part" },
 			9,
 		);
 	});

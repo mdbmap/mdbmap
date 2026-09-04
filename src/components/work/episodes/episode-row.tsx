@@ -1,8 +1,9 @@
 import { useCallback } from "react";
 import { tv } from "tailwind-variants";
 
-import { ScoreSelect } from "@/components/work/sidebar/score-select";
 import type { EpisodeView, RateableUnit } from "@/orpc/schema";
+
+import { RowScore } from "./row-score";
 
 // Ruled still placeholders are hue-parameterised, but Tailwind only emits classes
 // it can see as literals — so the hue cycle maps to static class names here.
@@ -67,15 +68,12 @@ function EpisodeRow({ episode, onRate, onToggle }: EpisodeRowProps) {
 			<Still hue={hue} watched={watched} />
 			<span className="text-ink/45 font-mono text-xs">{padded}</span>
 			<span className={title({ on: watched })}>{episode.title}</span>
-			<span className="text-ink/45 flex items-center gap-2.5 justify-self-end font-mono text-[11px]">
-				<ScoreSelect
-					label={`Your score for episode ${padded}`}
-					onChange={handleRate}
-					size="inline"
-					value={episode.personalRating}
-				/>
-				{episode.airDate}
-			</span>
+			<RowScore
+				airDate={episode.airDate}
+				label={`Your score for episode ${padded}`}
+				onChange={handleRate}
+				value={episode.personalRating}
+			/>
 		</div>
 	);
 }

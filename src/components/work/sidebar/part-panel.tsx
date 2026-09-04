@@ -3,13 +3,13 @@ import { useCallback } from "react";
 import { Label } from "@/components/ui/label";
 import { Section } from "@/components/ui/section";
 import { useSelectedPart } from "@/components/work/part-state";
+import { ScoreSelect } from "@/components/work/score-select";
+import { useWorkTracking } from "@/components/work/use-work-tracking";
 import type { PresentationOrderSlug } from "@/db/engine-schema";
 import { useRequireAuth } from "@/integrations/better-auth/require-auth";
 import type { ServiceRating, WorkBlock } from "@/orpc/schema";
 
 import { CommunityRow } from "./community-row";
-import { ScoreSelect } from "./score-select";
-import { useWorkTracking } from "./use-work-tracking";
 
 const NO_PARTS = "No parts";
 const THIS_PART = "This part";
