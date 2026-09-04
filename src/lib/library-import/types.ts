@@ -31,6 +31,7 @@ interface ImportUnmatchedRow {
 
 interface ImportDraft {
 	readonly ambiguous: readonly ImportAmbiguousRow[];
+	readonly fingerprint: string;
 	readonly matched: readonly ImportMatchedRow[];
 	readonly provider: ImportProvider;
 	readonly unmatched: readonly ImportUnmatchedRow[];

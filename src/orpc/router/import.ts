@@ -3,6 +3,7 @@ import { z } from "zod";
 
 import { env } from "@/env";
 import {
+	applyImportDraft,
 	buildAnilistImportDraft,
 	buildMalImportDraft,
 	isAnilistAccessTokenMissingError,
@@ -41,6 +42,14 @@ const mapImportError = (error: unknown): never => {
 			message: error instanceof Error ? error.message : "Bad request",
 		});
 	}
+	if (
+		error instanceof Error &&
+		error.message.includes("fingerprint mismatch")
+	) {
+		throw new ORPCError("CONFLICT", {
+			message: "Import draft is stale. Reload and review again.",
+		});
+	}
 	throw error;
 };
 
@@ -69,6 +78,56 @@ const draftAnilist = authed.input(EmptyInput).handler(async ({ context }) => {
 	}
 });
 
-const libraryImport = { draftAnilist, draftMal };
+const ContinuityIdSchema = z.string().min(1);
+const ExternalTitleIdSchema = z.string().min(1);
+const ResolutionSchema = z
+	.object({
+		continuityId: ContinuityIdSchema,
+		externalTitleId: ExternalTitleIdSchema,
+	})
+	.strict();
+const ResolutionsSchema = z.array(ResolutionSchema).optional();
+const ApplyInput = z
+	.object({
+		fingerprint: z.string().min(1),
+		overwriteLocal: z.boolean().optional(),
+		provider: z.enum(["anilist", "mal"]),
+		resolutions: ResolutionsSchema,
+	})
+	.strict();
+
+const apply = authed.input(ApplyInput).handler(async ({ context, input }) => {
+	try {
+		const draft =
+			input.provider === "mal"
+				? await buildMalImportDraft({
+						db: context.db,
+						masterKeyBase64: masterKeyOf(context.providerConfigMasterKey),
+						userId: context.user.id,
+					})
+				: await buildAnilistImportDraft({
+						db: context.db,
+						masterKeyBase64: masterKeyOf(context.providerConfigMasterKey),
+						userId: context.user.id,
+					});
+		return await applyImportDraft({
+			db: context.db,
+			draft,
+			engine: context.engine,
+			fingerprint: input.fingerprint,
+			userId: context.user.id,
+			...(input.overwriteLocal === undefined
+				? {}
+				: { overwriteLocal: input.overwriteLocal }),
+			...(input.resolutions === undefined
+				? {}
+				: { resolutions: input.resolutions }),
+		});
+	} catch (error) {
+		return mapImportError(error);
+	}
+});
+
+const libraryImport = { apply, draftAnilist, draftMal };
 
 export { libraryImport };

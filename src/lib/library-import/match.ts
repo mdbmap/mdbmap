@@ -8,6 +8,7 @@ import {
 } from "@/db/engine-schema";
 import { continuityKey } from "@/engine/continuity/keys";
 
+import { withFingerprint } from "./apply-draft.ts";
 import { proposedScoreOf, proposedStatusOf } from "./map-status.ts";
 import type {
 	ImportAmbiguousRow,
@@ -212,12 +213,12 @@ const matchImportEntries = async (
 		});
 	}
 
-	return {
+	return withFingerprint({
 		ambiguous,
 		matched,
 		provider,
 		unmatched,
-	};
+	});
 };
 
 const matchMalEntries = async (
