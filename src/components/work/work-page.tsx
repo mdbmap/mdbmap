@@ -8,13 +8,23 @@ import { WorkLayout } from "./layout";
 import { totalEpisodes } from "./parts";
 
 const BRAND = "mdbmap";
+const SEARCH_NAV = "Search";
+const SEARCH_PATH = "/search";
 
 function WorkHeader() {
 	return (
 		<header className="flex items-center justify-between px-8 py-3.5">
-			<span className="text-accent font-mono text-xs font-medium tracking-[0.1em] uppercase">
-				{BRAND}
-			</span>
+			<nav className="flex items-center gap-5">
+				<span className="text-accent font-mono text-xs font-medium tracking-[0.1em] uppercase">
+					{BRAND}
+				</span>
+				<a
+					className="text-ink/50 hover:text-accent font-mono text-xs tracking-[0.1em] uppercase"
+					href={SEARCH_PATH}
+				>
+					{SEARCH_NAV}
+				</a>
+			</nav>
 			<div className="flex items-center gap-4">
 				<BetterAuthHeader />
 				<ThemeToggle />
