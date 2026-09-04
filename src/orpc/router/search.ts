@@ -1,27 +1,28 @@
-import { and, eq, inArray } from "drizzle-orm";
+import { and, asc, eq, inArray } from "drizzle-orm";
 
-import { serviceTitles } from "@/db/engine-schema";
+import { continuitySegments, serviceTitles } from "@/db/engine-schema";
 import { continuityKey } from "@/engine/continuity/keys";
-import { ensureGroupContinuity } from "@/engine/continuity/persist";
 import { pub } from "@/orpc/base";
 import type { Db } from "@/orpc/context";
 import type { CatalogueSearchHit } from "@/orpc/providers";
 import type { CatalogueTitle, SearchHit } from "@/orpc/schema";
 import { SearchQueryInput } from "@/orpc/schema";
 
-type LookupRef =
+type SearchCatalogueRef =
 	| { readonly service: "anilist"; readonly serviceId: string }
 	| {
 			readonly service: "tmdb";
 			readonly serviceId: `${"movie" | "tv"}:${string}`;
 	  };
 
-const lookupKey = (ref: {
+const catalogueLookupKey = (ref: {
 	readonly service: string;
 	readonly serviceId: string;
 }): string => `${ref.service}:${ref.serviceId}`;
 
-const refOf = (catalogue: CatalogueTitle): LookupRef | undefined => {
+const catalogueRefOf = (
+	catalogue: CatalogueTitle,
+): SearchCatalogueRef | undefined => {
 	if (catalogue.service === "tmdb") {
 		return {
 			service: "tmdb",
@@ -36,9 +37,9 @@ const refOf = (catalogue: CatalogueTitle): LookupRef | undefined => {
 
 const loadMappedGroups = async (
 	db: Db,
-	refs: readonly (LookupRef | undefined)[],
+	refs: readonly (SearchCatalogueRef | undefined)[],
 ): Promise<ReadonlyMap<string, number>> => {
-	const idsByService = new Map<LookupRef["service"], string[]>();
+	const idsByService = new Map<SearchCatalogueRef["service"], string[]>();
 	for (const ref of refs) {
 		if (ref === undefined) {
 			continue;
@@ -69,29 +70,38 @@ const loadMappedGroups = async (
 	const groups = new Map<string, number>();
 	for (const { rows, service } of loaded) {
 		for (const row of rows) {
-			groups.set(lookupKey({ service, serviceId: row.serviceId }), row.groupId);
+			groups.set(
+				catalogueLookupKey({ service, serviceId: row.serviceId }),
+				row.groupId,
+			);
 		}
 	}
 	return groups;
 };
 
-const continuityForGroups = async (
+const loadKnownContinuities = async (
 	db: Db,
 	groupIds: readonly number[],
 ): Promise<ReadonlyMap<number, string>> => {
+	if (groupIds.length === 0) {
+		return new Map();
+	}
+	const rows = await db
+		.select({
+			continuityId: continuitySegments.continuityId,
+			groupId: serviceTitles.groupId,
+		})
+		.from(continuitySegments)
+		.innerJoin(serviceTitles, eq(serviceTitles.id, continuitySegments.titleId))
+		.where(inArray(serviceTitles.groupId, groupIds))
+		.orderBy(asc(continuitySegments.continuityId))
+		.all();
 	const continuityByGroup = new Map<number, string>();
-	await Promise.all(
-		groupIds.map(async (groupId) => {
-			try {
-				continuityByGroup.set(
-					groupId,
-					continuityKey(await ensureGroupContinuity(db, groupId)),
-				);
-			} catch {
-				// known unresolvable spines stay catalogue-only
-			}
-		}),
-	);
+	for (const row of rows) {
+		if (!continuityByGroup.has(row.groupId)) {
+			continuityByGroup.set(row.groupId, continuityKey(row.continuityId));
+		}
+	}
 	return continuityByGroup;
 };
 
@@ -99,7 +109,7 @@ const attachContinuity = async (
 	db: Db,
 	hits: readonly CatalogueSearchHit[],
 ): Promise<SearchHit[]> => {
-	const refs = hits.map((hit) => refOf(hit.catalogue));
+	const refs = hits.map((hit) => catalogueRefOf(hit.catalogue));
 	const groups = await loadMappedGroups(db, refs);
 	const uniqueGroupIds = [
 		...new Set(
@@ -107,15 +117,16 @@ const attachContinuity = async (
 				if (ref === undefined) {
 					return [];
 				}
-				const groupId = groups.get(lookupKey(ref));
+				const groupId = groups.get(catalogueLookupKey(ref));
 				return groupId === undefined ? [] : [groupId];
 			}),
 		),
 	];
-	const continuityByGroup = await continuityForGroups(db, uniqueGroupIds);
+	const continuityByGroup = await loadKnownContinuities(db, uniqueGroupIds);
 	return hits.map((hit, index) => {
 		const ref = refs[index];
-		const groupId = ref === undefined ? undefined : groups.get(lookupKey(ref));
+		const groupId =
+			ref === undefined ? undefined : groups.get(catalogueLookupKey(ref));
 		const continuityId =
 			groupId === undefined ? undefined : continuityByGroup.get(groupId);
 		return {

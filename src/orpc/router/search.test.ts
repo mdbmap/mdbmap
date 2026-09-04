@@ -2,7 +2,7 @@ import { createRouterClient } from "@orpc/server";
 import { describe, expect, it } from "vitest";
 
 import { freshDb } from "@/db/test-helpers";
-import { seedTmdbContinuity } from "@/engine/test-continuity";
+import { seedTmdbContinuity, seedTmdbGroup } from "@/engine/test-continuity";
 import type { ORPCContext, SessionUser } from "@/orpc/context";
 import { defaultProviders } from "@/orpc/providers";
 import type { CatalogueSearchHit, Providers } from "@/orpc/providers";
@@ -111,7 +111,7 @@ describe("search.query unmapped hit", () => {
 	});
 });
 
-describe("search.query mapped hit", () => {
+describe("search.query mapped continuity", () => {
 	it("attaches continuityId when the catalogue identity is in D1", async () => {
 		const db = await freshDb();
 		const { continuityId } = await seedTmdbContinuity(db, "tv", "1396");
@@ -138,6 +138,44 @@ describe("search.query mapped hit", () => {
 				mediaKind: "tv",
 				title: "Breaking Bad",
 				year: 2008,
+			},
+		]);
+	});
+});
+
+describe("search.query mapped without continuity", () => {
+	it("keeps continuityId undefined when the group has no continuity yet", async () => {
+		const db = await freshDb();
+		await seedTmdbGroup(db, "movie", "603");
+		const providers = providersWithSearch([
+			hit({
+				catalogue: {
+					id: "603",
+					namespace: "movie",
+					service: "tmdb",
+				},
+				mediaKind: "film",
+				title: "The Matrix",
+				year: 1999,
+			}),
+		]);
+
+		const results = await clientFor(db, providers).search.query({
+			query: "matrix",
+		});
+
+		expect(results).toEqual([
+			{
+				catalogue: {
+					id: "603",
+					namespace: "movie",
+					service: "tmdb",
+				},
+				continuityId: undefined,
+				coverRef: undefined,
+				mediaKind: "film",
+				title: "The Matrix",
+				year: 1999,
 			},
 		]);
 	});

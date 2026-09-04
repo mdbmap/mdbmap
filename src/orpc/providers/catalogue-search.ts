@@ -13,6 +13,26 @@ interface CatalogueSearchDeps {
 	tmdb?: ReturnType<typeof createTmdbCatalogueSearch>;
 }
 
+const interleave = (
+	left: readonly CatalogueSearchHit[],
+	right: readonly CatalogueSearchHit[],
+	limit: number,
+): CatalogueSearchHit[] => {
+	const merged: CatalogueSearchHit[] = [];
+	const max = Math.max(left.length, right.length);
+	for (let index = 0; index < max && merged.length < limit; index += 1) {
+		const fromLeft = left[index];
+		if (fromLeft !== undefined && merged.length < limit) {
+			merged.push(fromLeft);
+		}
+		const fromRight = right[index];
+		if (fromRight !== undefined && merged.length < limit) {
+			merged.push(fromRight);
+		}
+	}
+	return merged;
+};
+
 const createCatalogueSearchProvider = (
 	deps: CatalogueSearchDeps = {},
 ): CatalogueSearchProvider => {
@@ -43,7 +63,7 @@ const createCatalogueSearchProvider = (
 			tmdb.search(query, "multi"),
 			anilist.search(query),
 		]);
-		return [...tmdbHits, ...anilistHits].slice(0, limit);
+		return interleave(tmdbHits, anilistHits, limit);
 	};
 
 	return { search };
