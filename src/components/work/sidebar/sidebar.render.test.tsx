@@ -19,6 +19,10 @@ const { useSession } = vi.hoisted(() => ({
 	useSession: vi.fn(),
 }));
 
+vi.mock("@tanstack/react-router", () => ({
+	useNavigate: () => vi.fn(),
+}));
+
 vi.mock("@/lib/auth-client", () => ({
 	authClient: {
 		useSession,
@@ -173,9 +177,25 @@ describe("YouBlock", () => {
 		expect(html).toContain("rewatch ×2");
 		expect(html).toContain('value="8"');
 		expect(html).toContain("selected");
+		expect(html).toContain("remove from library");
 		expect(html).not.toContain("data-auth-dialog");
 		expect(html).not.toContain("mdbmap average");
 		expect(html).not.toContain("mdbmap · whole series");
+	});
+
+	it("hides remove from library when the viewer is untracked", () => {
+		useSession.mockReturnValue({
+			...idleSession,
+			data: {
+				session: { id: "s1", userId: "u1" },
+				user: { email: "ada@example.com", id: "u1", name: "Ada" },
+			},
+		});
+		const html = render(
+			<YouBlock continuityId="continuity:x" parts={parts} viewer={undefined} />,
+		);
+		expect(html).not.toContain("remove from library");
+		expect(html).not.toContain("confirm remove");
 	});
 
 	it("falls back to zero progress when the viewer is untracked", () => {
