@@ -334,6 +334,25 @@ const review = async (
 	return loadProposal(db, proposalId);
 };
 
+const QUEUE_LIMIT = 100;
+
+const listPending = admin.handler(
+	async ({ context }): Promise<readonly ProposalView[]> => {
+		const rows = await context.db
+			.select()
+			.from(presentationOrderProposals)
+			.where(eq(presentationOrderProposals.status, "pending"))
+			.orderBy(asc(presentationOrderProposals.id))
+			.limit(QUEUE_LIMIT)
+			.all();
+		const itemsByProposal = await itemsForMany(
+			context.db,
+			rows.map((row) => row.id),
+		);
+		return rows.map((row) => toView(row, itemsByProposal.get(row.id) ?? []));
+	},
+);
+
 const accept = admin
 	.input(ProposalIdInput)
 	.handler(async ({ context, input }): Promise<ProposalView> =>
@@ -346,7 +365,14 @@ const reject = admin
 		review(context.db, input.proposalId, context.user.id, "rejected"),
 	);
 
-const orderProposals = { accept, create, get, list, reject };
+const orderProposals = {
+	accept,
+	create,
+	get,
+	list,
+	listPending,
+	reject,
+};
 
 export {
 	ContinuityIdInput,
