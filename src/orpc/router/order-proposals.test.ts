@@ -55,7 +55,7 @@ describe("orderProposals input boundary", () => {
 				rationale: "Exceeds bind budget",
 				segmentIds: Array.from({ length: 34 }, (_ignored, index) => index + 1),
 			}),
-		).toThrow();
+		).toThrow(/Too big: expected array to have <=33 items/u);
 		expect(
 			CreateProposalInput.parse({
 				continuityId: 1,
@@ -68,28 +68,43 @@ describe("orderProposals input boundary", () => {
 
 	it("creates through the router at the D1-safe cap and rejects over-cap", async () => {
 		const db = await freshDb();
-		const { continuityId, segments } = await seedContinuity(db, 33);
-		expect(segments).toHaveLength(33);
 		const member = clientFor(db, memberUser);
-		const segmentIds = segments.map((segment) => segment.id);
 
+		const atCap = await seedContinuity(db, 33);
+		expect(atCap.segments).toHaveLength(33);
+		const atCapIds = atCap.segments.map((segment) => segment.id);
 		const created = await member.orderProposals.create({
-			continuityId,
+			continuityId: atCap.continuityId,
 			name: "Full continuity order",
 			rationale: "Every segment once at the bind cap",
-			segmentIds,
+			segmentIds: atCapIds,
 		});
 		expect(created.items).toHaveLength(33);
-		expect(created.items.map((item) => item.segmentId)).toEqual(segmentIds);
+		expect(created.items.map((item) => item.segmentId)).toEqual(atCapIds);
 
+		const overCap = await seedContinuity(db, 34);
+		expect(overCap.segments).toHaveLength(34);
+		const overCapIds = overCap.segments.map((segment) => segment.id);
 		await expect(
 			member.orderProposals.create({
-				continuityId,
+				continuityId: overCap.continuityId,
 				name: "Over cap",
 				rationale: "One past the bind budget",
-				segmentIds: [...segmentIds, (segmentIds[0] ?? 0) + 10_000],
+				segmentIds: overCapIds,
 			}),
-		).rejects.toThrow();
+		).rejects.toMatchObject({
+			code: "BAD_REQUEST",
+			data: {
+				issues: [
+					expect.objectContaining({
+						code: "too_big",
+						maximum: 33,
+						message: "Too big: expected array to have <=33 items",
+						path: ["segmentIds"],
+					}),
+				],
+			},
+		});
 	});
 });
 
