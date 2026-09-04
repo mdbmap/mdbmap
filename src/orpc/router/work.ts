@@ -479,7 +479,10 @@ const get = pub
 			header: {
 				backdropRef: meta.backdropRef,
 				coverRef: meta.coverRef,
+				genres: [...meta.genres],
 				nativeTitle: meta.nativeTitle,
+				productionStatus: meta.productionStatus,
+				runtimeMinutes: meta.runtimeMinutes,
 				span: meta.span,
 				synopsis: meta.synopsis,
 				title: meta.title,

@@ -1,7 +1,11 @@
 import type { ResolveResult } from "@/engine";
 import type { Credit, Similar } from "@/orpc/schema";
 
-import type { EpisodeMetadata, SegmentMetadata, WorkMetadata } from "./types.ts";
+import type {
+	EpisodeMetadata,
+	SegmentMetadata,
+	WorkMetadata,
+} from "./types.ts";
 
 // Bundled sample metadata served when AniDB client credentials are absent (CI and
 // pre-launch), so the anime work page still renders without a live AniDB call.
@@ -11,9 +15,12 @@ interface SampleHeader {
 	backdropRef: string | undefined;
 	cast: readonly Credit[];
 	coverRef: string | undefined;
+	genres: readonly string[];
 	ifYouLiked: readonly Similar[];
 	labelPrefix: string;
 	nativeTitle: string | undefined;
+	productionStatus: string | undefined;
+	runtimeMinutes: number | undefined;
 	staff: readonly Credit[];
 	startYear: number;
 	studios: readonly string[];
@@ -29,12 +36,23 @@ const spyXFamily: SampleHeader = {
 		{ name: "Saori Hayami", ref: "anidb:creator:203", role: "Yor Forger" },
 	],
 	coverRef: "anidb:16947/cover",
+	genres: ["Comedy", "Action"],
 	ifYouLiked: [
-		{ continuityId: "continuity:mob-psycho-100", coverRef: undefined, title: "Mob Psycho 100" },
-		{ continuityId: "continuity:kaguya-sama", coverRef: undefined, title: "Kaguya-sama: Love Is War" },
+		{
+			continuityId: "continuity:mob-psycho-100",
+			coverRef: undefined,
+			title: "Mob Psycho 100",
+		},
+		{
+			continuityId: "continuity:kaguya-sama",
+			coverRef: undefined,
+			title: "Kaguya-sama: Love Is War",
+		},
 	],
 	labelPrefix: "Cour",
 	nativeTitle: "SPY×FAMILY",
+	productionStatus: undefined,
+	runtimeMinutes: 24,
 	staff: [
 		{ name: "Kazuhiro Furuhashi", ref: "anidb:creator:1", role: "Director" },
 		{ name: "Tatsuya Endo", ref: "anidb:creator:2", role: "Original Creator" },
@@ -52,9 +70,12 @@ const genericHeader: SampleHeader = {
 	backdropRef: undefined,
 	cast: [],
 	coverRef: undefined,
+	genres: [],
 	ifYouLiked: [],
 	labelPrefix: "Part",
 	nativeTitle: undefined,
+	productionStatus: undefined,
+	runtimeMinutes: undefined,
 	staff: [],
 	startYear: 2000,
 	studios: [],
@@ -73,26 +94,35 @@ const episodesFor = (count: number): EpisodeMetadata[] => {
 const offlineSample = (resolved: ResolveResult): WorkMetadata => {
 	const [first] = resolved.segments;
 	const primaryId = first?.members.anidb;
-	const header = (primaryId === undefined ? undefined : headers.get(primaryId)) ?? genericHeader;
+	const header =
+		(primaryId === undefined ? undefined : headers.get(primaryId)) ??
+		genericHeader;
 
-	const segments: SegmentMetadata[] = resolved.segments.map((segment, index) => ({
-		airedFrom: undefined,
-		airedTo: undefined,
-		episodes: episodesFor(segment.instalments.length),
-		label: `${header.labelPrefix} ${index + 1}`,
-		year: header.startYear + index,
-	}));
+	const segments: SegmentMetadata[] = resolved.segments.map(
+		(segment, index) => ({
+			airedFrom: undefined,
+			airedTo: undefined,
+			episodes: episodesFor(segment.instalments.length),
+			label: `${header.labelPrefix} ${index + 1}`,
+			year: header.startYear + index,
+		}),
+	);
 
 	const lastYear = segments.at(-1)?.year ?? header.startYear;
 	const span =
-		segments.length <= 1 ? `${header.startYear}` : `${header.startYear}–${lastYear}`;
+		segments.length <= 1
+			? `${header.startYear}`
+			: `${header.startYear}–${lastYear}`;
 
 	return {
 		backdropRef: header.backdropRef,
 		cast: header.cast,
 		coverRef: header.coverRef,
+		genres: header.genres,
 		ifYouLiked: header.ifYouLiked,
 		nativeTitle: header.nativeTitle,
+		productionStatus: header.productionStatus,
+		runtimeMinutes: header.runtimeMinutes,
 		segments,
 		span,
 		staff: header.staff,

@@ -240,7 +240,10 @@ interface SearchHit {
 interface WorkHeader {
 	backdropRef: string | undefined;
 	coverRef: string | undefined;
+	genres: string[];
 	nativeTitle: string | undefined;
+	productionStatus: string | undefined;
+	runtimeMinutes: number | undefined;
 	span: string;
 	synopsis: string;
 	title: string;

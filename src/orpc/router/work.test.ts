@@ -63,8 +63,11 @@ const metadataFor = (ifYouLiked: readonly Similar[]): WorkMetadata => ({
 	backdropRef: undefined,
 	cast: [],
 	coverRef: undefined,
+	genres: [],
 	ifYouLiked,
 	nativeTitle: undefined,
+	productionStatus: undefined,
+	runtimeMinutes: undefined,
 	segments: [],
 	span: "",
 	staff: [],
@@ -211,6 +214,9 @@ describe("work.get presentation orders", () => {
 		const fallback = await client.work.get({ continuityId });
 
 		expect(release.parts.length).toBeGreaterThan(1);
+		expect(release.header.genres).toEqual(["Comedy", "Action"]);
+		expect(release.header.runtimeMinutes).toBe(24);
+		expect(release.header.productionStatus).toBeUndefined();
 		expect(watch.parts.map((part) => firstLocator(part))).toEqual(
 			[...release.parts].toReversed().map((part) => firstLocator(part)),
 		);

@@ -49,6 +49,11 @@ const cour1Xml = `<?xml version="1.0" encoding="UTF-8"?>
 		<name id="4" type="Animation Work">CloverWorks</name>
 		<name id="5" type="Music">(K)NoW_NAME</name>
 	</creators>
+	<tags>
+		<tag id="30" infobox="true" weight="400"><name>Comedy</name></tag>
+		<tag id="31" infobox="true" weight="300"><name>Action</name></tag>
+		<tag id="99" weight="0"><name>Internal Tag</name></tag>
+	</tags>
 	<characters>
 		<character id="101" type="main character in">
 			<name>Loid Forger</name>
@@ -64,7 +69,7 @@ const cour1Xml = `<?xml version="1.0" encoding="UTF-8"?>
 	</characters>
 	<episodes>
 		<episode id="1002"><epno type="1">2</epno><airdate>2022-04-16</airdate><title xml:lang="en">Secure a Wife</title></episode>
-		<episode id="1001"><epno type="1">1</epno><airdate>2022-04-09</airdate><title xml:lang="en">Operation Strix</title><title xml:lang="ja">ミッション1</title></episode>
+		<episode id="1001"><epno type="1">1</epno><length>24</length><airdate>2022-04-09</airdate><title xml:lang="en">Operation Strix</title><title xml:lang="ja">ミッション1</title></episode>
 		<episode id="1099"><epno type="2">1</epno><airdate>2022-04-01</airdate><title xml:lang="en">A Special</title></episode>
 	</episodes>
 </anime>`;
@@ -143,6 +148,9 @@ describe("anidb metadata provider", () => {
 		expect(meta.backdropRef).toBeUndefined();
 		expect(meta.span).toBe("2022");
 		expect(meta.studios).toStrictEqual(["Wit Studio", "CloverWorks"]);
+		expect(meta.genres).toStrictEqual(["Comedy", "Action"]);
+		expect(meta.runtimeMinutes).toBe(24);
+		expect(meta.productionStatus).toBeUndefined();
 
 		expect(meta.cast).toStrictEqual([
 			{ name: "Takuya Eguchi", ref: "anidb:creator:201", role: "Loid Forger" },
@@ -190,8 +198,8 @@ describe("anidb metadata provider", () => {
 
 		await makeProvider(fetchFn, kv).fetchWork(resolved);
 
-		const coreKey = `anidb:v1:core:${COUR1_ID}`;
-		const volatileKey = `anidb:v1:volatile:${COUR1_ID}`;
+		const coreKey = `anidb:v2:core:${COUR1_ID}`;
+		const volatileKey = `anidb:v2:volatile:${COUR1_ID}`;
 		expect(store.has(coreKey)).toBe(true);
 		expect(store.has(volatileKey)).toBe(true);
 
