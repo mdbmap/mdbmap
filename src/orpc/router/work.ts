@@ -1,10 +1,12 @@
+import { ORPCError } from "@orpc/server";
 import { and, eq, inArray } from "drizzle-orm";
 
 import type { WatchStatus } from "@/db/schema";
 import { episodeProgress, personalRating, watchStatus } from "@/db/schema";
-import type { ResolveResult, Segment } from "@/engine";
+import type { EngineRead, ResolveResult, Segment } from "@/engine";
 import { metadataProviderFor } from "@/engine";
 import { parseContinuityKey } from "@/engine/continuity/keys";
+import { isMissingContinuity } from "@/engine/continuity/missing";
 import {
 	reorderByIds,
 	selectPresentationOrder,
@@ -259,11 +261,25 @@ const buildBlocks = async (
 		}),
 	);
 
+const resolveMappedWork = async (
+	engine: EngineRead,
+	requestedId: string,
+): Promise<ResolveResult> => {
+	try {
+		return await engine.resolveContinuity(requestedId);
+	} catch (error) {
+		if (isMissingContinuity(error)) {
+			throw new ORPCError("NOT_FOUND", { message: error.message });
+		}
+		throw error;
+	}
+};
+
 const get = pub
 	.input(WorkGetInput)
 	.handler(async ({ context, input }): Promise<WorkView> => {
 		const requestedId = input.continuityId;
-		const resolved = await context.engine.resolveContinuity(requestedId);
+		const resolved = await resolveMappedWork(context.engine, requestedId);
 		const { continuityId } = resolved;
 		const meta =
 			await context.providers.metadata[

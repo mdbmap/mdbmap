@@ -79,6 +79,22 @@ const similar = (continuityId: string, title: string): Similar => ({
 	title,
 });
 
+describe("work.get missing continuity", () => {
+	it("rejects an unknown continuity as NOT_FOUND", async () => {
+		const db = await freshDb();
+		await expect(
+			clientFor(db).work.get({ continuityId: "continuity:999999" }),
+		).rejects.toMatchObject({ code: "NOT_FOUND" });
+	});
+
+	it("does not map a malformed continuity key to NOT_FOUND", async () => {
+		const db = await freshDb();
+		await expect(
+			clientFor(db).work.get({ continuityId: "continuity:spy" }),
+		).rejects.toThrow(/malformed/iu);
+	});
+});
+
 describe("work.get similar links", () => {
 	it("resolves seeded TMDB and AniDB refs while preserving unresolved refs", async () => {
 		const db = await freshDb();

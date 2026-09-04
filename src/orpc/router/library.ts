@@ -5,6 +5,7 @@ import { episodeProgress, personalRating, watchStatus } from "@/db/schema";
 import type { EngineRead, ResolveResult } from "@/engine";
 import { metadataProviderFor } from "@/engine";
 import { continuityKey, parseContinuityKey } from "@/engine/continuity/keys";
+import { isMissingContinuity } from "@/engine/continuity/missing";
 import { authed } from "@/orpc/base";
 import type { Db } from "@/orpc/context";
 import { instalmentsOf } from "@/orpc/instalments";
@@ -23,9 +24,6 @@ interface TrackedContinuity {
 
 const rowActivity = (row: WatchStatusRow): number =>
 	row.updatedAt?.getTime() ?? row.id;
-
-const isMissingContinuity = (error: unknown): boolean =>
-	error instanceof Error && error.message.startsWith("engine: no continuity ");
 
 const preferStatusRow = (
 	canonicalId: string,
