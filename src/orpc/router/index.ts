@@ -3,6 +3,7 @@ import { billing } from "./billing";
 import { ingest } from "./ingest";
 import { library } from "./library";
 import { moderation } from "./moderation";
+import { orderProposals } from "./order-proposals";
 import { orders } from "./orders";
 import { providers } from "./providers";
 import { search } from "./search";
@@ -16,6 +17,7 @@ export const router = {
 	ingest,
 	library,
 	moderation,
+	orderProposals,
 	orders,
 	providers,
 	search,

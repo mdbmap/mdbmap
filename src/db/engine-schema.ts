@@ -1,6 +1,7 @@
 import { sql } from "drizzle-orm";
 import {
 	check,
+	index,
 	integer,
 	sqliteTable,
 	text,
@@ -46,6 +47,14 @@ type ContinuitySegmentKind = (typeof continuitySegmentKinds)[number];
 
 const presentationOrderSlugs = ["release", "watch"] as const;
 type PresentationOrderSlug = (typeof presentationOrderSlugs)[number];
+
+const presentationOrderProposalStatuses = [
+	"pending",
+	"accepted",
+	"rejected",
+] as const;
+type PresentationOrderProposalStatus =
+	(typeof presentationOrderProposalStatuses)[number];
 
 const atomicWriteGates = sqliteTable("atomic_write_gates", {
 	operationId: text("operation_id").primaryKey(),
@@ -401,6 +410,58 @@ const presentationOrderItems = sqliteTable(
 	],
 );
 
+const presentationOrderProposals = sqliteTable(
+	"presentation_order_proposals",
+	{
+		authorUserId: text("author_user_id").notNull(),
+		continuityId: integer("continuity_id")
+			.notNull()
+			.references(() => continuities.id, { onDelete: "cascade" }),
+		createdAt: timestamp("created_at"),
+		id: integer({ mode: "number" }).primaryKey({ autoIncrement: true }),
+		name: text().notNull(),
+		rationale: text().notNull(),
+		reviewedAt: integer("reviewed_at", { mode: "timestamp" }),
+		reviewedByUserId: text("reviewed_by_user_id"),
+		status: text({ enum: presentationOrderProposalStatuses })
+			.notNull()
+			.default("pending"),
+		updatedAt: timestamp("updated_at").$onUpdateFn(() => new Date()),
+	},
+	(table) => [
+		check(
+			"presentation_order_proposals_status",
+			sql`${table.status} in ('pending', 'accepted', 'rejected')`,
+		),
+		index("presentation_order_proposals_continuity_id_idx").on(
+			table.continuityId,
+		),
+	],
+);
+
+const presentationOrderProposalItems = sqliteTable(
+	"presentation_order_proposal_items",
+	{
+		position: integer().notNull(),
+		proposalId: integer("proposal_id")
+			.notNull()
+			.references(() => presentationOrderProposals.id, { onDelete: "cascade" }),
+		segmentId: integer("segment_id")
+			.notNull()
+			.references(() => continuitySegments.id, { onDelete: "cascade" }),
+	},
+	(table) => [
+		uniqueIndex("presentation_order_proposal_items_proposal_position_idx").on(
+			table.proposalId,
+			table.position,
+		),
+		uniqueIndex("presentation_order_proposal_items_proposal_segment_idx").on(
+			table.proposalId,
+			table.segmentId,
+		),
+	],
+);
+
 const absenceAssertions = sqliteTable(
 	"absence_assertions",
 	{
@@ -529,6 +590,9 @@ export {
 	pendingCandidateKinds,
 	pendingGroupCandidates,
 	presentationOrderItems,
+	presentationOrderProposalItems,
+	presentationOrderProposals,
+	presentationOrderProposalStatuses,
 	presentationOrderSlugs,
 	presentationOrders,
 	relationAssertions,
@@ -549,6 +613,7 @@ export type {
 	GroupSource,
 	InstalmentLocatorKind,
 	PendingCandidateKind,
+	PresentationOrderProposalStatus,
 	PresentationOrderSlug,
 	Service,
 };
