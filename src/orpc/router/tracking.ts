@@ -1,5 +1,6 @@
 import { and, eq, inArray } from "drizzle-orm";
 
+import { runAtomicBatch } from "@/db/atomic";
 import type { WatchStatus } from "@/db/schema";
 import { episodeProgress, personalRating, watchStatus } from "@/db/schema";
 import type { EngineRead, ResolveResult } from "@/engine";
@@ -100,42 +101,52 @@ const watchStatusKeys = async (
 	return [...new Set([canonicalId, requestedId, ...aliases])];
 };
 
-const deleteEpisodeProgress = async (
+const sqlIn = (values: readonly string[]): string =>
+	values.map(() => "?").join(", ");
+
+const deleteTrackingRows = async (
 	db: Db,
 	userId: string,
 	locators: readonly string[],
-): Promise<void> => {
-	if (locators.length === 0) {
-		return;
-	}
-	await db
-		.delete(episodeProgress)
-		.where(
-			and(
-				eq(episodeProgress.userId, userId),
-				inArray(episodeProgress.instalmentLocator, locators),
-			),
-		)
-		.run();
-};
-
-const deleteWatchStatus = async (
-	db: Db,
-	userId: string,
 	keys: readonly string[],
 ): Promise<void> => {
-	if (keys.length === 0) {
-		return;
-	}
-	await db
-		.delete(watchStatus)
-		.where(
-			and(
-				eq(watchStatus.userId, userId),
-				inArray(watchStatus.continuityKey, keys),
-			),
-		)
-		.run();
+	await runAtomicBatch(db, (database, operationId) => {
+		const statements: D1PreparedStatement[] = [
+			database
+				.prepare(
+					"INSERT INTO atomic_write_gates (operation_id) VALUES (?) RETURNING operation_id",
+				)
+				.bind(operationId),
+		];
+		if (locators.length > 0) {
+			statements.push(
+				database
+					.prepare(
+						`DELETE FROM episode_progress WHERE user_id = ? AND instalment_locator IN (${sqlIn(locators)})`,
+					)
+					.bind(userId, ...locators),
+			);
+		}
+		if (keys.length > 0) {
+			statements.push(
+				database
+					.prepare(
+						`DELETE FROM watch_status WHERE user_id = ? AND continuity_key IN (${sqlIn(keys)})`,
+					)
+					.bind(userId, ...keys),
+			);
+		}
+		statements.push(
+			database
+				.prepare("DELETE FROM atomic_write_gates WHERE operation_id = ?")
+				.bind(operationId),
+		);
+		const [head, ...rest] = statements;
+		if (head === undefined) {
+			throw new Error("expected atomic batch statements");
+		}
+		return [head, ...rest];
+	});
 };
 
 const TRACKING_REMOVED: TrackingRemoveResult = { removed: true };
@@ -308,13 +319,13 @@ const remove = authed
 		const requestedId = input.continuityId;
 		const resolved = await resolveOrMissing(context.engine, requestedId);
 		if (resolved === undefined) {
-			await deleteWatchStatus(context.db, userId, [requestedId]);
+			await deleteTrackingRows(context.db, userId, [], [requestedId]);
 			return TRACKING_REMOVED;
 		}
-		await deleteEpisodeProgress(context.db, userId, instalmentsOf(resolved));
-		await deleteWatchStatus(
+		await deleteTrackingRows(
 			context.db,
 			userId,
+			instalmentsOf(resolved),
 			await watchStatusKeys(context.db, resolved.continuityId, requestedId),
 		);
 		return TRACKING_REMOVED;
