@@ -62,10 +62,11 @@ function useEpisodeWatched(
 	continuityId: string,
 	requireAuth: (action: () => void) => void,
 	order?: PresentationOrderSlug,
+	proposalId?: number,
 ): EpisodeToggle {
 	const queryClient = useQueryClient();
 	const queryKey = orpc.work.get.queryKey({
-		input: workGetInput(continuityId, order),
+		input: workGetInput(continuityId, { order, proposalId }),
 	});
 	const mutation = useMutation(watchedMutationOptions(queryClient, queryKey));
 	const { mutate } = mutation;

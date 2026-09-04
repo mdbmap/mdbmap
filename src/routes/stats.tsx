@@ -14,5 +14,7 @@ export const Route = createFileRoute("/stats")({
 	},
 	component: StatsRoute,
 	loader: async ({ context }) =>
-		context.queryClient.ensureQueryData(orpc.library.list.queryOptions()),
+		context.queryClient.ensureQueryData(
+			orpc.library.list.queryOptions({ input: {} }),
+		),
 });

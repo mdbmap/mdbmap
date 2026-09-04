@@ -64,4 +64,11 @@ describe("workGetInput", () => {
 			order: "watch",
 		});
 	});
+
+	it("includes a community proposal id", () => {
+		expect(workGetInput("continuity:x", { proposalId: 7 })).toEqual({
+			continuityId: "continuity:x",
+			proposalId: 7,
+		});
+	});
 });

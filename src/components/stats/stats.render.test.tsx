@@ -31,8 +31,10 @@ const NO_ENTRIES: LibraryEntry[] = [];
 const entry = (overrides: Partial<LibraryEntry> = {}): LibraryEntry => ({
 	continuityId: "continuity:12",
 	coverRef: undefined,
+	finishedAt: undefined,
 	personalRating: undefined,
 	rewatchCount: 0,
+	startedAt: undefined,
 	status: "watching",
 	title: "Spy × Family",
 	totalInstalments: 37,

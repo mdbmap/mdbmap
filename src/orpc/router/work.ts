@@ -1,6 +1,11 @@
 import { ORPCError } from "@orpc/server";
-import { and, eq, inArray } from "drizzle-orm";
+import { and, asc, eq, inArray } from "drizzle-orm";
 
+import {
+	continuitySegments,
+	presentationOrderProposalItems,
+	presentationOrderProposals,
+} from "@/db/engine-schema";
 import type { WatchStatus } from "@/db/schema";
 import { episodeProgress, personalRating, watchStatus } from "@/db/schema";
 import type { EngineRead, ResolveResult, Segment } from "@/engine";
@@ -18,9 +23,11 @@ import type { Db } from "@/orpc/context";
 import { instalmentsOf } from "@/orpc/instalments";
 import type { Providers, WorkMetadata } from "@/orpc/providers";
 import type {
+	CommunityOrderRef,
 	EpisodeView,
 	FilmView,
 	PartView,
+	ProposalSegmentRef,
 	RateableUnit,
 	ViewerTracking,
 	WorkBlock,
@@ -276,6 +283,78 @@ const resolveMappedWork = async (
 	}
 };
 
+const loadAcceptedCommunityOrders = async (
+	db: Db,
+	continuityId: number,
+): Promise<CommunityOrderRef[]> =>
+	db
+		.select({
+			id: presentationOrderProposals.id,
+			name: presentationOrderProposals.name,
+		})
+		.from(presentationOrderProposals)
+		.where(
+			and(
+				eq(presentationOrderProposals.continuityId, continuityId),
+				eq(presentationOrderProposals.status, "accepted"),
+			),
+		)
+		.orderBy(asc(presentationOrderProposals.id))
+		.all();
+
+const loadReleaseSegmentIds = async (
+	db: Db,
+	continuityId: number,
+): Promise<number[]> => {
+	const rows = await db
+		.select({ id: continuitySegments.id })
+		.from(continuitySegments)
+		.where(eq(continuitySegments.continuityId, continuityId))
+		.orderBy(asc(continuitySegments.releaseOrdinal))
+		.all();
+	return rows.map((row) => row.id);
+};
+
+const loadAcceptedProposalSegmentIds = async (
+	db: Db,
+	continuityId: number,
+	proposalId: number,
+): Promise<number[]> => {
+	const proposal = await db
+		.select({
+			continuityId: presentationOrderProposals.continuityId,
+			status: presentationOrderProposals.status,
+		})
+		.from(presentationOrderProposals)
+		.where(eq(presentationOrderProposals.id, proposalId))
+		.get();
+	if (
+		proposal === undefined ||
+		proposal.continuityId !== continuityId ||
+		proposal.status !== "accepted"
+	) {
+		throw new ORPCError("NOT_FOUND", {
+			message: "Accepted proposal not found for continuity.",
+		});
+	}
+	const items = await db
+		.select({ segmentId: presentationOrderProposalItems.segmentId })
+		.from(presentationOrderProposalItems)
+		.where(eq(presentationOrderProposalItems.proposalId, proposalId))
+		.orderBy(asc(presentationOrderProposalItems.position))
+		.all();
+	return items.map((item) => item.segmentId);
+};
+
+const proposalSegmentsFor = (
+	releaseSegmentIds: readonly number[],
+	built: readonly WorkBlock[],
+): ProposalSegmentRef[] =>
+	releaseSegmentIds.map((id, index) => ({
+		id,
+		label: built[index]?.label ?? `Part ${String(index + 1)}`,
+	}));
+
 const get = pub
 	.input(WorkGetInput)
 	.handler(async ({ context, input }): Promise<WorkView> => {
@@ -338,18 +417,50 @@ const get = pub
 			),
 			context.providers.community.scoreFor(workUnit, context.db, workAliases),
 		]);
-		const selected =
+		const communityOrders =
 			parsedCanonical === undefined
-				? undefined
-				: await selectPresentationOrder(
-						context.db,
-						parsedCanonical,
-						input.order,
-					);
-		const ordered =
-			selected === undefined
-				? built
-				: reorderByIds(built, selected.releaseSegmentIds, selected.segmentIds);
+				? []
+				: await loadAcceptedCommunityOrders(context.db, parsedCanonical);
+		const releaseSegmentIds =
+			parsedCanonical === undefined
+				? []
+				: await loadReleaseSegmentIds(context.db, parsedCanonical);
+		const proposalSegments = proposalSegmentsFor(releaseSegmentIds, built);
+
+		let ordered = built;
+		if (parsedCanonical !== undefined) {
+			if (input.proposalId === undefined) {
+				const selected = await selectPresentationOrder(
+					context.db,
+					parsedCanonical,
+					input.order,
+				);
+				ordered = reorderByIds(
+					built,
+					selected.releaseSegmentIds,
+					selected.segmentIds,
+				);
+			} else {
+				const proposalSegmentIds = await loadAcceptedProposalSegmentIds(
+					context.db,
+					parsedCanonical,
+					input.proposalId,
+				);
+				if (
+					proposalSegmentIds.length !== releaseSegmentIds.length ||
+					new Set(proposalSegmentIds).size !== releaseSegmentIds.length ||
+					proposalSegmentIds.some(
+						(segmentId) => !releaseSegmentIds.includes(segmentId),
+					)
+				) {
+					throw new ORPCError("BAD_REQUEST", {
+						message:
+							"Accepted proposal must include each continuity segment exactly once.",
+					});
+				}
+				ordered = reorderByIds(built, releaseSegmentIds, proposalSegmentIds);
+			}
+		}
 		const parts = ordered.length > 0 ? ordered : built;
 
 		const ifYouLiked = await resolveSimilar(context.db, meta.ifYouLiked, {
@@ -362,6 +473,7 @@ const get = pub
 				resolved.segments,
 				meta.segments.map((segment) => segment.label),
 			),
+			communityOrders,
 			communityScore,
 			continuityId,
 			header: {
@@ -375,6 +487,7 @@ const get = pub
 			ifYouLiked: [...ifYouLiked],
 			mediaKind: resolved.mediaKind,
 			parts,
+			proposalSegments,
 			staff: [...meta.staff],
 			studios: [...meta.studios],
 			viewer,

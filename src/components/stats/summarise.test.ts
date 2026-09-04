@@ -7,8 +7,10 @@ import { summarise } from "./summarise";
 const entry = (overrides: Partial<LibraryEntry> = {}): LibraryEntry => ({
 	continuityId: "continuity:1",
 	coverRef: undefined,
+	finishedAt: undefined,
 	personalRating: undefined,
 	rewatchCount: 0,
+	startedAt: undefined,
 	status: "watching",
 	title: "Spy × Family",
 	totalInstalments: 12,
