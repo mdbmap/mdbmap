@@ -5,6 +5,7 @@ import type { ImportListEntry } from "./types.ts";
 const DEFAULT_MAL_URL = "https://api.myanimelist.net/v2";
 const DEFAULT_TIMEOUT_MS = 15_000;
 const PAGE_LIMIT = 100;
+const MAX_PAGES = 200;
 
 const MalListStatusSchema = z
 	.object({
@@ -50,10 +51,11 @@ interface FetchMalListInput {
 
 const entryOf = (row: z.infer<typeof MalListRowSchema>): ImportListEntry => {
 	const rewatching = row.list_status.is_rewatching === true;
+	const rawScore = row.list_status.score;
 	return {
 		externalTitleId: String(row.node.id),
 		progress: row.list_status.num_episodes_watched,
-		score: row.list_status.score,
+		score: rawScore === undefined || rawScore <= 0 ? undefined : rawScore,
 		status: rewatching ? "rewatching" : row.list_status.status,
 		title: row.node.title,
 		updatedAt: row.list_status.updated_at,
@@ -105,10 +107,15 @@ const collectMalAnimeList = async (
 	timeoutMs: number,
 	allowedOrigin: string,
 	entries: ImportListEntry[],
+	visited: Set<string>,
 ): Promise<readonly ImportListEntry[]> => {
-	if (nextUrl === undefined) {
+	if (nextUrl === undefined || visited.size >= MAX_PAGES) {
 		return entries;
 	}
+	if (visited.has(nextUrl)) {
+		return entries;
+	}
+	visited.add(nextUrl);
 	const page = await fetchMalListPage(
 		nextUrl,
 		accessToken,
@@ -125,6 +132,7 @@ const collectMalAnimeList = async (
 		timeoutMs,
 		allowedOrigin,
 		entries,
+		visited,
 	);
 };
 
@@ -143,6 +151,7 @@ const fetchMalAnimeList = async (
 		timeoutMs,
 		allowedOrigin,
 		[],
+		new Set(),
 	);
 };
 

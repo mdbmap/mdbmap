@@ -14,6 +14,7 @@ import type {
 	ImportDraft,
 	ImportListEntry,
 	ImportMatchedRow,
+	ImportProvider,
 	ImportUnmatchedRow,
 } from "./types.ts";
 
@@ -27,13 +28,13 @@ const chunked = <T>(items: readonly T[], size: number): T[][] => {
 	return out;
 };
 
-const mergeMalContinuities = (
-	byMal: Map<string, string[]>,
+const mergeContinuities = (
+	byExternal: Map<string, string[]>,
 	serviceId: string,
 	keys: readonly string[],
 ): void => {
-	const prior = byMal.get(serviceId) ?? [];
-	byMal.set(serviceId, [...new Set([...prior, ...keys])]);
+	const prior = byExternal.get(serviceId) ?? [];
+	byExternal.set(serviceId, [...new Set([...prior, ...keys])]);
 };
 
 const loadSurvivorByRetired = async (
@@ -91,11 +92,12 @@ const loadSegmentRows = async (
 	return pages.flat();
 };
 
-const loadMalContinuityPage = async (
+const loadContinuityPage = async (
 	db: Db,
+	service: ImportProvider,
 	slice: readonly string[],
 ): Promise<ReadonlyMap<string, readonly string[]>> => {
-	const byMal = new Map<string, string[]>();
+	const byExternal = new Map<string, string[]>();
 	const titleRows = await db
 		.select({
 			serviceId: serviceTitles.serviceId,
@@ -104,13 +106,13 @@ const loadMalContinuityPage = async (
 		.from(serviceTitles)
 		.where(
 			and(
-				eq(serviceTitles.service, "mal"),
+				eq(serviceTitles.service, service),
 				inArray(serviceTitles.serviceId, slice),
 			),
 		)
 		.all();
 	if (titleRows.length === 0) {
-		return byMal;
+		return byExternal;
 	}
 
 	const titleIds = titleRows.map((row) => row.titleId);
@@ -130,47 +132,50 @@ const loadMalContinuityPage = async (
 	for (const title of titleRows) {
 		const rawIds = continuityByTitle.get(title.titleId) ?? [];
 		if (rawIds.length === 0) {
-			byMal.set(title.serviceId, byMal.get(title.serviceId) ?? []);
+			byExternal.set(title.serviceId, byExternal.get(title.serviceId) ?? []);
 			continue;
 		}
-		mergeMalContinuities(
-			byMal,
+		mergeContinuities(
+			byExternal,
 			title.serviceId,
 			rawIds.map((id) => continuityKey(survivors.get(id) ?? id)),
 		);
 	}
 
-	return byMal;
+	return byExternal;
 };
 
-const continuityIdsForMalIds = async (
+const continuityIdsForExternalIds = async (
 	db: Db,
-	malIds: readonly string[],
+	service: ImportProvider,
+	externalIds: readonly string[],
 ): Promise<ReadonlyMap<string, readonly string[]>> => {
-	const byMal = new Map<string, string[]>();
-	if (malIds.length === 0) {
-		return byMal;
+	const byExternal = new Map<string, string[]>();
+	if (externalIds.length === 0) {
+		return byExternal;
 	}
 
 	const pages = await Promise.all(
-		chunked([...new Set(malIds)], CHUNK).map(async (slice) =>
-			loadMalContinuityPage(db, slice),
+		chunked([...new Set(externalIds)], CHUNK).map(async (slice) =>
+			loadContinuityPage(db, service, slice),
 		),
 	);
 	for (const page of pages) {
 		for (const [serviceId, keys] of page) {
-			mergeMalContinuities(byMal, serviceId, keys);
+			mergeContinuities(byExternal, serviceId, keys);
 		}
 	}
-	return byMal;
+	return byExternal;
 };
 
-const matchMalEntries = async (
+const matchImportEntries = async (
 	db: Db,
+	provider: ImportProvider,
 	entries: readonly ImportListEntry[],
 ): Promise<ImportDraft> => {
-	const continuityByMal = await continuityIdsForMalIds(
+	const continuityByExternal = await continuityIdsForExternalIds(
 		db,
+		provider,
 		entries.map((entry) => entry.externalTitleId),
 	);
 
@@ -179,8 +184,8 @@ const matchMalEntries = async (
 	const unmatched: ImportUnmatchedRow[] = [];
 
 	for (const entry of entries) {
-		const known = continuityByMal.has(entry.externalTitleId);
-		const continuityIds = continuityByMal.get(entry.externalTitleId) ?? [];
+		const known = continuityByExternal.has(entry.externalTitleId);
+		const continuityIds = continuityByExternal.get(entry.externalTitleId) ?? [];
 		if (!known) {
 			unmatched.push({ entry, reason: "no_service_title" });
 			continue;
@@ -210,9 +215,19 @@ const matchMalEntries = async (
 	return {
 		ambiguous,
 		matched,
-		provider: "mal",
+		provider,
 		unmatched,
 	};
 };
 
-export { matchMalEntries };
+const matchMalEntries = async (
+	db: Db,
+	entries: readonly ImportListEntry[],
+): Promise<ImportDraft> => matchImportEntries(db, "mal", entries);
+
+const matchAnilistEntries = async (
+	db: Db,
+	entries: readonly ImportListEntry[],
+): Promise<ImportDraft> => matchImportEntries(db, "anilist", entries);
+
+export { matchAnilistEntries, matchImportEntries, matchMalEntries };
