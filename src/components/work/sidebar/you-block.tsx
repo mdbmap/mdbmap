@@ -1,11 +1,10 @@
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useMemo } from "react";
 
 import { Label } from "@/components/ui/label";
 import { totalEpisodes } from "@/components/work/parts";
 import type { PresentationOrderSlug } from "@/db/engine-schema";
 import type { WatchStatus } from "@/db/schema";
-import { AuthDialog } from "@/integrations/better-auth/auth-dialog";
-import { authClient } from "@/lib/auth-client";
+import { useRequireAuth } from "@/integrations/better-auth/require-auth";
 import type { RateableUnit, ViewerTracking, WorkBlock } from "@/orpc/schema";
 
 import { ScoreSelect } from "./score-select";
@@ -16,7 +15,6 @@ const HEADING = "You · whole series";
 const OUT_OF_TEN = "/10";
 const MINUS = "−";
 const PLUS = "+";
-const SIGN_IN = "Sign in";
 
 function ProgressBar({ percent }: { percent: number }) {
 	const style = useMemo(() => ({ width: `${percent}%` }), [percent]);
@@ -70,9 +68,7 @@ interface YouBlockProps {
 }
 
 function YouBlock({ continuityId, order, parts, viewer }: YouBlockProps) {
-	const { data: session } = authClient.useSession();
-	const signedIn = session?.user !== undefined;
-	const [authOpen, setAuthOpen] = useState(false);
+	const { authDialog, requireAuth } = useRequireAuth();
 	const { setRating, setRewatch, setStatus } = useWorkTracking(
 		continuityId,
 		order,
@@ -80,17 +76,6 @@ function YouBlock({ continuityId, order, parts, viewer }: YouBlockProps) {
 	const workUnit = useMemo<RateableUnit>(
 		() => ({ key: continuityId, kind: "work" }),
 		[continuityId],
-	);
-
-	const requireAuth = useCallback(
-		(action: () => void) => {
-			if (!signedIn) {
-				setAuthOpen(true);
-				return;
-			}
-			action();
-		},
-		[signedIn],
 	);
 
 	const rateWork = useCallback(
@@ -143,14 +128,7 @@ function YouBlock({ continuityId, order, parts, viewer }: YouBlockProps) {
 				count={viewer?.rewatchCount ?? 0}
 				onChange={changeRewatch}
 			/>
-			{signedIn ? undefined : (
-				<AuthDialog
-					isOpen={authOpen}
-					label={SIGN_IN}
-					onOpenChange={setAuthOpen}
-					variant="hidden"
-				/>
-			)}
+			{authDialog}
 		</div>
 	);
 }

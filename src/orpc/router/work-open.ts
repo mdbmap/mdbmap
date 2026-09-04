@@ -40,6 +40,16 @@ const continuityForGraph = async (
 	return continuityKey(await ensureGroupContinuity(db, groupId));
 };
 
+const openWithContinuity = async (
+	db: Db,
+	identity: Identity,
+	graph: GraphRead,
+	build: (continuityId: string) => WorkOpenResult,
+): Promise<WorkOpenResult> => {
+	const continuityId = await continuityForGraph(db, identity, graph);
+	return continuityId === undefined ? { kind: "unknown" } : build(continuityId);
+};
+
 const toOpenResult = async (
 	db: Db,
 	identity: Identity,
@@ -48,31 +58,25 @@ const toOpenResult = async (
 ): Promise<WorkOpenResult> => {
 	switch (outcome.kind) {
 		case "complete": {
-			const continuityId = await continuityForGraph(db, identity, graph);
-			return continuityId === undefined
-				? { kind: "unknown" }
-				: { continuityId, kind: "ready" };
+			return openWithContinuity(db, identity, graph, (continuityId) => ({
+				continuityId,
+				kind: "ready",
+			}));
 		}
 		case "pending": {
-			const continuityId = await continuityForGraph(db, identity, graph);
-			return continuityId === undefined
-				? { kind: "unknown" }
-				: {
-						continuityId,
-						kind: "pending",
-						retryAfterSeconds: outcome.retryAfterSeconds,
-						statusUrl: outcome.statusUrl,
-					};
+			return openWithContinuity(db, identity, graph, (continuityId) => ({
+				continuityId,
+				kind: "pending",
+				retryAfterSeconds: outcome.retryAfterSeconds,
+				statusUrl: outcome.statusUrl,
+			}));
 		}
 		case "retryable": {
-			const continuityId = await continuityForGraph(db, identity, graph);
-			return continuityId === undefined
-				? { kind: "unknown" }
-				: {
-						continuityId,
-						kind: "pending",
-						retryAfterSeconds: outcome.retryAfterSeconds,
-					};
+			return openWithContinuity(db, identity, graph, (continuityId) => ({
+				continuityId,
+				kind: "pending",
+				retryAfterSeconds: outcome.retryAfterSeconds,
+			}));
 		}
 		case "conflict": {
 			return { kind: "conflict", review: outcome.review };

@@ -193,14 +193,33 @@ describe("YouBlock", () => {
 		expect(html).toContain('data-dialog-open="false"');
 		expect(html).toContain("Sign in");
 	});
+
+	it("does not embed a sign-in dialog while the session is pending", () => {
+		useSession.mockReturnValue({
+			...idleSession,
+			isPending: true,
+		});
+		const html = render(
+			<YouBlock continuityId="continuity:x" parts={parts} viewer={undefined} />,
+		);
+		expect(html).not.toContain("data-auth-dialog");
+	});
 });
 
 describe("PartPanel", () => {
 	afterEach(() => {
 		usePartSelectionStore.setState({ selectedKey: undefined });
+		useSession.mockReset();
 	});
 
 	it("renders the selected part's three rating layers as separate values", () => {
+		useSession.mockReturnValue({
+			...idleSession,
+			data: {
+				session: { id: "s1", userId: "u1" },
+				user: { email: "ada@example.com", id: "u1", name: "Ada" },
+			},
+		});
 		const html = render(
 			<PartPanel continuityId="continuity:x" parts={parts} />,
 		);
@@ -226,9 +245,30 @@ describe("PartPanel", () => {
 	});
 
 	it("shows a placeholder when there are no parts", () => {
+		useSession.mockReturnValue(idleSession);
 		const html = render(
 			<PartPanel continuityId="continuity:x" parts={NO_PARTS} />,
 		);
 		expect(html).toContain("No parts");
+	});
+
+	it("embeds a sign-in dialog for signed-out part rating", () => {
+		useSession.mockReturnValue(idleSession);
+		const html = render(
+			<PartPanel continuityId="continuity:x" parts={parts} />,
+		);
+		expect(html).toContain("data-auth-dialog");
+		expect(html).toContain("Sign in");
+	});
+
+	it("does not embed a sign-in dialog while the session is pending", () => {
+		useSession.mockReturnValue({
+			...idleSession,
+			isPending: true,
+		});
+		const html = render(
+			<PartPanel continuityId="continuity:x" parts={parts} />,
+		);
+		expect(html).not.toContain("data-auth-dialog");
 	});
 });

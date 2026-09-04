@@ -4,6 +4,7 @@ import { Label } from "@/components/ui/label";
 import { Section } from "@/components/ui/section";
 import { useSelectedPart } from "@/components/work/part-state";
 import type { PresentationOrderSlug } from "@/db/engine-schema";
+import { useRequireAuth } from "@/integrations/better-auth/require-auth";
 import type { ServiceRating, WorkBlock } from "@/orpc/schema";
 
 import { ScoreSelect } from "./score-select";
@@ -121,13 +122,16 @@ function PartDetails({ onRate, part }: PartDetailsProps) {
 function PartPanel({ continuityId, order, parts }: PartPanelProps) {
 	const { selectedPart } = useSelectedPart(parts);
 	const { setRating } = useWorkTracking(continuityId, order);
+	const { authDialog, requireAuth } = useRequireAuth();
 	const ratePart = useCallback(
 		(score: number | undefined) => {
-			if (selectedPart) {
-				setRating(selectedPart.rateableUnit, score);
-			}
+			requireAuth(() => {
+				if (selectedPart) {
+					setRating(selectedPart.rateableUnit, score);
+				}
+			});
 		},
-		[selectedPart, setRating],
+		[requireAuth, selectedPart, setRating],
 	);
 
 	if (selectedPart === undefined) {
@@ -135,11 +139,17 @@ function PartPanel({ continuityId, order, parts }: PartPanelProps) {
 			<Section>
 				<Label>{THIS_PART}</Label>
 				<p className="text-ink/40 mt-2 font-mono text-[11px]">{NO_PARTS}</p>
+				{authDialog}
 			</Section>
 		);
 	}
 
-	return <PartDetails onRate={ratePart} part={selectedPart} />;
+	return (
+		<>
+			<PartDetails onRate={ratePart} part={selectedPart} />
+			{authDialog}
+		</>
+	);
 }
 
 export { PartDetails, PartPanel };

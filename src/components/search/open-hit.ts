@@ -11,12 +11,10 @@ const ERROR_BODY = "Something went wrong opening this title. Try again.";
 type OpenHitState =
 	| { kind: "idle" }
 	| { kind: "opening" }
-	| { kind: "pending"; message: string }
 	| { kind: "error"; message: string };
 
 type OpenHitAction =
 	| { kind: "navigate"; continuityId: string }
-	| { kind: "pending"; message: string }
 	| { kind: "error"; message: string };
 
 const profileForMediaKind = (mediaKind: MediaKind): Profile => {

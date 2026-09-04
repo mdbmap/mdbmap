@@ -97,10 +97,7 @@ interface UnmappedHitViewProps {
 
 function UnmappedHitView({ hit, hue, onOpen, state }: UnmappedHitViewProps) {
 	const busy = state.kind === "opening";
-	const message =
-		state.kind === "pending" || state.kind === "error"
-			? state.message
-			: undefined;
+	const message = state.kind === "error" ? state.message : undefined;
 	return (
 		<li className={row()}>
 			<button
