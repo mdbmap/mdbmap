@@ -1,7 +1,12 @@
 import { createRouterClient } from "@orpc/server";
 import { describe, expect, it } from "vitest";
 
-import { syncAccountLink, syncEntitlement, user } from "@/db/schema";
+import {
+	syncAccountLink,
+	syncEntitlement,
+	user,
+	watchStatus,
+} from "@/db/schema";
 import { freshDb } from "@/db/test-helpers";
 import { randomMasterKey } from "@/lib/provider-config/test-support.ts";
 import type { ORPCContext } from "@/orpc/context";
@@ -175,5 +180,74 @@ describe("sync account link mutations", () => {
 				provider: "trakt",
 			}),
 		).rejects.toBeTruthy();
+	});
+});
+
+describe("sync.push", () => {
+	it("forbids push without an active entitlement", async () => {
+		const db = await seeded();
+		await expect(
+			clientFor(db, "user-1").sync.push({ continuityId: "continuity:1" }),
+		).rejects.toMatchObject({ code: "FORBIDDEN" });
+	});
+
+	it("pushes mapped status to linked targets and advances cursors", async () => {
+		const db = await seeded();
+		await grantActive(db);
+		const masterKey = randomMasterKey();
+		const client = clientFor(db, "user-1", masterKey);
+		await client.sync.connect({
+			credentials: { accessToken: "tok-push" },
+			externalAccountId: "ani-1",
+			provider: "anilist",
+		});
+		await db
+			.insert(watchStatus)
+			.values({
+				continuityKey: "continuity:1",
+				status: "completed",
+				userId: "user-1",
+			})
+			.run();
+
+		const engine = {
+			resolveContinuity: async () => {
+				await Promise.resolve();
+				return {
+					continuityId: "continuity:1",
+					mediaKind: "anime" as const,
+					segments: [
+						{
+							instalments: ["anidb:1#1"],
+							kind: "episodic" as const,
+							members: { anilist: "10" },
+						},
+					],
+				};
+			},
+		};
+
+		const pushClient = createRouterClient(router, {
+			context: {
+				db,
+				engine,
+				providerConfigMasterKey: masterKey,
+				resolveSession: () => ({ id: "user-1" }),
+			} satisfies ORPCContext,
+		});
+
+		const result = await pushClient.sync.push({ continuityId: "continuity:1" });
+		expect(result.targets).toEqual([
+			expect.objectContaining({
+				ok: true,
+				provider: "anilist",
+			}),
+		]);
+		expect(result.warningCount).toBe(0);
+		assertNoSecret(result, "tok-push");
+
+		const listed = await client.sync.list();
+		expect(listed[0]?.cursor).toEqual(expect.stringContaining("continuity:1@"));
+		expect(listed[0]?.lastError).toBeNull();
 	});
 });
