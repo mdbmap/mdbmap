@@ -348,10 +348,17 @@ interface TrackingRemoveResult {
 
 // `title` and `coverRef` are absent when the metadata provider could not be
 // reached for that continuity; the rest of the row still comes from D1.
+interface NextUp {
+	number: number;
+	partLabel: string;
+	title: string;
+}
+
 interface LibraryEntry {
 	continuityId: string;
 	coverRef: string | undefined;
 	finishedAt: string | undefined;
+	nextUp?: NextUp | undefined;
 	personalRating: number | undefined;
 	rewatchCount: number;
 	startedAt: string | undefined;
@@ -412,6 +419,7 @@ export type {
 	EpisodeWatchedResult,
 	FilmView,
 	LibraryEntry,
+	NextUp,
 	LibrarySort,
 	MintedApiKey,
 	MovieRateableUnit,

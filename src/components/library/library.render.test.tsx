@@ -62,6 +62,11 @@ const entry = (overrides: Partial<LibraryEntry> = {}): LibraryEntry => ({
 
 const entries: LibraryEntry[] = [
 	entry({
+		nextUp: {
+			number: 3,
+			partLabel: "Cour 2",
+			title: "The Informal",
+		},
 		personalRating: 8,
 		rewatchCount: 2,
 		startedAt: "2026-04-09",
@@ -106,6 +111,7 @@ describe("LibraryPage rows", () => {
 		expect(html).toContain(
 			"watching · 25 / 37 · rewatch ×2 · started 2026-04-09",
 		);
+		expect(html).toContain("next Cour 2 · 03 · The Informal");
 		expect(html).toContain("8/10");
 		expect(html).toContain("Made in Abyss");
 		expect(html).toContain("on hold · 0 / 13");

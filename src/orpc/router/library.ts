@@ -9,6 +9,8 @@ import { isMissingContinuity } from "@/engine/continuity/missing";
 import { authed } from "@/orpc/base";
 import type { Db } from "@/orpc/context";
 import { instalmentsOf } from "@/orpc/instalments";
+import { nextUp } from "@/orpc/next-up";
+import { orderedSegments } from "@/orpc/ordered-segments";
 import type { Providers, WorkMetadata } from "@/orpc/providers";
 import type { LibraryEntry, LibrarySort } from "@/orpc/schema";
 import { LibraryListInput } from "@/orpc/schema";
@@ -231,6 +233,7 @@ const workMetadata = async (
 };
 
 const toEntry = async (
+	db: Db,
 	providers: Providers,
 	ratings: ReadonlyMap<string, number>,
 	aliases: ReadonlyMap<number, readonly `continuity:${number}`[]>,
@@ -239,10 +242,16 @@ const toEntry = async (
 ): Promise<LibraryEntry> => {
 	const metadata = await workMetadata(providers, tracked.resolved);
 	const span = watchSpan(tracked.locators, progress.watchedAt);
+	const upcoming = nextUp(
+		tracked.row.status,
+		await orderedSegments(db, tracked.resolved, metadata),
+		progress.locators,
+	);
 	return {
 		continuityId: tracked.resolved.continuityId,
 		coverRef: metadata?.coverRef,
 		finishedAt: span.finishedAt,
+		...(upcoming === undefined ? {} : { nextUp: upcoming }),
 		personalRating: ratingFor(ratings, aliases, tracked),
 		rewatchCount: tracked.row.rewatchCount,
 		startedAt: span.startedAt,
@@ -343,7 +352,14 @@ const list = authed
 				: await retiredKeysBySurvivor(context.db, survivorIds);
 		const entries = await Promise.all(
 			scoped.map(async (entry) =>
-				toEntry(context.providers, ratings, aliases, progress, entry),
+				toEntry(
+					context.db,
+					context.providers,
+					ratings,
+					aliases,
+					progress,
+					entry,
+				),
 			),
 		);
 		return sortEntries(entries, input.sort);

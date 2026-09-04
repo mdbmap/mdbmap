@@ -50,6 +50,16 @@ const metaLine = (entry: LibraryEntry) =>
 		.filter((part) => part !== undefined)
 		.join(" · ");
 
+const padNumber = (value: number) => String(value).padStart(2, "0");
+
+const nextLine = (entry: LibraryEntry) => {
+	const next = entry.nextUp;
+	if (next === undefined) {
+		return;
+	}
+	return `next ${next.partLabel} · ${padNumber(next.number)} · ${next.title}`;
+};
+
 function Cover({ hue, src }: { hue: string; src: string | undefined }) {
 	if (src === undefined) {
 		return <div className={`${cover()} ${hue}`} />;
@@ -68,6 +78,7 @@ function Progress({ total, watched }: { total: number; watched: number }) {
 }
 
 function EntryBody({ entry, hue }: { entry: LibraryEntry; hue: string }) {
+	const next = nextLine(entry);
 	return (
 		<>
 			<Cover hue={hue} src={imageUrl(entry.coverRef)} />
@@ -78,6 +89,11 @@ function EntryBody({ entry, hue }: { entry: LibraryEntry; hue: string }) {
 				<p className="text-ink/50 mt-1 font-mono text-[11px] capitalize">
 					{metaLine(entry)}
 				</p>
+				{next === undefined ? undefined : (
+					<p className="text-ink/50 mt-0.5 truncate font-mono text-[11px]">
+						{next}
+					</p>
+				)}
 				<Progress
 					total={entry.totalInstalments}
 					watched={entry.watchedInstalments}
