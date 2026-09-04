@@ -297,6 +297,7 @@ interface ViewerTracking {
 
 interface WorkView {
 	cast: Credit[];
+	communityScore: CommunityScore;
 	continuityId: string;
 	header: WorkHeader;
 	ifYouLiked: Similar[];

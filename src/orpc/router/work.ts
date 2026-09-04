@@ -293,9 +293,14 @@ const get = pub
 			);
 		}
 
+		const workUnit: RateableUnit = { key: continuityId, kind: "work" };
+		const workAliases = aliasKeys.map((key) => ({
+			key,
+			kind: "work" as const,
+		}));
+
 		let viewer: ViewerTracking | undefined;
 		if (viewerState !== undefined) {
-			const workUnit: RateableUnit = { key: continuityId, kind: "work" };
 			viewer = {
 				personalRating: viewerState.personalByUnit.get(unitId(workUnit)),
 				rewatchCount: viewerState.statusRow?.rewatchCount ?? 0,
@@ -304,15 +309,18 @@ const get = pub
 			};
 		}
 
-		const built = await buildBlocks(
-			resolved,
-			meta,
-			context.providers,
-			context.db,
-			continuityId,
-			aliasKeys,
-			viewerState,
-		);
+		const [built, communityScore] = await Promise.all([
+			buildBlocks(
+				resolved,
+				meta,
+				context.providers,
+				context.db,
+				continuityId,
+				aliasKeys,
+				viewerState,
+			),
+			context.providers.community.scoreFor(workUnit, context.db, workAliases),
+		]);
 		const selected =
 			parsedCanonical === undefined
 				? undefined
@@ -333,6 +341,7 @@ const get = pub
 
 		return {
 			cast: [...meta.cast],
+			communityScore,
 			continuityId,
 			header: {
 				backdropRef: meta.backdropRef,

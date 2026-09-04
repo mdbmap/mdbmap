@@ -8,7 +8,7 @@ import type { WatchStatus } from "@/db/schema";
 import { orpc } from "@/orpc/client";
 import type { RateableUnit, WorkView } from "@/orpc/schema";
 
-import { applyRating, applyRewatch, applyStatus } from "./optimistic";
+import { applyRating, applyRewatch, applyStatus } from "./sidebar/optimistic";
 
 interface CacheContext {
 	previous: WorkView | undefined;
@@ -21,8 +21,8 @@ interface WorkTracking {
 	setStatus: (status: WatchStatus) => void;
 }
 
-// Whole-series tracking mutations with optimistic patches of the cached
-// `work.get`. Mirrors #11's `useEpisodeWatched`: patch on mutate, roll back on
+// Tracking mutations (work/part/episode/film) with optimistic patches of the
+// cached `work.get`. Mirrors `useEpisodeWatched`: patch on mutate, roll back on
 // error, refetch on settle. The server echoes the input, so no success
 // reconcile is needed beyond the refetch.
 function useWorkTracking(

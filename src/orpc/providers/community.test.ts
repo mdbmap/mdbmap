@@ -10,6 +10,11 @@ describe("community score derivation", () => {
 	let db: Awaited<ReturnType<typeof freshDb>>;
 	const part: RateableUnit = { key: "part:demo:0", kind: "part" };
 	const episode: RateableUnit = { key: "episode:demo:1", kind: "episode" };
+	const work: RateableUnit = { key: "continuity:demo", kind: "work" };
+	const workAlias: RateableUnit = {
+		key: "continuity:demo-retired",
+		kind: "work",
+	};
 
 	const rate = async (userId: string, unit: RateableUnit, score: number) =>
 		db
@@ -21,7 +26,10 @@ describe("community score derivation", () => {
 		db = await freshDb();
 		await Promise.all(
 			["user-1", "user-2", "user-3"].map(async (id) =>
-				db.insert(user).values({ email: `${id}@b.test`, id, name: id }).run(),
+				db
+					.insert(user)
+					.values({ email: `${id}@b.test`, id, name: id })
+					.run(),
 			),
 		);
 	});
@@ -56,6 +64,37 @@ describe("community score derivation", () => {
 		expect(await communityScoreProvider.scoreFor(episode, db)).toEqual({
 			count: 1,
 			mean: 10,
+		});
+	});
+
+	it("averages work-level ratings with a count", async () => {
+		await rate("user-1", work, 7);
+		await rate("user-2", work, 9);
+
+		expect(await communityScoreProvider.scoreFor(work, db)).toEqual({
+			count: 2,
+			mean: 8,
+		});
+	});
+
+	it("has no work-level score when nobody has rated the work", async () => {
+		await rate("user-1", part, 10);
+
+		expect(await communityScoreProvider.scoreFor(work, db)).toEqual({
+			count: 0,
+			mean: undefined,
+		});
+	});
+
+	it("folds continuity-alias work keys into the canonical work score", async () => {
+		await rate("user-1", workAlias, 6);
+		await rate("user-2", work, 10);
+
+		expect(
+			await communityScoreProvider.scoreFor(work, db, [workAlias]),
+		).toEqual({
+			count: 2,
+			mean: 8,
 		});
 	});
 });

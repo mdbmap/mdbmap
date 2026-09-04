@@ -2,14 +2,14 @@ import { useCallback, useMemo, useState } from "react";
 
 import { Label } from "@/components/ui/label";
 import { totalEpisodes } from "@/components/work/parts";
+import { ScoreSelect } from "@/components/work/score-select";
+import { useWorkTracking } from "@/components/work/use-work-tracking";
 import type { PresentationOrderSlug } from "@/db/engine-schema";
 import type { WatchStatus } from "@/db/schema";
 import { useRequireAuth } from "@/integrations/better-auth/require-auth";
 import type { RateableUnit, ViewerTracking, WorkBlock } from "@/orpc/schema";
 
-import { ScoreSelect } from "./score-select";
 import { StatusSelect } from "./status-select";
-import { useWorkTracking } from "./use-work-tracking";
 
 const HEADING = "You · whole series";
 const OUT_OF_TEN = "/10";
@@ -146,7 +146,7 @@ function YouBlock({ continuityId, order, parts, viewer }: YouBlockProps) {
 	return (
 		<div>
 			<Label>{HEADING}</Label>
-			<div className="mt-2 flex items-baseline gap-1.5">
+			<div className="mt-3 flex items-baseline gap-1.5">
 				<ScoreSelect
 					label="Your score"
 					onChange={rateWork}

@@ -3,7 +3,7 @@ import type { WorkView } from "@/orpc/schema";
 
 import { Episodes } from "./episodes";
 import { Metadata } from "./metadata";
-import { PartPanel, YouBlock } from "./sidebar";
+import { CommunityBlock, PartPanel, YouBlock } from "./sidebar";
 
 function Synopsis({ text }: { text: string }) {
 	return (
@@ -44,6 +44,7 @@ function MainColumn({ onSelectOrder, order, orders, work }: WorkLayoutProps) {
 function Sidebar({ order, work }: WorkLayoutProps) {
 	return (
 		<div className="flex flex-col gap-6 px-8 pt-6">
+			<CommunityBlock score={work.communityScore} />
 			<YouBlock
 				continuityId={work.continuityId}
 				order={order}
