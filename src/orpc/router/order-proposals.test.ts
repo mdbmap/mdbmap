@@ -209,6 +209,24 @@ describe("orderProposals happy path", () => {
 		).rejects.toMatchObject({ code: "BAD_REQUEST" });
 	});
 
+	it("rejects an incomplete segment set on create", async () => {
+		const db = await freshDb();
+		const { continuityId, segments } = await seedContinuity(db, 2);
+		const [first] = segments;
+		if (first === undefined) {
+			throw new Error("expected a segment");
+		}
+		const member = clientFor(db, memberUser);
+		await expect(
+			member.orderProposals.create({
+				continuityId,
+				name: "Partial",
+				rationale: "Missing a continuity segment",
+				segmentIds: [first.id],
+			}),
+		).rejects.toMatchObject({ code: "BAD_REQUEST" });
+	});
+
 	it("rejects a foreign segment on create", async () => {
 		const db = await freshDb();
 		const first = await seedContinuity(db, 1);
