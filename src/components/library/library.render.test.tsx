@@ -11,12 +11,17 @@ vi.mock("@tanstack/react-router", () => ({
 		children,
 		params,
 		to,
+		"data-cta": dataCta,
 	}: {
 		children: ReactNode;
+		"data-cta"?: boolean | string;
 		params?: { continuityId: number | string };
 		to: string;
 	}) => (
-		<a href={to.replace("$continuityId", String(params?.continuityId ?? ""))}>
+		<a
+			data-cta={dataCta === undefined ? undefined : ""}
+			href={to.replace("$continuityId", String(params?.continuityId ?? ""))}
+		>
 			{children}
 		</a>
 	),
@@ -92,11 +97,13 @@ describe("LibraryPage rows", () => {
 describe("LibraryPage empty state", () => {
 	const html = renderToStaticMarkup(<LibraryPage entries={NO_ENTRIES} />);
 
-	it("guides an untracked viewer back to the start", () => {
+	it("guides an untracked viewer to search", () => {
 		expect(html).toContain("Nothing tracked yet.");
 		expect(html).toContain("0 works");
-		expect(html).toContain('href="/"');
+		expect(html).toContain("Search catalogues");
 		expect(html).toContain('href="/search"');
+		expect(html).toContain("data-cta");
+		expect(html).not.toContain('href="/"');
 		expect(html).not.toContain("/work/");
 	});
 });

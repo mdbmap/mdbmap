@@ -16,7 +16,9 @@ const TAGLINE = "Everything you track, most recently touched first.";
 const EMPTY_HEADING = "Nothing tracked yet.";
 const EMPTY_BODY =
 	"Open a work and set a watch status or tick an episode. It shows up here the moment you do.";
-const EMPTY_LINK = "Back to the start";
+const EMPTY_CTA = "Search catalogues";
+const SEARCH_NAV = "Search";
+const SEARCH_PATH = "/search";
 const UNTITLED = "Title unavailable";
 const UNRATED = "—";
 const OUT_OF_TEN = "/10";
@@ -100,9 +102,6 @@ function LibraryRow({ entry, hue }: { entry: LibraryEntry; hue: string }) {
 	);
 }
 
-const SEARCH_NAV = "Search";
-const SEARCH_PATH = "/search";
-
 function LibraryHeader() {
 	return (
 		<header className="flex items-center justify-between px-8 py-3.5">
@@ -132,8 +131,10 @@ function EmptyLibrary() {
 			<p className="text-ink/70 mt-3 max-w-[56ch] text-[15px] leading-relaxed">
 				{EMPTY_BODY}
 			</p>
-			<p className="text-accent mt-6 font-mono text-xs">
-				<Link to="/">{EMPTY_LINK}</Link>
+			<p className="mt-6">
+				<Link data-cta to={SEARCH_PATH}>
+					{EMPTY_CTA}
+				</Link>
 			</p>
 		</div>
 	);

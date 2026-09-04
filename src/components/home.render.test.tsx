@@ -98,18 +98,38 @@ describe("Home", () => {
 		expect(html).not.toContain("Design system");
 	});
 
-	it("offers the sign-in call to action when signed out", () => {
+	it("opens the dialog when sign-in is requested", () => {
+		useSession.mockReturnValue({ ...idleSession, data: undefined });
+		expect(
+			renderToStaticMarkup(<Home onSigninOpenChange={noop} signinOpen />),
+		).toContain('data-dialog-open="true"');
+		expect(renderToStaticMarkup(<Home />)).not.toContain(
+			'data-dialog-open="true"',
+		);
+	});
+});
+
+describe("Home CTAs", () => {
+	beforeEach(() => {
+		useSession.mockReset();
+	});
+
+	it("offers sign-in and search when signed out", () => {
 		useSession.mockReturnValue({ ...idleSession, data: undefined });
 		const html = renderToStaticMarkup(<Home />);
 		expect(html).toContain("Sign in to start tracking");
+		expect(html).toContain("Search catalogues");
+		expect(html).toContain('href="/search"');
 		expect(html).not.toContain('href="/library"');
 	});
 
-	it("links to the library when signed in", () => {
+	it("offers library and search when signed in", () => {
 		useSession.mockReturnValue(signedIn);
 		const html = renderToStaticMarkup(<Home />);
 		expect(html).toContain('href="/library"');
 		expect(html).toContain("Open your library");
+		expect(html).toContain("Search catalogues");
+		expect(html).toContain('href="/search"');
 		expect(html).not.toContain("Sign in to start tracking");
 	});
 
@@ -122,16 +142,7 @@ describe("Home", () => {
 		const html = renderToStaticMarkup(<Home />);
 		expect(html).toContain("animate-pulse");
 		expect(html).not.toContain("Sign in to start tracking");
+		expect(html).not.toContain("Search catalogues");
 		expect(html).not.toContain('href="/library"');
-	});
-
-	it("opens the dialog when sign-in is requested", () => {
-		useSession.mockReturnValue({ ...idleSession, data: undefined });
-		expect(
-			renderToStaticMarkup(<Home onSigninOpenChange={noop} signinOpen />),
-		).toContain('data-dialog-open="true"');
-		expect(renderToStaticMarkup(<Home />)).not.toContain(
-			'data-dialog-open="true"',
-		);
 	});
 });
