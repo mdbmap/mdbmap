@@ -51,6 +51,18 @@ function applyEpisodeWatched(
 	});
 }
 
+function applyPartWatched(
+	work: WorkView,
+	locators: readonly string[],
+	watched: boolean,
+): WorkView {
+	let next = work;
+	for (const locator of locators) {
+		next = applyEpisodeWatched(next, locator, watched);
+	}
+	return next;
+}
+
 // Reconcile against the server's derived whole-series result: the authoritative
 // watched set and status replace the optimistic guess.
 function applyDerivedTracking(
@@ -77,4 +89,4 @@ function applyDerivedTracking(
 	});
 }
 
-export { applyDerivedTracking, applyEpisodeWatched };
+export { applyDerivedTracking, applyEpisodeWatched, applyPartWatched };

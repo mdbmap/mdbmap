@@ -55,8 +55,14 @@ const SetRewatchInput = z.object({
 });
 
 const SetEpisodeWatchedInput = z.object({
-	continuityId: z.string().min(1),
-	instalmentLocator: z.string().min(1),
+	continuityId: z.string().trim().min(1),
+	instalmentLocator: z.string().trim().min(1),
+	watched: z.boolean(),
+});
+
+const SetPartWatchedInput = z.object({
+	continuityId: z.string().trim().min(1),
+	instalmentLocators: z.array(z.string().trim().min(1)).min(1),
 	watched: z.boolean(),
 });
 
@@ -410,6 +416,7 @@ export {
 	librarySorts,
 	SearchQueryInput,
 	SetEpisodeWatchedInput,
+	SetPartWatchedInput,
 	SetNoteInput,
 	SetRatingInput,
 	SetResearchTimingInput,

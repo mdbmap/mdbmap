@@ -23,6 +23,8 @@ import { router } from "./index.ts";
 
 const FILM_LOCATOR = "anidb:1002#1";
 const MOVIE_UNIT = { key: FILM_LOCATOR, kind: "movie" } as const;
+const SERIES_LOCATORS = ["anidb:1001#1", "anidb:1001#2"] as const;
+const STRANGER = "anidb:9999#1";
 
 const seeded = async () => {
 	const db = await freshDb();
@@ -44,6 +46,13 @@ const clientFor = (
 			resolveSession: () => (userId === undefined ? undefined : { id: userId }),
 		} satisfies ORPCContext,
 	});
+
+const progressLocators = async (
+	db: Awaited<ReturnType<typeof seeded>>["db"],
+) => {
+	const rows = await db.select().from(episodeProgress).all();
+	return rows.map((row) => row.instalmentLocator).toSorted();
+};
 
 describe("tracking film locators and movie units", () => {
 	it("persists a movie rating and shows it on the film block", async () => {
@@ -364,5 +373,82 @@ describe("tracking.setNote", () => {
 			continuityId: survivor.continuityId,
 		});
 		expect(after.viewer?.note).toBeUndefined();
+	});
+});
+
+describe("tracking.setPartWatched marks and clears", () => {
+	it("marks a part's locators and ignores locators outside the continuity", async () => {
+		const { continuityId, db } = await seeded();
+		const client = clientFor(db, "user-1");
+
+		const result = await client.tracking.setPartWatched({
+			continuityId,
+			instalmentLocators: [...SERIES_LOCATORS, STRANGER],
+			watched: true,
+		});
+		expect(result.status).toBe("watching");
+		expect(result.watched.toSorted()).toEqual([...SERIES_LOCATORS]);
+		expect(await progressLocators(db)).toEqual([...SERIES_LOCATORS]);
+	});
+
+	it("clears only the requested part's progress rows", async () => {
+		const { continuityId, db } = await seeded();
+		const client = clientFor(db, "user-1");
+		await client.tracking.setPartWatched({
+			continuityId,
+			instalmentLocators: [...SERIES_LOCATORS, FILM_LOCATOR],
+			watched: true,
+		});
+
+		const cleared = await client.tracking.setPartWatched({
+			continuityId,
+			instalmentLocators: [...SERIES_LOCATORS],
+			watched: false,
+		});
+		expect(cleared.status).toBe("watching");
+		expect(cleared.watched.toSorted()).toEqual([FILM_LOCATOR]);
+		expect(await progressLocators(db)).toEqual([FILM_LOCATOR]);
+	});
+});
+
+describe("tracking.setPartWatched completion", () => {
+	it("completes the work when the last part is marked watched", async () => {
+		const { continuityId, db } = await seeded();
+		const client = clientFor(db, "user-1");
+		const first = await client.tracking.setPartWatched({
+			continuityId,
+			instalmentLocators: [...SERIES_LOCATORS],
+			watched: true,
+		});
+		expect(first.status).toBe("watching");
+
+		const last = await client.tracking.setPartWatched({
+			continuityId,
+			instalmentLocators: [FILM_LOCATOR],
+			watched: true,
+		});
+		expect(last.status).toBe("completed");
+		expect(last.watched.toSorted()).toEqual(
+			[...SERIES_LOCATORS, FILM_LOCATOR].toSorted(),
+		);
+	});
+
+	it("rejects blank continuity and blank locators", async () => {
+		const { continuityId, db } = await seeded();
+		const client = clientFor(db, "user-1");
+		await expect(
+			client.tracking.setPartWatched({
+				continuityId: "   ",
+				instalmentLocators: [FILM_LOCATOR],
+				watched: true,
+			}),
+		).rejects.toThrow();
+		await expect(
+			client.tracking.setPartWatched({
+				continuityId,
+				instalmentLocators: ["   "],
+				watched: true,
+			}),
+		).rejects.toThrow();
 	});
 });

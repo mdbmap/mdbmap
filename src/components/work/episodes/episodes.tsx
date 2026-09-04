@@ -48,7 +48,7 @@ function Episodes({
 }: EpisodesProps) {
 	const { selectPart, selectedIndex, selectedPart } = useSelectedPart(parts);
 	const { authDialog, requireAuth } = useRequireAuth();
-	const { toggle } = useEpisodeWatched(
+	const { setMany, toggle } = useEpisodeWatched(
 		continuityId,
 		requireAuth,
 		order,
@@ -82,6 +82,7 @@ function Episodes({
 			) : (
 				<PartInstalments
 					communityOrders={communityOrders}
+					onMarkPart={setMany}
 					onPropose={proposalSegments.length > 0 ? openPropose : undefined}
 					onRate={rate}
 					onSelectOrder={onSelectOrder}

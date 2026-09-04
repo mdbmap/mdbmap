@@ -16,4 +16,9 @@ const watchedCount = (block: WorkBlock) => {
 const totalEpisodes = (parts: WorkBlock[]) =>
 	parts.reduce((sum, part) => sum + instalmentCount(part), 0);
 
-export { instalmentCount, totalEpisodes, watchedCount };
+const locatorsOf = (block: WorkBlock): string[] =>
+	block.kind === "film"
+		? [block.instalmentLocator]
+		: block.episodes.map((episode) => episode.instalmentLocator);
+
+export { instalmentCount, locatorsOf, totalEpisodes, watchedCount };

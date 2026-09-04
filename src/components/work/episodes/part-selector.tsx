@@ -1,6 +1,10 @@
 import { Fragment, useCallback } from "react";
 import { tv } from "tailwind-variants";
 
+import {
+	locatorsOf,
+	watchedCount as watchedOnPart,
+} from "@/components/work/parts";
 import type { PresentationOrderSlug } from "@/db/engine-schema";
 import type { CommunityOrderRef, WorkBlock } from "@/orpc/schema";
 
@@ -9,6 +13,8 @@ const ORDER_LABELS = {
 	watch: "Watch",
 } as const;
 
+const MARK_PART = "mark part watched";
+const CLEAR_PART = "clear part watched";
 const PROPOSE = "Propose order";
 
 const tab = tv({
@@ -182,11 +188,38 @@ function PartTabs({
 	);
 }
 
+interface PartMarkControlProps {
+	onMark: (locators: string[], watched: boolean) => void;
+	part: WorkBlock;
+}
+
+function PartMarkControl({ onMark, part }: PartMarkControlProps) {
+	const locators = locatorsOf(part);
+	const marked = watchedOnPart(part);
+	const allWatched = locators.length > 0 && marked === locators.length;
+	const handleMark = useCallback(() => {
+		onMark(locators, !allWatched);
+	}, [allWatched, locators, onMark]);
+	if (locators.length === 0) {
+		return;
+	}
+	return (
+		<button
+			className="text-accent mt-2 cursor-pointer font-mono text-[11px]"
+			onClick={handleMark}
+			type="button"
+		>
+			{allWatched ? CLEAR_PART : MARK_PART}
+		</button>
+	);
+}
+
 const EMPTY_COMMUNITY_ORDERS: readonly CommunityOrderRef[] = [];
 
 interface PartSelectorProps {
 	communityOrders?: readonly CommunityOrderRef[] | undefined;
 	episodeCount: number;
+	onMarkPart: (locators: string[], watched: boolean) => void;
 	onPropose?: (() => void) | undefined;
 	onSelect: (index: number) => void;
 	onSelectOrder?: ((order: PresentationOrderSlug) => void) | undefined;
@@ -199,9 +232,10 @@ interface PartSelectorProps {
 	watchedCount: number;
 }
 
-export function PartSelector({
+function PartSelector({
 	communityOrders = EMPTY_COMMUNITY_ORDERS,
 	episodeCount,
+	onMarkPart,
 	onPropose,
 	onSelect,
 	onSelectOrder,
@@ -213,6 +247,7 @@ export function PartSelector({
 	selectedProposalId,
 	watchedCount,
 }: PartSelectorProps) {
+	const selected = parts[selectedIndex];
 	const tabs = (
 		<PartTabs
 			episodeCount={episodeCount}
@@ -222,6 +257,10 @@ export function PartSelector({
 			watchedCount={watchedCount}
 		/>
 	);
+	const mark =
+		selected === undefined ? undefined : (
+			<PartMarkControl onMark={onMarkPart} part={selected} />
+		);
 	const showOrders =
 		onSelectOrder !== undefined &&
 		orders !== undefined &&
@@ -229,11 +268,17 @@ export function PartSelector({
 			communityOrders.length > 0 ||
 			onPropose !== undefined);
 	if (!showOrders || orders === undefined || onSelectOrder === undefined) {
-		return <div>{tabs}</div>;
+		return (
+			<div>
+				{tabs}
+				{mark}
+			</div>
+		);
 	}
 	return (
 		<div>
 			{tabs}
+			{mark}
 			<OrderToggle
 				communityOrders={communityOrders}
 				onPropose={onPropose}
@@ -246,3 +291,5 @@ export function PartSelector({
 		</div>
 	);
 }
+
+export { CLEAR_PART, MARK_PART, PartSelector };

@@ -2,7 +2,11 @@ import { describe, expect, it } from "vitest";
 
 import type { EpisodeView, FilmView, WorkView } from "@/orpc/schema";
 
-import { applyDerivedTracking, applyEpisodeWatched } from "./optimistic";
+import {
+	applyDerivedTracking,
+	applyEpisodeWatched,
+	applyPartWatched,
+} from "./optimistic";
 
 const emptyScore = { count: 0, mean: undefined };
 
@@ -111,6 +115,29 @@ describe("applyEpisodeWatched", () => {
 		expect(
 			next.parts[0]?.kind === "part" && next.parts[0].episodes[0]?.watched,
 		).toBe(false);
+	});
+});
+
+describe("applyPartWatched", () => {
+	it("flips every listed locator and leaves the rest", () => {
+		const next = applyPartWatched(
+			workWithFilm(),
+			["ep:1", "anidb:film#1"],
+			true,
+		);
+		expect(next.parts[0]?.episodes[0]?.watched).toBe(true);
+		expect(next.parts[0]?.episodes[1]?.watched).toBe(false);
+		const film = next.parts.find((part) => part.kind === "film");
+		expect(film?.kind === "film" && film.watched).toBe(true);
+		expect(next.viewer?.watched.toSorted()).toEqual(["anidb:film#1", "ep:1"]);
+	});
+
+	it("clears only the listed locators", () => {
+		const marked = applyPartWatched(work(), ["ep:1", "ep:2"], true);
+		const cleared = applyPartWatched(marked, ["ep:1"], false);
+		expect(cleared.parts[0]?.episodes[0]?.watched).toBe(false);
+		expect(cleared.parts[0]?.episodes[1]?.watched).toBe(true);
+		expect(cleared.viewer?.watched).toEqual(["ep:2"]);
 	});
 });
 

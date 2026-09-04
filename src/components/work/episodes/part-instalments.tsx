@@ -8,6 +8,7 @@ import { PartSelector } from "./part-selector";
 
 interface PartInstalmentsProps {
 	communityOrders?: readonly CommunityOrderRef[] | undefined;
+	onMarkPart: (locators: string[], watched: boolean) => void;
 	onPropose?: (() => void) | undefined;
 	onRate: (unit: RateableUnit, score: number | undefined) => void;
 	onSelectOrder?: ((order: PresentationOrderSlug) => void) | undefined;
@@ -24,6 +25,7 @@ interface PartInstalmentsProps {
 
 function PartInstalments({
 	communityOrders,
+	onMarkPart,
 	onPropose,
 	onRate,
 	onSelectOrder,
@@ -42,6 +44,7 @@ function PartInstalments({
 			<PartSelector
 				communityOrders={communityOrders}
 				episodeCount={instalmentCount(selectedPart)}
+				onMarkPart={onMarkPart}
 				onPropose={onPropose}
 				onSelect={onSelectPart}
 				onSelectOrder={onSelectOrder}
