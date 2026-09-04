@@ -149,3 +149,109 @@ describe("import.draftMal", () => {
 		});
 	});
 });
+
+describe("import.draftAnilist", () => {
+	it("returns a draft without requiring sync entitlement", async () => {
+		const db = await seeded();
+		const masterKey = randomMasterKey();
+		await linkSyncAccount(db, {
+			credentials: { accessToken: "anilist-token" },
+			masterKeyBase64: masterKey,
+			provider: "anilist",
+			userId: "user-1",
+		});
+
+		const group = one(
+			await db
+				.insert(titleGroups)
+				.values({ ladderComplete: false, source: "t1-structure" })
+				.returning()
+				.all(),
+		);
+		const title = one(
+			await db
+				.insert(serviceTitles)
+				.values({ groupId: group.id, service: "anilist", serviceId: "7" })
+				.returning()
+				.all(),
+		);
+		const continuity = one(
+			await db
+				.insert(continuities)
+				.values({ source: "t1-structure" })
+				.returning()
+				.all(),
+		);
+		await db
+			.insert(continuitySegments)
+			.values({
+				continuityId: continuity.id,
+				kind: "episodic",
+				releaseOrdinal: 0,
+				titleId: title.id,
+			})
+			.run();
+
+		const fetchImpl = vi.spyOn(globalThis, "fetch");
+		fetchImpl
+			.mockResolvedValueOnce(Response.json({ data: { Viewer: { id: 1 } } }))
+			.mockResolvedValueOnce(
+				Response.json({
+					data: {
+						MediaListCollection: {
+							lists: [
+								{
+									entries: [
+										{
+											media: { id: 7, title: { userPreferred: "Seven" } },
+											progress: 1,
+											score: 60,
+											status: "CURRENT",
+										},
+									],
+								},
+							],
+						},
+					},
+				}),
+			);
+
+		try {
+			const draft = await clientFor(
+				db,
+				"user-1",
+				masterKey,
+			).import.draftAnilist({});
+			expect(draft.provider).toBe("anilist");
+			expect(draft.matched).toEqual([
+				{
+					continuityId: continuityKey(continuity.id),
+					entry: {
+						externalTitleId: "7",
+						progress: 1,
+						score: 6,
+						status: "watching",
+						title: "Seven",
+						updatedAt: undefined,
+					},
+					proposedProgress: 1,
+					proposedScore: 6,
+					proposedStatus: "watching",
+				},
+			]);
+			expect(draft.unmatched).toEqual([]);
+			expect(draft.ambiguous).toEqual([]);
+		} finally {
+			fetchImpl.mockRestore();
+		}
+	});
+
+	it("returns NOT_FOUND when AniList is not linked", async () => {
+		const db = await seeded();
+		await expect(
+			clientFor(db, "user-1").import.draftAnilist({}),
+		).rejects.toMatchObject({
+			code: "NOT_FOUND",
+		});
+	});
+});
