@@ -3,18 +3,17 @@ import { useCallback } from "react";
 import { Label } from "@/components/ui/label";
 import { Section } from "@/components/ui/section";
 import { useSelectedPart } from "@/components/work/part-state";
+import { ScoreSelect } from "@/components/work/score-select";
+import { useWorkTracking } from "@/components/work/use-work-tracking";
 import type { PresentationOrderSlug } from "@/db/engine-schema";
 import { useRequireAuth } from "@/integrations/better-auth/require-auth";
 import type { ServiceRating, WorkBlock } from "@/orpc/schema";
 
-import { ScoreSelect } from "./score-select";
-import { useWorkTracking } from "./use-work-tracking";
+import { CommunityRow } from "./community-row";
 
 const NO_PARTS = "No parts";
 const THIS_PART = "This part";
-const COMMUNITY_LABEL = "mdbmap average";
 const YOUR_SCORE = "your score";
-const EM_DASH = "—";
 
 const compact = new Intl.NumberFormat("en", {
 	maximumFractionDigits: 1,
@@ -25,22 +24,6 @@ const airedRange = (part: WorkBlock) =>
 	[part.airedFrom, part.airedTo]
 		.filter((edge) => edge !== undefined)
 		.join(" – ");
-
-function CommunityRow({
-	count,
-	mean,
-}: {
-	count: number;
-	mean: number | undefined;
-}) {
-	return (
-		<div className="border-line mt-2.5 flex items-baseline gap-1.5 border-b pb-2.5 font-mono text-xs">
-			<span className="text-accent mr-auto">{COMMUNITY_LABEL}</span>
-			<span>{mean ?? EM_DASH}</span>
-			<span className="text-ink/35">{compact.format(count)}</span>
-		</div>
-	);
-}
 
 function ServiceRow({ rating }: { rating: ServiceRating }) {
 	return (

@@ -1,5 +1,10 @@
 import { createFileRoute, redirect } from "@tanstack/react-router";
 
+import {
+	libraryListInput,
+	parseLibrarySearch,
+} from "@/components/library/library-params";
+import type { LibrarySearch } from "@/components/library/library-params";
 import { LibraryRoute } from "@/components/library/library-route";
 import { viewerIsSignedIn } from "@/lib/viewer-session";
 import { orpc } from "@/orpc/client";
@@ -14,6 +19,11 @@ export const Route = createFileRoute("/library")({
 		}
 	},
 	component: LibraryRoute,
-	loader: async ({ context }) =>
-		context.queryClient.ensureQueryData(orpc.library.list.queryOptions()),
+	loader: async ({ context, deps }) =>
+		context.queryClient.ensureQueryData(
+			orpc.library.list.queryOptions({ input: deps }),
+		),
+	loaderDeps: ({ search }: { search: LibrarySearch }) =>
+		libraryListInput(search),
+	validateSearch: parseLibrarySearch,
 });

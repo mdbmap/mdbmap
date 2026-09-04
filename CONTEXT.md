@@ -13,7 +13,7 @@ Two or more candidate assertions that cannot all be true because they imply inco
 _Avoid_: Low confidence, duplicate mapping
 
 **Community score**:
-mdbmap's own aggregate rating for a rateable unit: the mean, with a count, of its users' personal ratings. It is native to mdbmap and derived from user data, shown beside the service ratings and the viewer's own, never merged with them.
+mdbmap's own aggregate rating for a rateable unit: the mean, with a count, of its users' personal ratings. It is native to mdbmap and derived from user data, shown beside the service ratings and the viewer's own, never merged with them. Count is always shown; there is no minimum-N hide threshold.
 _Avoid_: Average rating, overall score
 
 **Conflict result**:

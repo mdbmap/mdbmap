@@ -1,31 +1,32 @@
 import { useCallback } from "react";
 import { tv } from "tailwind-variants";
 
-import type { FilmView } from "@/orpc/schema";
+import type { FilmView, RateableUnit } from "@/orpc/schema";
+
+import { RowScore } from "./row-score";
 
 const title = tv({
 	base: "min-w-0 truncate",
 	variants: { on: { false: "text-ink/70", true: "text-ink" } },
 });
 
-const metaLine = (film: FilmView) =>
-	[
-		film.personalRating === undefined ? undefined : `${film.personalRating}/10`,
-		film.airDate,
-	]
-		.filter((part) => part !== undefined)
-		.join(" · ");
-
 interface FilmRowProps {
 	film: FilmView;
+	onRate: (unit: RateableUnit, score: number | undefined) => void;
 	onToggle: (instalmentLocator: string, watched: boolean) => void;
 }
 
-function FilmRow({ film, onToggle }: FilmRowProps) {
-	const { instalmentLocator, label, watched } = film;
+function FilmRow({ film, onRate, onToggle }: FilmRowProps) {
+	const { instalmentLocator, label, rateableUnit, watched } = film;
 	const handleToggle = useCallback(() => {
 		onToggle(instalmentLocator, !watched);
 	}, [instalmentLocator, watched, onToggle]);
+	const handleRate = useCallback(
+		(score: number | undefined) => {
+			onRate(rateableUnit, score);
+		},
+		[onRate, rateableUnit],
+	);
 
 	return (
 		<div className="border-line mt-3.5 border-b">
@@ -38,9 +39,12 @@ function FilmRow({ film, onToggle }: FilmRowProps) {
 					type="checkbox"
 				/>
 				<span className={title({ on: watched })}>{label}</span>
-				<span className="text-ink/45 justify-self-end font-mono text-[11px]">
-					{metaLine(film)}
-				</span>
+				<RowScore
+					airDate={film.airDate}
+					label={`Your score for ${label}`}
+					onChange={handleRate}
+					value={film.personalRating}
+				/>
 			</div>
 		</div>
 	);

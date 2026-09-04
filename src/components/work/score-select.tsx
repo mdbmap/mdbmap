@@ -10,8 +10,8 @@ const select = tv({
 	base: "cursor-pointer appearance-none border-none bg-transparent p-0 font-mono outline-none",
 	variants: {
 		size: {
-			display: "text-[46px] leading-none text-accent-strong",
-			inline: "text-xs text-ink/90",
+			display: "text-accent-strong text-[46px] leading-none",
+			inline: "text-ink/90 text-xs",
 		},
 	},
 });

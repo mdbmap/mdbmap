@@ -29,6 +29,8 @@ const wipeOrder = [
 	"episode_progress",
 	"personal_rating",
 	"watch_status",
+	"stripe_webhook_event",
+	"sync_entitlement",
 	"llm_provider",
 	"research_policy",
 	"session",

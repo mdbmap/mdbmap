@@ -1,11 +1,9 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import type { QueryClient, QueryKey } from "@tanstack/react-query";
 import { useCallback } from "react";
-import type { ReactNode } from "react";
 
 import { workGetInput } from "@/components/work/part-state";
 import type { PresentationOrderSlug } from "@/db/engine-schema";
-import { useRequireAuth } from "@/integrations/better-auth/require-auth";
 import { orpc } from "@/orpc/client";
 import type { EpisodeWatchedResult, WorkView } from "@/orpc/schema";
 
@@ -16,7 +14,6 @@ interface WatchedContext {
 }
 
 interface EpisodeToggle {
-	authDialog: ReactNode;
 	isPending: boolean;
 	toggle: (instalmentLocator: string, watched: boolean) => void;
 }
@@ -63,10 +60,10 @@ const watchedMutationOptions = (queryClient: QueryClient, queryKey: QueryKey) =>
 // status, which reconciles the optimistic guess before the invalidation refetch.
 function useEpisodeWatched(
 	continuityId: string,
+	requireAuth: (action: () => void) => void,
 	order?: PresentationOrderSlug,
 ): EpisodeToggle {
 	const queryClient = useQueryClient();
-	const { authDialog, requireAuth } = useRequireAuth();
 	const queryKey = orpc.work.get.queryKey({
 		input: workGetInput(continuityId, order),
 	});
@@ -81,7 +78,10 @@ function useEpisodeWatched(
 		[continuityId, mutate, requireAuth],
 	);
 
-	return { authDialog, isPending: mutation.isPending, toggle };
+	return {
+		isPending: mutation.isPending,
+		toggle,
+	};
 }
 
 export { useEpisodeWatched };

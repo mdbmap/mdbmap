@@ -1,6 +1,6 @@
 import { useCallback, useState } from "react";
 
-import type { EpisodeView } from "@/orpc/schema";
+import type { EpisodeView, RateableUnit } from "@/orpc/schema";
 
 import { EpisodeRow } from "./episode-row";
 
@@ -8,10 +8,11 @@ const COLLAPSED_LIMIT = 12;
 
 interface EpisodeListProps {
 	episodes: EpisodeView[];
+	onRate: (unit: RateableUnit, score: number | undefined) => void;
 	onToggle: (instalmentLocator: string, watched: boolean) => void;
 }
 
-export function EpisodeList({ episodes, onToggle }: EpisodeListProps) {
+export function EpisodeList({ episodes, onRate, onToggle }: EpisodeListProps) {
 	const [expanded, setExpanded] = useState(false);
 	const expand = useCallback(() => {
 		setExpanded(true);
@@ -21,18 +22,19 @@ export function EpisodeList({ episodes, onToggle }: EpisodeListProps) {
 
 	return (
 		<div className="mt-3.5">
-			<div className="border-b border-line">
+			<div className="border-line border-b">
 				{shown.map((episode) => (
 					<EpisodeRow
 						key={episode.instalmentLocator}
 						episode={episode}
+						onRate={onRate}
 						onToggle={onToggle}
 					/>
 				))}
 			</div>
 			{truncated && (
 				<button
-					className="mt-3 cursor-pointer font-mono text-xs text-accent"
+					className="text-accent mt-3 cursor-pointer font-mono text-xs"
 					onClick={expand}
 					type="button"
 				>

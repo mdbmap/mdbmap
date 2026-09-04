@@ -15,6 +15,10 @@
 	//   wrangler secret put TVDB_API_KEY
 	//   wrangler secret put ANIDB_CLIENT
 	//   wrangler secret put ANIDB_CLIENT_VER
+	// Paid sync billing (ADR-0009 / #186):
+	//   wrangler secret put STRIPE_SECRET_KEY
+	//   wrangler secret put STRIPE_WEBHOOK_SECRET
+	//   wrangler secret put STRIPE_PRICE_ID
 	"kv_namespaces": [
 		{ "binding": "METADATA_KV", "id": "REPLACE_WITH_METADATA_KV_ID" },
 	],
