@@ -65,6 +65,26 @@ vi.mock("@/orpc/client", () => ({
 				}),
 			},
 		},
+		import: {
+			apply: {
+				mutationOptions: (options?: object) => ({
+					mutationFn: noop,
+					...options,
+				}),
+			},
+			draftAnilist: {
+				mutationOptions: (options?: object) => ({
+					mutationFn: noop,
+					...options,
+				}),
+			},
+			draftMal: {
+				mutationOptions: (options?: object) => ({
+					mutationFn: noop,
+					...options,
+				}),
+			},
+		},
 		sync: {
 			connect: {
 				mutationOptions: (options?: object) => ({
@@ -115,14 +135,16 @@ const signedIn = {
 };
 
 const entry: LibraryEntry = {
-	continuityId: "continuity:12",
+	continuityId: "c1",
 	coverRef: undefined,
+	finishedAt: undefined,
 	personalRating: 8,
 	rewatchCount: 0,
+	startedAt: undefined,
 	status: "watching",
-	title: "Spy × Family",
-	totalInstalments: 37,
-	watchedInstalments: 25,
+	title: "Demo",
+	totalInstalments: 12,
+	watchedInstalments: 3,
 };
 
 const entries: LibraryEntry[] = [entry];

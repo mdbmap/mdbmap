@@ -72,6 +72,23 @@ function HeaderLink({
 	);
 }
 
+function LibraryNav({ current }: { current: SiteHeaderProps["current"] }) {
+	return (
+		<>
+			<HeaderLink
+				active={current === "library"}
+				label={LIBRARY_NAV}
+				to={LIBRARY_PATH}
+			/>
+			<HeaderLink
+				active={current === "stats"}
+				label={STATS_NAV}
+				to={STATS_PATH}
+			/>
+		</>
+	);
+}
+
 function SiteHeader({ current, padded = true }: SiteHeaderProps) {
 	const { data: session, isPending } = authClient.useSession();
 	const showLibrary = !isPending && session?.user !== undefined;
@@ -84,20 +101,7 @@ function SiteHeader({ current, padded = true }: SiteHeaderProps) {
 					label={SEARCH_NAV}
 					to={SEARCH_PATH}
 				/>
-				{showLibrary ? (
-					<>
-						<HeaderLink
-							active={current === "library"}
-							label={LIBRARY_NAV}
-							to={LIBRARY_PATH}
-						/>
-						<HeaderLink
-							active={current === "stats"}
-							label={STATS_NAV}
-							to={STATS_PATH}
-						/>
-					</>
-				) : undefined}
+				{showLibrary ? <LibraryNav current={current} /> : undefined}
 			</nav>
 			<div className="flex items-center gap-4">
 				<BetterAuthHeader />

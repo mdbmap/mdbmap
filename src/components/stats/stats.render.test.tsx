@@ -29,14 +29,16 @@ vi.mock("@/integrations/better-auth/header-user", () => ({
 const NO_ENTRIES: LibraryEntry[] = [];
 
 const entry = (overrides: Partial<LibraryEntry> = {}): LibraryEntry => ({
-	continuityId: "continuity:12",
+	continuityId: "continuity:1",
 	coverRef: undefined,
+	finishedAt: undefined,
 	personalRating: undefined,
 	rewatchCount: 0,
+	startedAt: undefined,
 	status: "watching",
 	title: "Spy × Family",
-	totalInstalments: 37,
-	watchedInstalments: 25,
+	totalInstalments: 12,
+	watchedInstalments: 4,
 	...overrides,
 });
 

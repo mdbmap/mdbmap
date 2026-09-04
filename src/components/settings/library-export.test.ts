@@ -9,8 +9,10 @@ const exportedAt = "2026-09-04T13:00:00.000Z";
 const entry = (overrides: Partial<LibraryEntry> = {}): LibraryEntry => ({
 	continuityId: "continuity:12",
 	coverRef: undefined,
+	finishedAt: undefined,
 	personalRating: 8,
 	rewatchCount: 1,
+	startedAt: undefined,
 	status: "watching",
 	title: "Spy × Family",
 	totalInstalments: 37,
