@@ -1,7 +1,8 @@
 import { ORPCError } from "@orpc/server";
+import { eq } from "drizzle-orm";
 import { z } from "zod";
 
-import { syncAccountProviders } from "@/db/schema";
+import { syncAccountProviders, watchStatus } from "@/db/schema";
 import { env } from "@/env";
 import {
 	linkSyncAccount,
@@ -10,6 +11,7 @@ import {
 	unlinkSyncAccount,
 } from "@/lib/sync-accounts";
 import { pushContinuity } from "@/lib/sync-push";
+import type { PushResult } from "@/lib/sync-push";
 import { authed } from "@/orpc/base";
 import { requireSyncEntitlement } from "@/orpc/sync-entitlement";
 
@@ -78,6 +80,8 @@ const PushInput = z
 	})
 	.strict();
 
+const EmptyInput = z.object({}).strict();
+
 const push = authed.input(PushInput).handler(async ({ context, input }) => {
 	await requireSyncEntitlement(context.db, context.user.id);
 	return pushContinuity({
@@ -89,6 +93,32 @@ const push = authed.input(PushInput).handler(async ({ context, input }) => {
 	});
 });
 
-const sync = { connect, disconnect, list, push };
+const pushLibrary = authed.input(EmptyInput).handler(async ({ context }) => {
+	await requireSyncEntitlement(context.db, context.user.id);
+	const masterKeyBase64 = masterKeyOf(context.providerConfigMasterKey);
+	const rows = await context.db
+		.select({ continuityKey: watchStatus.continuityKey })
+		.from(watchStatus)
+		.where(eq(watchStatus.userId, context.user.id))
+		.all();
+	const continuityIds = [...new Set(rows.map((row) => row.continuityKey))];
+	const results: PushResult[] = await Promise.all(
+		continuityIds.map(async (continuityId) =>
+			pushContinuity({
+				continuityId,
+				db: context.db,
+				engine: context.engine,
+				masterKeyBase64,
+				userId: context.user.id,
+			}),
+		),
+	);
+	return {
+		continuityCount: continuityIds.length,
+		results,
+	};
+});
+
+const sync = { connect, disconnect, list, push, pushLibrary };
 
 export { sync };

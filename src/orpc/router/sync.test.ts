@@ -275,3 +275,22 @@ describe("sync.push", () => {
 		}
 	});
 });
+
+describe("sync.pushLibrary", () => {
+	it("forbids pushLibrary without an active entitlement", async () => {
+		const db = await seeded();
+		await expect(
+			clientFor(db, "user-1").sync.pushLibrary({}),
+		).rejects.toMatchObject({ code: "FORBIDDEN" });
+	});
+
+	it("returns an empty result set when the library has no watch rows", async () => {
+		const db = await seeded();
+		await grantActive(db);
+		const client = clientFor(db, "user-1");
+		await expect(client.sync.pushLibrary({})).resolves.toEqual({
+			continuityCount: 0,
+			results: [],
+		});
+	});
+});
