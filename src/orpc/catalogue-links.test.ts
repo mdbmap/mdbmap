@@ -123,4 +123,20 @@ describe("catalogueLinks hrefs", () => {
 		expect(links.map((link) => link.service)).toEqual(["tmdb", "imdb"]);
 		expect(catalogueLinks([])).toEqual([]);
 	});
+
+	it("keeps TMDB movie and tv URLs when they share an id", () => {
+		const links = catalogueLinks(
+			[episodic({ tmdb: "603" }), atomic({ tmdb: "603" })],
+			["Season 1", "Film"],
+		);
+		expect(
+			links.filter((link) => link.service === "tmdb").map((link) => link.href),
+		).toEqual([
+			"https://www.themoviedb.org/tv/603",
+			"https://www.themoviedb.org/movie/603",
+		]);
+		expect(
+			links.filter((link) => link.service === "tmdb").map((link) => link.label),
+		).toEqual(["TMDB · Season 1", "TMDB · Film"]);
+	});
 });

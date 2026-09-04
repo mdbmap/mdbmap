@@ -65,10 +65,14 @@ const membersForService = (
 	const seen = new Map<string, SeenMember>();
 	for (const [index, segment] of segments.entries()) {
 		const id = segment.members[service];
-		if (id === undefined || seen.has(id)) {
+		if (id === undefined) {
 			continue;
 		}
-		seen.set(id, {
+		const key = service === "tmdb" ? `${tmdbPath(segment.kind)}:${id}` : id;
+		if (seen.has(key)) {
+			continue;
+		}
+		seen.set(key, {
 			href: hrefFor(service, id, segment.kind),
 			id,
 			partLabel: partLabelAt(index, labels),
