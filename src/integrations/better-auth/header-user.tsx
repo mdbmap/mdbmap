@@ -1,3 +1,4 @@
+import { Link } from "@tanstack/react-router";
 import { useCallback } from "react";
 import { tv } from "tailwind-variants";
 
@@ -22,6 +23,17 @@ const signOutButton = tv({
 });
 
 const SIGN_OUT = "Sign out";
+const SETTINGS = "Settings";
+const SETTINGS_PATH = "/settings";
+const textLink = "text-ink/50 hover:text-accent font-mono text-xs";
+
+function SettingsLink() {
+	return (
+		<Link to={SETTINGS_PATH}>
+			<span className={textLink}>{SETTINGS}</span>
+		</Link>
+	);
+}
 
 function userInitial(name: string | undefined): string {
 	const trimmed = name?.trim();
@@ -66,6 +78,7 @@ function BetterAuthHeader() {
 			<span className="text-ink/70 max-w-[10rem] truncate font-mono text-xs">
 				{user.name}
 			</span>
+			<SettingsLink />
 			<button className={signOutButton()} onClick={handleSignOut} type="button">
 				{SIGN_OUT}
 			</button>
