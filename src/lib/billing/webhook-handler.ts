@@ -2,6 +2,7 @@ import type { Db } from "@/db";
 
 import { applyStripeEvent } from "./apply-stripe-event.ts";
 import type { StripeEventLike } from "./apply-stripe-event.ts";
+import { BillingError } from "./errors.ts";
 import { createStripe, stripeWebhookSecret } from "./stripe-client.ts";
 
 const toEventObject = (value: unknown): Record<string, unknown> => {
@@ -43,8 +44,15 @@ const handleStripeWebhook = async (
 		id: event.id,
 		type: event.type,
 	};
-	const result = await applyStripeEvent(db, stripeEvent);
-	return Response.json({ result }, { status: 200 });
+	try {
+		const result = await applyStripeEvent(db, stripeEvent);
+		return Response.json({ result }, { status: 200 });
+	} catch (error) {
+		if (error instanceof BillingError && error.code === "unresolved_subject") {
+			return Response.json({ error: error.message }, { status: 500 });
+		}
+		throw error;
+	}
 };
 
 export { handleStripeWebhook };

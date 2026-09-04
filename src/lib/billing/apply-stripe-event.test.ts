@@ -149,3 +149,59 @@ describe("applyStripeEvent unknown types", () => {
 		expect(events[0]).toMatchObject({ id: "evt_noise", type: "invoice.paid" });
 	});
 });
+
+describe("applyStripeEvent unresolved handled events", () => {
+	it("does not record unresolved handled events", async () => {
+		const db = await seedUser();
+		await expect(
+			applyStripeEvent(db, {
+				data: {
+					object: {
+						customer: "cus_unknown",
+						subscription: "sub_unknown",
+					},
+				},
+				id: "evt_orphan",
+				type: "checkout.session.completed",
+			}),
+		).rejects.toMatchObject({
+			code: "unresolved_subject",
+			name: "BillingError",
+		});
+		const events = await db.select().from(stripeWebhookEvent).all();
+		expect(events).toHaveLength(0);
+	});
+});
+
+describe("applyStripeEvent subscription status fail-closed", () => {
+	it("marks past_due subscriptions inactive", async () => {
+		const db = await seedUser();
+		await db
+			.insert(syncEntitlement)
+			.values({
+				status: "active",
+				stripeCustomerId: "cus_1",
+				stripeSubscriptionId: "sub_1",
+				userId: "user-1",
+			})
+			.run();
+		const result = await applyStripeEvent(db, {
+			data: {
+				object: {
+					customer: "cus_1",
+					id: "sub_1",
+					status: "past_due",
+				},
+			},
+			id: "evt_past_due",
+			type: "customer.subscription.updated",
+		});
+		expect(result).toBe("applied");
+		const row = await db
+			.select({ status: syncEntitlement.status })
+			.from(syncEntitlement)
+			.where(eq(syncEntitlement.userId, "user-1"))
+			.get();
+		expect(row?.status).toBe("inactive");
+	});
+});

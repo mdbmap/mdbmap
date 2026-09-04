@@ -148,15 +148,13 @@ function BillingActions() {
 		}),
 	);
 
-	const returnOrigin = globalThis.location.origin;
-
 	const startCheckout = useCallback(() => {
-		checkout.mutate({ returnOrigin });
-	}, [checkout, returnOrigin]);
+		checkout.mutate({});
+	}, [checkout]);
 
 	const openPortal = useCallback(() => {
-		portal.mutate({ returnOrigin });
-	}, [portal, returnOrigin]);
+		portal.mutate({});
+	}, [portal]);
 
 	const entitlement = statusQuery.data?.status ?? "inactive";
 	const hasCustomer = statusQuery.data?.hasCustomer ?? false;

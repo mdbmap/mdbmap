@@ -7,6 +7,8 @@ import type { ORPCContext } from "@/orpc/context";
 
 import { router } from "./index.ts";
 
+const originHeaders = () => new Headers({ origin: "https://example.test" });
+
 const seeded = async () => {
 	const db = await freshDb();
 	await db
@@ -23,6 +25,7 @@ const clientFor = (
 	createRouterClient(router, {
 		context: {
 			db,
+			headers: originHeaders(),
 			resolveSession: () => (userId === undefined ? undefined : { id: userId }),
 		} satisfies ORPCContext,
 	});
@@ -67,9 +70,7 @@ describe("billing.createCheckout", () => {
 	it("rejects an unauthenticated caller", async () => {
 		const db = await seeded();
 		await expect(
-			clientFor(db, undefined).billing.createCheckout({
-				returnOrigin: "https://example.test",
-			}),
+			clientFor(db, undefined).billing.createCheckout({}),
 		).rejects.toMatchObject({ code: "UNAUTHORIZED" });
 	});
 });
@@ -78,9 +79,9 @@ describe("billing.createPortal", () => {
 	it("rejects when no Stripe customer is linked", async () => {
 		const db = await seeded();
 		await expect(
-			clientFor(db, "user-1").billing.createPortal({
-				returnOrigin: "https://example.test",
-			}),
-		).rejects.toMatchObject({ code: "BAD_REQUEST" });
+			clientFor(db, "user-1").billing.createPortal({}),
+		).rejects.toMatchObject({
+			code: "BAD_REQUEST",
+		});
 	});
 });

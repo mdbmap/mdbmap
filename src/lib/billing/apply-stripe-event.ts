@@ -4,6 +4,8 @@ import type { Db } from "@/db";
 import type { SyncEntitlementStatus } from "@/db/schema";
 import { stripeWebhookEvent, syncEntitlement } from "@/db/schema";
 
+import { unresolvedBillingSubjectError } from "./errors.ts";
+
 interface StripeEventLike {
 	data: { object: Record<string, unknown> };
 	id: string;
@@ -19,6 +21,13 @@ interface EntitlementWrite {
 	stripeCustomerId?: string;
 	stripeSubscriptionId?: string;
 }
+
+const HANDLED_EVENT_TYPES = new Set([
+	"checkout.session.completed",
+	"customer.subscription.created",
+	"customer.subscription.deleted",
+	"customer.subscription.updated",
+]);
 
 const asString = (value: unknown): string | undefined =>
 	typeof value === "string" && value.length > 0 ? value : undefined;
@@ -201,6 +210,10 @@ const applyStripeEvent = async (
 			wrote = false;
 			break;
 		}
+	}
+
+	if (!wrote && HANDLED_EVENT_TYPES.has(event.type)) {
+		throw unresolvedBillingSubjectError(event.type);
 	}
 
 	await db

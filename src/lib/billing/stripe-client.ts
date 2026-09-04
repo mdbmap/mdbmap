@@ -2,22 +2,35 @@ import { Stripe } from "stripe";
 
 import { env } from "@/env";
 
-const missing = (name: string): never => {
-	throw new Error(`${name} is not configured.`);
+import { billingConfigError } from "./errors.ts";
+
+const stripeSecretKey = (): string => {
+	const value = env.STRIPE_SECRET_KEY;
+	if (value === undefined) {
+		throw billingConfigError("STRIPE_SECRET_KEY is not configured.");
+	}
+	return value;
 };
 
-const stripeSecret = (): string =>
-	env.STRIPE_SECRET_KEY ?? missing("STRIPE_SECRET_KEY");
+const stripeWebhookSecret = (): string => {
+	const value = env.STRIPE_WEBHOOK_SECRET;
+	if (value === undefined) {
+		throw billingConfigError("STRIPE_WEBHOOK_SECRET is not configured.");
+	}
+	return value;
+};
 
-const stripeWebhookSecret = (): string =>
-	env.STRIPE_WEBHOOK_SECRET ?? missing("STRIPE_WEBHOOK_SECRET");
+const stripePriceId = (): string => {
+	const value = env.STRIPE_PRICE_ID;
+	if (value === undefined) {
+		throw billingConfigError("STRIPE_PRICE_ID is not configured.");
+	}
+	return value;
+};
 
-const stripePriceId = (): string =>
-	env.STRIPE_PRICE_ID ?? missing("STRIPE_PRICE_ID");
-
-const createStripe = (secretKey = stripeSecret()): Stripe =>
+const createStripe = (secretKey = stripeSecretKey()): Stripe =>
 	new Stripe(secretKey, {
 		httpClient: Stripe.createFetchHttpClient(),
 	});
 
-export { createStripe, stripePriceId, stripeSecret, stripeWebhookSecret };
+export { createStripe, stripePriceId, stripeWebhookSecret };
