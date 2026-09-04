@@ -92,6 +92,7 @@ describe("BetterAuthHeader", () => {
 		});
 		const html = renderToStaticMarkup(<BetterAuthHeader />);
 		expect(html).toContain("Ada");
+		expect(html).toContain("Settings");
 		expect(html).toContain("Sign out");
 		expect(html).toContain("Settings");
 		expect(html).toContain('href="/settings"');

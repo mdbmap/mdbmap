@@ -40,6 +40,34 @@ vi.mock("@tanstack/react-router", () => ({
 	),
 }));
 
+vi.mock("@/orpc/client", () => ({
+	orpc: {
+		billing: {
+			createCheckout: {
+				mutationOptions: (options?: object) => ({
+					mutationFn: () => ({ url: "https://stripe.test/checkout" }),
+					...options,
+				}),
+			},
+			createPortal: {
+				mutationOptions: (options?: object) => ({
+					mutationFn: () => ({ url: "https://stripe.test/portal" }),
+					...options,
+				}),
+			},
+			status: {
+				queryOptions: () => ({
+					queryFn: () => ({
+						hasCustomer: false,
+						status: "inactive",
+					}),
+					queryKey: ["billing", "status"],
+				}),
+			},
+		},
+	},
+}));
+
 vi.mock("@/integrations/better-auth/header-user", () => ({
 	BetterAuthHeader: () => false,
 }));
@@ -91,6 +119,8 @@ describe("SettingsPage", () => {
 		expect(html).toContain("Ada");
 		expect(html).toContain("ada@example.com");
 		expect(html).toContain("Export library");
+		expect(html).toContain("Paid sync");
+		expect(html).toContain("Start checkout");
 		expect(html).toContain('href="/"');
 		expect(html).toContain('href="/search"');
 		expect(html).toContain('href="/library"');
