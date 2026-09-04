@@ -7,7 +7,12 @@ import {
 	presentationOrderProposals,
 } from "@/db/engine-schema";
 import type { WatchStatus } from "@/db/schema";
-import { episodeProgress, personalRating, watchStatus } from "@/db/schema";
+import {
+	episodeProgress,
+	personalRating,
+	watchStatus,
+	workNote,
+} from "@/db/schema";
 import type { EngineRead, ResolveResult, Segment } from "@/engine";
 import { parseContinuityKey } from "@/engine/continuity/keys";
 import { isMissingContinuity } from "@/engine/continuity/missing";
@@ -39,6 +44,7 @@ import { resolveSimilar } from "@/orpc/similar";
 import { open } from "./work-open";
 
 interface ViewerState {
+	note: string | undefined;
 	personalByUnit: Map<string, number>;
 	statusRow:
 		| { rewatchCount: number; status: WatchStatus | undefined }
@@ -137,7 +143,23 @@ const loadViewerState = async (
 		personalByUnit.set(`${row.unitKind}:${canonicalUnitKey}`, row.score);
 	}
 
-	return { personalByUnit, statusRow, watchedSet };
+	const noteRows = await db
+		.select({ body: workNote.body, continuityKey: workNote.continuityKey })
+		.from(workNote)
+		.where(
+			and(
+				eq(workNote.userId, userId),
+				inArray(workNote.continuityKey, continuityKeys),
+			),
+		)
+		.all();
+	const note =
+		noteRows.find((row) => row.continuityKey === canonicalId)?.body ??
+		noteRows.find((row) => row.continuityKey === requestedId)?.body ??
+		noteRows.find((row) => aliasKeys.some((key) => key === row.continuityKey))
+			?.body;
+
+	return { note, personalByUnit, statusRow, watchedSet };
 };
 
 const buildEpisodes = async (
@@ -395,6 +417,7 @@ const get = pub
 		let viewer: ViewerTracking | undefined;
 		if (viewerState !== undefined) {
 			viewer = {
+				note: viewerState.note,
 				personalRating: viewerState.personalByUnit.get(unitId(workUnit)),
 				rewatchCount: viewerState.statusRow?.rewatchCount ?? 0,
 				status: viewerState.statusRow?.status,

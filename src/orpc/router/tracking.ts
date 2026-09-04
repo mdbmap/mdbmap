@@ -2,7 +2,12 @@ import { and, eq, inArray } from "drizzle-orm";
 
 import { runAtomicBatch } from "@/db/atomic";
 import type { WatchStatus } from "@/db/schema";
-import { episodeProgress, personalRating, watchStatus } from "@/db/schema";
+import {
+	episodeProgress,
+	personalRating,
+	watchStatus,
+	workNote,
+} from "@/db/schema";
 import type { EngineRead, ResolveResult } from "@/engine";
 import { parseContinuityKey } from "@/engine/continuity/keys";
 import { retiredContinuityKeys } from "@/engine/continuity/persist";
@@ -11,6 +16,7 @@ import type { Db } from "@/orpc/context";
 import { instalmentsOf } from "@/orpc/instalments";
 import type {
 	EpisodeWatchedResult,
+	NoteResult,
 	RateableUnit,
 	RatingResult,
 	TrackingRemoveResult,
@@ -19,6 +25,7 @@ import type {
 import {
 	RemoveTrackingInput,
 	SetEpisodeWatchedInput,
+	SetNoteInput,
 	SetRatingInput,
 	SetRewatchInput,
 	SetStatusInput,
@@ -101,6 +108,17 @@ const watchStatusKeys = async (
 	return [...new Set([canonicalId, requestedId, ...aliases])];
 };
 
+const noteKeysFor = async (
+	db: Db,
+	canonicalId: string,
+	requestedId: string,
+): Promise<readonly string[]> => {
+	const parsed = parseContinuityKey(canonicalId);
+	const aliases =
+		parsed === undefined ? [] : await retiredContinuityKeys(db, parsed);
+	return [...new Set([canonicalId, requestedId, ...aliases])];
+};
+
 const sqlIn = (values: readonly string[]): string =>
 	values.map(() => "?").join(", ");
 
@@ -132,6 +150,11 @@ const deleteTrackingRows = async (
 				database
 					.prepare(
 						`DELETE FROM watch_status WHERE user_id = ? AND continuity_key IN (${sqlIn(keys)})`,
+					)
+					.bind(userId, ...keys),
+				database
+					.prepare(
+						`DELETE FROM work_note WHERE user_id = ? AND continuity_key IN (${sqlIn(keys)})`,
 					)
 					.bind(userId, ...keys),
 			);
@@ -331,9 +354,59 @@ const remove = authed
 		return TRACKING_REMOVED;
 	});
 
+const setNote = authed
+	.input(SetNoteInput)
+	.handler(async ({ context, input }): Promise<NoteResult> => {
+		const userId = context.user.id;
+		const continuityId = await canonicalContinuityId(
+			context.engine,
+			input.continuityId,
+		);
+		const body = input.body.trim();
+		const keys = await noteKeysFor(
+			context.db,
+			continuityId,
+			input.continuityId,
+		);
+		if (body === "") {
+			await context.db
+				.delete(workNote)
+				.where(
+					and(
+						eq(workNote.userId, userId),
+						inArray(workNote.continuityKey, keys),
+					),
+				)
+				.run();
+			return { body: undefined };
+		}
+		const retired = keys.filter((key) => key !== continuityId);
+		await context.db
+			.insert(workNote)
+			.values({ body, continuityKey: continuityId, userId })
+			.onConflictDoUpdate({
+				set: { body },
+				target: [workNote.userId, workNote.continuityKey],
+			})
+			.run();
+		if (retired.length > 0) {
+			await context.db
+				.delete(workNote)
+				.where(
+					and(
+						eq(workNote.userId, userId),
+						inArray(workNote.continuityKey, retired),
+					),
+				)
+				.run();
+		}
+		return { body };
+	});
+
 const tracking = {
 	remove,
 	setEpisodeWatched,
+	setNote,
 	setRating,
 	setRewatch,
 	setStatus,

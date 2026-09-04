@@ -35,6 +35,7 @@ import {
 	user,
 	verification,
 	watchStatus,
+	workNote,
 } from "./schema.ts";
 
 const schema = {
@@ -70,6 +71,7 @@ const schema = {
 	user,
 	verification,
 	watchStatus,
+	workNote,
 };
 
 const createDb = (database: D1Database) => drizzle(database, { schema });

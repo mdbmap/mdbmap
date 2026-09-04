@@ -2,7 +2,12 @@ import { describe, expect, it } from "vitest";
 
 import type { EpisodeView, FilmView, PartView, WorkView } from "@/orpc/schema";
 
-import { applyRating, applyRewatch, applyStatus } from "./optimistic";
+import {
+	applyNote,
+	applyRating,
+	applyRewatch,
+	applyStatus,
+} from "./optimistic";
 
 const emptyScore = { count: 0, mean: undefined };
 
@@ -167,5 +172,17 @@ describe("applyRating", () => {
 		const [, block] = next.parts;
 		expect(block?.kind === "film" ? block.personalRating : undefined).toBe(8);
 		expect(next.parts[0]?.personalRating).toBeUndefined();
+	});
+});
+
+describe("applyNote", () => {
+	it("writes a trimmed note onto the viewer", () => {
+		const next = applyNote(work(), "  Loid's cover  ");
+		expect(next.viewer?.note).toBe("Loid's cover");
+	});
+
+	it("clears the note when the body is blank", () => {
+		const noted = applyNote(work(), "keep");
+		expect(applyNote(noted, "  ").viewer?.note).toBeUndefined();
 	});
 });

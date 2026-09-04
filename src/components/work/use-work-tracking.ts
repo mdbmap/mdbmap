@@ -1,19 +1,26 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useCallback } from "react";
 
+import { noteMutationScope } from "@/components/work/note-mutation-scope";
 import { workGetInput } from "@/components/work/part-state";
 import type { PresentationOrderSlug } from "@/db/engine-schema";
 import type { WatchStatus } from "@/db/schema";
 import { orpc } from "@/orpc/client";
 import type { RateableUnit, WorkView } from "@/orpc/schema";
 
-import { applyRating, applyRewatch, applyStatus } from "./sidebar/optimistic";
+import {
+	applyNote,
+	applyRating,
+	applyRewatch,
+	applyStatus,
+} from "./sidebar/optimistic";
 
 interface CacheContext {
 	previous: WorkView | undefined;
 }
 
 interface WorkTracking {
+	setNote: (body: string) => void;
 	setRating: (unit: RateableUnit, score: number | undefined) => void;
 	setRewatch: (count: number) => void;
 	setStatus: (status: WatchStatus) => void;
@@ -82,10 +89,22 @@ function useWorkTracking(
 			onSettled: settle,
 		}),
 	);
+	const noteMutation = useMutation({
+		...orpc.tracking.setNote.mutationOptions({
+			onError: (_error, _variables, context: CacheContext | undefined) => {
+				rollback(context);
+			},
+			onMutate: async (variables) =>
+				patch((work) => applyNote(work, variables.body)),
+			onSettled: settle,
+		}),
+		scope: noteMutationScope(continuityId),
+	});
 
 	const { mutate: mutateStatus } = statusMutation;
 	const { mutate: mutateRewatch } = rewatchMutation;
 	const { mutate: mutateRating } = ratingMutation;
+	const { mutate: mutateNote } = noteMutation;
 
 	const setStatus = useCallback(
 		(status: WatchStatus) => {
@@ -105,8 +124,14 @@ function useWorkTracking(
 		},
 		[mutateRating],
 	);
+	const setNote = useCallback(
+		(body: string) => {
+			mutateNote({ body, continuityId });
+		},
+		[continuityId, mutateNote],
+	);
 
-	return { setRating, setRewatch, setStatus };
+	return { setNote, setRating, setRewatch, setStatus };
 }
 
 export { useWorkTracking };

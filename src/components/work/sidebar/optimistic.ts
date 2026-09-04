@@ -4,6 +4,7 @@ import type { WatchStatus } from "@/db/schema";
 import type { RateableUnit, ViewerTracking, WorkView } from "@/orpc/schema";
 
 const emptyViewer = (): ViewerTracking => ({
+	note: undefined,
 	personalRating: undefined,
 	rewatchCount: 0,
 	status: undefined,
@@ -25,6 +26,15 @@ function applyRewatch(work: WorkView, count: number): WorkView {
 	return produce(work, (draft) => {
 		const viewer = draft.viewer ?? emptyViewer();
 		viewer.rewatchCount = count;
+		draft.viewer = viewer;
+	});
+}
+
+function applyNote(work: WorkView, body: string): WorkView {
+	return produce(work, (draft) => {
+		const viewer = draft.viewer ?? emptyViewer();
+		const trimmed = body.trim();
+		viewer.note = trimmed === "" ? undefined : trimmed;
 		draft.viewer = viewer;
 	});
 }
@@ -64,4 +74,4 @@ function applyRating(
 	});
 }
 
-export { applyRating, applyRewatch, applyStatus };
+export { applyNote, applyRating, applyRewatch, applyStatus };
