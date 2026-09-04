@@ -6,17 +6,15 @@ const HEADING = "Catalogues";
 
 function CatalogueRow({ link }: { link: CatalogueLink }) {
 	return (
-		<div className="flex items-baseline gap-1.5">
+		<a
+			className="hover:text-accent flex items-baseline gap-1.5"
+			href={link.href}
+			rel="noreferrer noopener"
+			target="_blank"
+		>
 			<span className="text-ink/75 mr-auto">{link.label}</span>
-			<a
-				className="hover:text-accent"
-				href={link.href}
-				rel="noreferrer noopener"
-				target="_blank"
-			>
-				{link.id}
-			</a>
-		</div>
+			<span>{link.id}</span>
+		</a>
 	);
 }
 
