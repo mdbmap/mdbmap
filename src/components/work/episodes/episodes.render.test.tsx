@@ -168,6 +168,7 @@ const renderEpisodes = (blocks: WorkBlock[] = parts) =>
 const renderOrdered = (
 	orders: readonly PresentationOrderSlug[],
 	communityOrders: readonly { id: number; name: string }[] = [],
+	proposalSegments: readonly { id: number; label: string }[] = [],
 ) =>
 	renderToStaticMarkup(
 		<QueryClientProvider client={new QueryClient()}>
@@ -179,7 +180,7 @@ const renderOrdered = (
 				order="release"
 				orders={orders}
 				parts={courThenFilm}
-				proposalSegments={sampleProposalSegments}
+				proposalSegments={proposalSegments}
 			/>
 		</QueryClientProvider>,
 	);
@@ -282,33 +283,6 @@ describe("Episodes films", () => {
 		expect(html).not.toContain("Operation Strix");
 	});
 
-	it("shows a release/watch control when both orders exist", () => {
-		useSession.mockReturnValue(idleSession);
-		const html = renderOrdered(bothOrders);
-		expect(html).toContain("Release");
-		expect(html).toContain("Watch");
-	});
-
-	it("hides the order control when only one order exists", () => {
-		useSession.mockReturnValue(idleSession);
-		const html = renderOrdered(releaseOnly);
-		expect(html).not.toContain("Release");
-		expect(html).not.toContain("Watch");
-	});
-
-	it("shows an accepted community order in the selector", () => {
-		useSession.mockReturnValue(idleSession);
-		const html = renderOrdered(bothOrders, theatricalOrder);
-		expect(html).toContain("Theatrical cut");
-		expect(html).toContain("Propose order");
-	});
-
-	it("does not invent pending community orders in the selector", () => {
-		useSession.mockReturnValue(idleSession);
-		const html = renderOrdered(bothOrders, theatricalOrder);
-		expect(html).not.toContain("Pending draft");
-	});
-
 	it("keeps film and part labels when watch order puts the film first", () => {
 		useSession.mockReturnValue({
 			...idleSession,
@@ -338,5 +312,48 @@ describe("Episodes films", () => {
 				filmThenCour,
 			),
 		).toBe(1);
+	});
+});
+
+describe("Episodes orders", () => {
+	afterEach(() => {
+		usePartSelectionStore.setState({ selectedKey: undefined });
+		useSession.mockReset();
+	});
+
+	it("shows a release/watch control when both orders exist", () => {
+		useSession.mockReturnValue(idleSession);
+		const html = renderOrdered(bothOrders);
+		expect(html).toContain("Release");
+		expect(html).toContain("Watch");
+	});
+
+	it("hides the order control when only one order exists", () => {
+		useSession.mockReturnValue(idleSession);
+		const html = renderOrdered(releaseOnly);
+		expect(html).not.toContain("Release");
+		expect(html).not.toContain("Watch");
+		expect(html).not.toContain("Propose order");
+	});
+
+	it("shows an accepted community order in the selector", () => {
+		useSession.mockReturnValue(idleSession);
+		const html = renderOrdered(
+			bothOrders,
+			theatricalOrder,
+			sampleProposalSegments,
+		);
+		expect(html).toContain("Theatrical cut");
+		expect(html).toContain("Propose order");
+	});
+
+	it("does not invent pending community orders in the selector", () => {
+		useSession.mockReturnValue(idleSession);
+		const html = renderOrdered(
+			bothOrders,
+			theatricalOrder,
+			sampleProposalSegments,
+		);
+		expect(html).not.toContain("Pending draft");
 	});
 });
