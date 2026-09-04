@@ -126,24 +126,36 @@ const itemsForMany = async (
 	if (proposalIds.length === 0) {
 		return new Map();
 	}
-	const rows = await db
-		.select({
-			position: presentationOrderProposalItems.position,
-			proposalId: presentationOrderProposalItems.proposalId,
-			segmentId: presentationOrderProposalItems.segmentId,
-		})
-		.from(presentationOrderProposalItems)
-		.where(inArray(presentationOrderProposalItems.proposalId, [...proposalIds]))
-		.orderBy(
-			asc(presentationOrderProposalItems.proposalId),
-			asc(presentationOrderProposalItems.position),
-		)
-		.all();
+	const chunkSize = 100;
+	const chunks = Array.from(
+		{ length: Math.ceil(proposalIds.length / chunkSize) },
+		(_ignored, index) =>
+			proposalIds.slice(index * chunkSize, (index + 1) * chunkSize),
+	);
+	const chunkRows = await Promise.all(
+		chunks.map(async (chunk) =>
+			db
+				.select({
+					position: presentationOrderProposalItems.position,
+					proposalId: presentationOrderProposalItems.proposalId,
+					segmentId: presentationOrderProposalItems.segmentId,
+				})
+				.from(presentationOrderProposalItems)
+				.where(inArray(presentationOrderProposalItems.proposalId, [...chunk]))
+				.orderBy(
+					asc(presentationOrderProposalItems.proposalId),
+					asc(presentationOrderProposalItems.position),
+				)
+				.all(),
+		),
+	);
 	const byProposal = new Map<number, ProposalItemView[]>();
-	for (const row of rows) {
-		const items = byProposal.get(row.proposalId) ?? [];
-		items.push({ position: row.position, segmentId: row.segmentId });
-		byProposal.set(row.proposalId, items);
+	for (const rows of chunkRows) {
+		for (const row of rows) {
+			const items = byProposal.get(row.proposalId) ?? [];
+			items.push({ position: row.position, segmentId: row.segmentId });
+			byProposal.set(row.proposalId, items);
+		}
 	}
 	return byProposal;
 };
