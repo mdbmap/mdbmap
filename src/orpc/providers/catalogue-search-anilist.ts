@@ -36,7 +36,7 @@ const anilistMediaSchema = z.object({
 });
 
 const anilistPageSchema = z.object({
-	media: z.array(anilistMediaSchema).nullable().optional(),
+	media: z.array(anilistMediaSchema.nullable()).nullable().optional(),
 });
 
 const anilistDataSchema = z.object({
