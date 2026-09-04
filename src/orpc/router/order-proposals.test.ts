@@ -258,4 +258,41 @@ describe("orderProposals happy path", () => {
 			}),
 		).rejects.toMatchObject({ code: "BAD_REQUEST" });
 	});
+
+	it("retains orphan author and reviewer ids after auth user deletion", async () => {
+		const db = await freshDb();
+		const { continuityId, segments } = await seedContinuity(db, 2);
+		const [first, second] = segments;
+		if (first === undefined || second === undefined) {
+			throw new Error("expected two segments");
+		}
+		const member = clientFor(db, memberUser);
+		const admin = clientFor(db, adminUser);
+		const created = await member.orderProposals.create({
+			continuityId,
+			name: "Audit retain",
+			rationale: "Historical ids survive user deletion",
+			segmentIds: [second.id, first.id],
+		});
+		await admin.orderProposals.accept({ proposalId: created.id });
+
+		const orphanAuthorId = "deleted-author";
+		const orphanReviewerId = "deleted-reviewer";
+		await db
+			.update(presentationOrderProposals)
+			.set({
+				authorUserId: orphanAuthorId,
+				reviewedByUserId: orphanReviewerId,
+			})
+			.where(eq(presentationOrderProposals.id, created.id));
+
+		const fetched = await member.orderProposals.get({
+			proposalId: created.id,
+		});
+		expect(fetched).toMatchObject({
+			authorUserId: orphanAuthorId,
+			reviewedByUserId: orphanReviewerId,
+			status: "accepted",
+		});
+	});
 });
