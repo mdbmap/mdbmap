@@ -249,7 +249,7 @@ describe("Episodes order selector", () => {
 	});
 
 	it("hides the order control when only one order exists", () => {
-		const html = renderIdleOrdered(releaseOnly);
+		const html = renderIdleOrdered(releaseOnly, [], sampleProposalSegments);
 		expect(html).not.toContain("Release");
 		expect(html).not.toContain("Watch");
 		expect(html).not.toContain("Propose order");
