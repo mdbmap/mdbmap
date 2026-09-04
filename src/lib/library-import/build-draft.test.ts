@@ -138,7 +138,7 @@ describe("buildMalImportDraft", () => {
 				entry: {
 					externalTitleId: "99",
 					progress: 0,
-					score: 0,
+					score: undefined,
 					status: "plan_to_watch",
 					title: "Unknown",
 					updatedAt: undefined,

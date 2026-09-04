@@ -36,3 +36,14 @@ export type {
 	ImportProvider,
 	ImportUnmatchedRow,
 } from "./types.ts";
+
+export {
+	applyImportDraft,
+	fingerprintOf,
+	withFingerprint,
+} from "./apply-draft.ts";
+export type {
+	AmbiguousResolution,
+	ApplyImportDraftInput,
+	ApplyImportDraftResult,
+} from "./apply-draft.ts";

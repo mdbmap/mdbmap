@@ -11,6 +11,7 @@ import { orpc } from "@/orpc/client";
 import type { LibraryEntry } from "@/orpc/schema";
 
 import { downloadLibraryExport, libraryExportJson } from "./library-export";
+import { LibraryImportPanel } from "./library-import-panel.tsx";
 import { SyncTargetsActions } from "./sync-targets-actions.tsx";
 
 const BRAND = "mdbmap";
@@ -247,7 +248,11 @@ function BillingActions() {
 	);
 }
 
-export function SettingsPage({ entries }: { entries: readonly LibraryEntry[] }) {
+export function SettingsPage({
+	entries,
+}: {
+	entries: readonly LibraryEntry[];
+}) {
 	const statusQuery = useQuery(orpc.billing.status.queryOptions());
 	const entitlement = statusQuery.data?.status ?? "inactive";
 
@@ -257,6 +262,7 @@ export function SettingsPage({ entries }: { entries: readonly LibraryEntry[] }) 
 			<SettingsIntro />
 			<AccountSection />
 			<ExportButton entries={entries} />
+			<LibraryImportPanel />
 			<BillingActions />
 			<SyncTargetsActions entitlement={entitlement} />
 		</main>
