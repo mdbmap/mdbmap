@@ -9,6 +9,7 @@ import {
 	SyncAccountCredentialsSchema,
 	unlinkSyncAccount,
 } from "@/lib/sync-accounts";
+import { pushContinuity } from "@/lib/sync-push";
 import { authed } from "@/orpc/base";
 import { requireSyncEntitlement } from "@/orpc/sync-entitlement";
 
@@ -71,6 +72,23 @@ const disconnect = authed
 		return { ok: true as const };
 	});
 
-const sync = { connect, disconnect, list };
+const PushInput = z
+	.object({
+		continuityId: z.string().trim().min(1),
+	})
+	.strict();
+
+const push = authed.input(PushInput).handler(async ({ context, input }) => {
+	await requireSyncEntitlement(context.db, context.user.id);
+	return pushContinuity({
+		continuityId: input.continuityId,
+		db: context.db,
+		engine: context.engine,
+		masterKeyBase64: masterKeyOf(context.providerConfigMasterKey),
+		userId: context.user.id,
+	});
+});
+
+const sync = { connect, disconnect, list, push };
 
 export { sync };

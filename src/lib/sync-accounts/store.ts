@@ -217,11 +217,49 @@ const readSyncAccountCredentials = async (
 	return SyncAccountCredentialsSchema.parse(parsed);
 };
 
+const updateSyncAccountCursor = async (
+	db: Db,
+	userId: string,
+	provider: SyncAccountProvider,
+	cursor: string,
+): Promise<void> => {
+	await db
+		.update(syncAccountLink)
+		.set({ cursor, lastError: sql`NULL` })
+		.where(
+			and(
+				eq(syncAccountLink.userId, userId),
+				eq(syncAccountLink.provider, provider),
+			),
+		)
+		.run();
+};
+
+const recordSyncAccountError = async (
+	db: Db,
+	userId: string,
+	provider: SyncAccountProvider,
+	lastError: string,
+): Promise<void> => {
+	await db
+		.update(syncAccountLink)
+		.set({ lastError })
+		.where(
+			and(
+				eq(syncAccountLink.userId, userId),
+				eq(syncAccountLink.provider, provider),
+			),
+		)
+		.run();
+};
+
 export {
 	linkSyncAccount,
 	listSyncAccounts,
 	readSyncAccountCredentials,
+	recordSyncAccountError,
 	SyncAccountCredentialsSchema,
 	unlinkSyncAccount,
+	updateSyncAccountCursor,
 };
 export type { LinkSyncAccountInput, SyncAccountCredentials, SyncAccountPublic };

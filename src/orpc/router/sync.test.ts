@@ -1,9 +1,15 @@
 import { createRouterClient } from "@orpc/server";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
-import { syncAccountLink, syncEntitlement, user } from "@/db/schema";
+import {
+	syncAccountLink,
+	syncEntitlement,
+	user,
+	watchStatus,
+} from "@/db/schema";
 import { freshDb } from "@/db/test-helpers";
 import { randomMasterKey } from "@/lib/provider-config/test-support.ts";
+import { updateSyncAccountCursor } from "@/lib/sync-accounts";
 import type { ORPCContext } from "@/orpc/context";
 
 import { router } from "./index.ts";
@@ -175,5 +181,97 @@ describe("sync account link mutations", () => {
 				provider: "trakt",
 			}),
 		).rejects.toBeTruthy();
+	});
+});
+
+describe("sync.push", () => {
+	it("forbids push without an active entitlement", async () => {
+		const db = await seeded();
+		await expect(
+			clientFor(db, "user-1").sync.push({ continuityId: "continuity:1" }),
+		).rejects.toMatchObject({ code: "FORBIDDEN" });
+	});
+
+	it("runs entitlement-gated AniList push and keeps cursors/secrets safe on transport failure", async () => {
+		const fetchMock = vi.fn(async (): Promise<Response> => {
+			await Promise.resolve();
+			return new Response("unauthorized", { status: 401 });
+		});
+		vi.stubGlobal("fetch", fetchMock);
+
+		try {
+			const db = await seeded();
+			await grantActive(db);
+			const masterKey = randomMasterKey();
+			const client = clientFor(db, "user-1", masterKey);
+			await client.sync.connect({
+				credentials: { accessToken: "tok-push" },
+				externalAccountId: "ani-1",
+				provider: "anilist",
+			});
+			const seededCursor = "continuity:0@seed";
+			await updateSyncAccountCursor(db, "user-1", "anilist", seededCursor);
+			await db
+				.insert(watchStatus)
+				.values({
+					continuityKey: "continuity:1",
+					status: "completed",
+					userId: "user-1",
+				})
+				.run();
+
+			const engine = {
+				resolveContinuity: async () => {
+					await Promise.resolve();
+					return {
+						continuityId: "continuity:1",
+						mediaKind: "anime" as const,
+						segments: [
+							{
+								instalments: ["anidb:1#1"],
+								kind: "episodic" as const,
+								members: { anilist: "10" },
+							},
+						],
+					};
+				},
+			};
+
+			const pushClient = createRouterClient(router, {
+				context: {
+					db,
+					engine,
+					providerConfigMasterKey: masterKey,
+					resolveSession: () => ({ id: "user-1" }),
+				} satisfies ORPCContext,
+			});
+
+			const result = await pushClient.sync.push({
+				continuityId: "continuity:1",
+			});
+			expect(result.targets).toHaveLength(1);
+			const [target] = result.targets;
+			expect(target).toBeDefined();
+			if (target === undefined) {
+				throw new Error("expected push target result");
+			}
+			expect(target.ok).toBe(false);
+			if (target.ok) {
+				throw new Error("expected failed push target");
+			}
+			expect(target.provider).toBe("anilist");
+			expect(target.error).toContain("anilist:");
+			expect(result.warningCount).toBe(0);
+			assertNoSecret(result, "tok-push");
+
+			const listed = await client.sync.list();
+			const [account] = listed;
+			expect(account?.cursor).toBe(seededCursor);
+			expect(account?.lastError ?? "").toContain("anilist:");
+			assertNoSecret(account, "tok-push");
+			expect(fetchMock).toHaveBeenCalled();
+		} finally {
+			vi.unstubAllGlobals();
+		}
 	});
 });
