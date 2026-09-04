@@ -276,6 +276,11 @@ describe("PartPanel", () => {
 		expect(html).not.toContain("Season 2 · this part");
 	});
 
+	it("renders a part score select for the given part", () => {
+		const html = render(<PartDetails onRate={noRate} part={partOne} />);
+		expect(html).toContain('aria-label="Your score for Part 1"');
+	});
+
 	it("shows a placeholder when there are no parts", () => {
 		useSession.mockReturnValue(idleSession);
 		const html = render(
