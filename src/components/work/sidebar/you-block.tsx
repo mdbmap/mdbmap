@@ -110,7 +110,7 @@ function YouBlock({ continuityId, order, parts, viewer }: YouBlockProps) {
 	return (
 		<div>
 			<Label>{HEADING}</Label>
-			<div className="mt-2 flex items-baseline gap-1.5">
+			<div className="mt-3 flex items-baseline gap-1.5">
 				<ScoreSelect
 					label="Your score"
 					onChange={rateWork}
