@@ -12,9 +12,12 @@ import { WorkPage } from "./work-page";
 
 export function WorkRoute() {
 	const { continuityId } = useParams({ from: "/work/$continuityId" });
-	const { order } = useSearch({ from: "/work/$continuityId" });
+	const { order, proposal } = useSearch({ from: "/work/$continuityId" });
 	const navigate = useNavigate({ from: "/work/$continuityId" });
-	const input = workGetInput(continuityKey(continuityId), order);
+	const input = workGetInput(continuityKey(continuityId), {
+		order,
+		proposalId: proposal,
+	});
 	const query = orpc.work.get.queryOptions({ input });
 	const { data } = useSuspenseQuery(query);
 	const onSelectOrder = useCallback(
@@ -23,11 +26,19 @@ export function WorkRoute() {
 		},
 		[navigate],
 	);
+	const onSelectProposal = useCallback(
+		(proposalId: number) => {
+			void navigate({ search: { proposal: proposalId } });
+		},
+		[navigate],
+	);
 	return (
 		<WorkPage
 			onSelectOrder={onSelectOrder}
+			onSelectProposal={onSelectProposal}
 			order={order}
 			orders={presentationOrderSlugs}
+			selectedProposalId={proposal}
 			work={data}
 		/>
 	);

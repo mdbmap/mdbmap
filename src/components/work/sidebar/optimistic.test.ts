@@ -55,6 +55,7 @@ const film = (locator: string): FilmView => ({
 const work = (): WorkView => ({
 	cast: [],
 	catalogues: [],
+	communityOrders: [],
 	communityScore: emptyScore,
 	continuityId: "continuity:x",
 	header: {
@@ -74,6 +75,7 @@ const work = (): WorkView => ({
 		]),
 		film("anidb:film#1"),
 	],
+	proposalSegments: [],
 	staff: [],
 	studios: [],
 	viewer: undefined,

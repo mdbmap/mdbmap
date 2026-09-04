@@ -20,6 +20,7 @@ const episode = (number: number, watched: boolean): EpisodeView => ({
 const work = (): WorkView => ({
 	cast: [],
 	catalogues: [],
+	communityOrders: [],
 	communityScore: emptyScore,
 	continuityId: "continuity:x",
 	header: {
@@ -47,6 +48,7 @@ const work = (): WorkView => ({
 			year: 2022,
 		},
 	],
+	proposalSegments: [],
 	staff: [],
 	studios: [],
 	viewer: undefined,

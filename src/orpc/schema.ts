@@ -28,6 +28,7 @@ const RateableUnitInput = z.discriminatedUnion("kind", [
 const WorkGetInput = z.object({
 	continuityId: z.string().min(1),
 	order: z.enum(presentationOrderSlugs).optional(),
+	proposalId: z.number().int().min(1).optional(),
 });
 
 const SearchQueryInput = z.object({
@@ -310,15 +311,27 @@ interface CatalogueLink {
 	service: "anidb" | "anilist" | "imdb" | "mal" | "tmdb";
 }
 
+interface CommunityOrderRef {
+	id: number;
+	name: string;
+}
+
+interface ProposalSegmentRef {
+	id: number;
+	label: string;
+}
+
 interface WorkView {
 	cast: Credit[];
 	catalogues: CatalogueLink[];
+	communityOrders: CommunityOrderRef[];
 	communityScore: CommunityScore;
 	continuityId: string;
 	header: WorkHeader;
 	ifYouLiked: Similar[];
 	mediaKind: MediaKind;
 	parts: WorkBlock[];
+	proposalSegments: ProposalSegmentRef[];
 	staff: Credit[];
 	studios: string[];
 	viewer: ViewerTracking | undefined;
@@ -392,6 +405,8 @@ export type {
 	CatalogueLink,
 	CatalogueTitle,
 	CommunityScore,
+	ProposalSegmentRef,
+	CommunityOrderRef,
 	Credit,
 	EpisodeView,
 	EpisodeWatchedResult,

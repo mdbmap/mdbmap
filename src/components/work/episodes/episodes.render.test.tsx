@@ -146,10 +146,16 @@ const noopRate =
 		(unit: EpisodeView["rateableUnit"], score: number | undefined) => void
 	>();
 const noopOrder = vi.fn<(order: "release" | "watch") => void>();
+const noopProposal = vi.fn<(proposalId: number) => void>();
 const bothOrders = ["release", "watch"] as const;
 const releaseOnly = ["release"] as const;
 const courThenFilm = [partOne, dawn];
 const filmThenCour = [dawn, partOne];
+const sampleProposalSegments = [
+	{ id: 1, label: "Part 1" },
+	{ id: 2, label: "Dawn of the Deep Soul" },
+] as const;
+const theatricalOrder = [{ id: 11, name: "Theatrical cut" }] as const;
 
 const renderEpisodes = (blocks: WorkBlock[] = parts) =>
 	renderToStaticMarkup(
@@ -158,15 +164,21 @@ const renderEpisodes = (blocks: WorkBlock[] = parts) =>
 		</QueryClientProvider>,
 	);
 
-const renderOrdered = (orders: readonly PresentationOrderSlug[]) =>
+const renderOrdered = (
+	orders: readonly PresentationOrderSlug[],
+	communityOrders: readonly { id: number; name: string }[] = [],
+) =>
 	renderToStaticMarkup(
 		<QueryClientProvider client={new QueryClient()}>
 			<Episodes
+				communityOrders={communityOrders}
 				continuityId="continuity:x"
 				onSelectOrder={noopOrder}
+				onSelectProposal={noopProposal}
 				order="release"
 				orders={orders}
 				parts={courThenFilm}
+				proposalSegments={sampleProposalSegments}
 			/>
 		</QueryClientProvider>,
 	);
@@ -279,6 +291,19 @@ describe("Episodes films", () => {
 		const html = renderOrdered(releaseOnly);
 		expect(html).not.toContain("Release");
 		expect(html).not.toContain("Watch");
+	});
+
+	it("shows an accepted community order in the selector", () => {
+		useSession.mockReturnValue(idleSession);
+		const html = renderOrdered(bothOrders, theatricalOrder);
+		expect(html).toContain("Theatrical cut");
+		expect(html).toContain("Propose order");
+	});
+
+	it("does not invent pending community orders in the selector", () => {
+		useSession.mockReturnValue(idleSession);
+		const html = renderOrdered(bothOrders, theatricalOrder);
+		expect(html).not.toContain("Pending draft");
 	});
 
 	it("keeps film and part labels when watch order puts the film first", () => {

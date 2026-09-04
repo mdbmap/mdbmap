@@ -70,6 +70,7 @@ interface PartPanelProps {
 	continuityId: string;
 	order?: PresentationOrderSlug | undefined;
 	parts: WorkBlock[];
+	proposalId?: number | undefined;
 }
 
 interface PartDetailsProps {
@@ -102,9 +103,9 @@ function PartDetails({ onRate, part }: PartDetailsProps) {
 	);
 }
 
-function PartPanel({ continuityId, order, parts }: PartPanelProps) {
+function PartPanel({ continuityId, order, parts, proposalId }: PartPanelProps) {
 	const { selectedPart } = useSelectedPart(parts);
-	const { setRating } = useWorkTracking(continuityId, order);
+	const { setRating } = useWorkTracking(continuityId, order, proposalId);
 	const { authDialog, requireAuth } = useRequireAuth();
 	const ratePart = useCallback(
 		(score: number | undefined) => {

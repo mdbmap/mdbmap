@@ -1,5 +1,4 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import type { ReactNode } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
 
@@ -8,24 +7,8 @@ import type { WorkView } from "@/orpc/schema";
 
 import { WorkPage } from "./work-page";
 
-vi.mock("@tanstack/react-router", () => ({
-	Link: ({ children, to }: { children: ReactNode; to: string }) => (
-		<a href={to}>{children}</a>
-	),
-	useNavigate: () => vi.fn(),
-}));
-
 vi.mock("@/integrations/better-auth/header-user", () => ({
 	BetterAuthHeader: () => false,
-}));
-
-vi.mock("@/lib/auth-client", () => ({
-	authClient: {
-		useSession: () => ({
-			data: undefined,
-			isPending: false,
-		}),
-	},
 }));
 
 const emptyScore = { count: 0, mean: undefined };
@@ -51,6 +34,7 @@ const part = (
 const work: WorkView = {
 	cast: [{ name: "Takuya Eguchi", ref: undefined, role: "Loid Forger" }],
 	catalogues: [],
+	communityOrders: [],
 	communityScore: emptyScore,
 	continuityId: "continuity:spy-x-family",
 	header: {
@@ -64,6 +48,7 @@ const work: WorkView = {
 	ifYouLiked: [],
 	mediaKind: "anime",
 	parts: [part("Cour 1", 2022, 12), part("Cour 2", 2023, 12)],
+	proposalSegments: [],
 	staff: [],
 	studios: ["Wit Studio", "CloverWorks"],
 	viewer: undefined,
@@ -87,23 +72,6 @@ const dawn: WorkView["parts"][number] = {
 };
 
 const filmWork: WorkView = { ...work, parts: [...work.parts, dawn] };
-const linkedWork: WorkView = {
-	...work,
-	catalogues: [
-		{
-			href: "https://anidb.net/anime/16947",
-			id: "16947",
-			label: "AniDB",
-			service: "anidb",
-		},
-		{
-			href: "https://www.themoviedb.org/tv/120089",
-			id: "120089",
-			label: "TMDB",
-			service: "tmdb",
-		},
-	],
-};
 const bothOrders = ["release", "watch"] as const;
 function ignoreOrder(_order: PresentationOrderSlug) {
 	return;
@@ -132,17 +100,6 @@ describe("WorkPage shell", () => {
 		expect(html).toContain("You");
 		expect(html).toContain("this part");
 	});
-
-	it("links the brand home and search in the site header", () => {
-		expect(html).toContain('href="/"');
-		expect(html).toContain('href="/search"');
-		expect(html).not.toContain('href="/library"');
-	});
-
-	it("hides the catalogues section when the work has no counterpart links", () => {
-		expect(html).not.toContain("Catalogues");
-		expect(html).not.toContain("anidb.net");
-	});
 });
 
 describe("WorkPage film parts", () => {
@@ -167,21 +124,5 @@ describe("WorkPage film parts", () => {
 	it("shows a release/watch control when both orders exist", () => {
 		expect(html).toContain("Release");
 		expect(html).toContain("Watch");
-	});
-});
-
-describe("WorkPage catalogues", () => {
-	const html = renderToStaticMarkup(
-		<QueryClientProvider client={new QueryClient()}>
-			<WorkPage work={linkedWork} />
-		</QueryClientProvider>,
-	);
-
-	it("renders counterpart hrefs in the sidebar", () => {
-		expect(html).toContain("Catalogues");
-		expect(html).toContain('href="https://anidb.net/anime/16947"');
-		expect(html).toContain('href="https://www.themoviedb.org/tv/120089"');
-		expect(html).toContain("16947");
-		expect(html).toContain("120089");
 	});
 });

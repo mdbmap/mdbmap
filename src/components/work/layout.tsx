@@ -3,7 +3,7 @@ import type { WorkView } from "@/orpc/schema";
 
 import { Episodes } from "./episodes";
 import { Metadata } from "./metadata";
-import { Catalogues, CommunityBlock, PartPanel, YouBlock } from "./sidebar";
+import { CommunityBlock, PartPanel, YouBlock } from "./sidebar";
 
 function Synopsis({ text }: { text: string }) {
 	return (
@@ -15,21 +15,34 @@ function Synopsis({ text }: { text: string }) {
 
 interface WorkLayoutProps {
 	onSelectOrder?: ((order: PresentationOrderSlug) => void) | undefined;
+	onSelectProposal?: ((proposalId: number) => void) | undefined;
 	order?: PresentationOrderSlug | undefined;
 	orders?: readonly PresentationOrderSlug[] | undefined;
+	selectedProposalId?: number | undefined;
 	work: WorkView;
 }
 
-function MainColumn({ onSelectOrder, order, orders, work }: WorkLayoutProps) {
+function MainColumn({
+	onSelectOrder,
+	onSelectProposal,
+	order,
+	orders,
+	selectedProposalId,
+	work,
+}: WorkLayoutProps) {
 	return (
 		<div className="md:border-line flex min-w-0 flex-col gap-6 px-8 pt-6 md:border-r">
 			<Synopsis text={work.header.synopsis} />
 			<Episodes
+				communityOrders={work.communityOrders}
 				continuityId={work.continuityId}
 				onSelectOrder={onSelectOrder}
+				onSelectProposal={onSelectProposal}
 				order={order}
 				orders={orders}
 				parts={work.parts}
+				proposalSegments={work.proposalSegments}
+				selectedProposalId={selectedProposalId}
 			/>
 			<Metadata
 				cast={work.cast}
@@ -41,7 +54,7 @@ function MainColumn({ onSelectOrder, order, orders, work }: WorkLayoutProps) {
 	);
 }
 
-function Sidebar({ order, work }: WorkLayoutProps) {
+function Sidebar({ order, selectedProposalId, work }: WorkLayoutProps) {
 	return (
 		<div className="flex flex-col gap-6 px-8 pt-6">
 			<CommunityBlock score={work.communityScore} />
@@ -49,13 +62,14 @@ function Sidebar({ order, work }: WorkLayoutProps) {
 				continuityId={work.continuityId}
 				order={order}
 				parts={work.parts}
+				proposalId={selectedProposalId}
 				viewer={work.viewer}
 			/>
-			<Catalogues catalogues={work.catalogues} />
 			<PartPanel
 				continuityId={work.continuityId}
 				order={order}
 				parts={work.parts}
+				proposalId={selectedProposalId}
 			/>
 		</div>
 	);
@@ -63,19 +77,27 @@ function Sidebar({ order, work }: WorkLayoutProps) {
 
 export function WorkLayout({
 	onSelectOrder,
+	onSelectProposal,
 	order,
 	orders,
+	selectedProposalId,
 	work,
 }: WorkLayoutProps) {
 	return (
 		<div className="grid grid-cols-1 md:grid-cols-[1fr_300px]">
 			<MainColumn
 				onSelectOrder={onSelectOrder}
+				onSelectProposal={onSelectProposal}
 				order={order}
 				orders={orders}
+				selectedProposalId={selectedProposalId}
 				work={work}
 			/>
-			<Sidebar order={order} work={work} />
+			<Sidebar
+				order={order}
+				selectedProposalId={selectedProposalId}
+				work={work}
+			/>
 		</div>
 	);
 }

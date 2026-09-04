@@ -46,8 +46,29 @@ function resolveSelectedIndex(
 	return parts.length - 1;
 }
 
-const workGetInput = (continuityId: string, order?: PresentationOrderSlug) =>
-	order === undefined ? { continuityId } : { continuityId, order };
+interface WorkGetSelection {
+	order?: PresentationOrderSlug | undefined;
+	proposalId?: number | undefined;
+}
+
+const workGetInput = (
+	continuityId: string,
+	selection?: PresentationOrderSlug | WorkGetSelection,
+) => {
+	if (selection === undefined) {
+		return { continuityId };
+	}
+	if (typeof selection === "string") {
+		return { continuityId, order: selection };
+	}
+	return {
+		continuityId,
+		...(selection.order === undefined ? {} : { order: selection.order }),
+		...(selection.proposalId === undefined
+			? {}
+			: { proposalId: selection.proposalId }),
+	};
+};
 
 function useSelectedPart(parts: WorkBlock[]): SelectedPart {
 	const storedKey = usePartSelectionStore((state) => state.selectedKey);
@@ -71,3 +92,4 @@ export {
 	useSelectedPart,
 	workGetInput,
 };
+export type { WorkGetSelection };
