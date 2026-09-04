@@ -1,17 +1,23 @@
 import { z } from "zod";
 
+import { SCORE_FORMATS, scoreOf } from "./anilist-score.ts";
+import type { ScoreFormat } from "./anilist-score.ts";
 import type { ImportListEntry } from "./types.ts";
 
 const DEFAULT_ANILIST_URL = "https://graphql.anilist.co";
 const DEFAULT_TIMEOUT_MS = 15_000;
 
 const VIEWER_QUERY = `query {
-  Viewer { id }
+  Viewer {
+    id
+    mediaListOptions { scoreFormat }
+  }
 }`;
 
 const MEDIA_LIST_COLLECTION_QUERY = `query ($userId: Int) {
   MediaListCollection(userId: $userId, type: ANIME) {
     lists {
+      isCustomList
       entries {
         progress
         score
@@ -31,7 +37,17 @@ const NonNegativeIntSchema = z.number().int().nonnegative();
 const GraphqlErrorSchema = z.object({ message: z.string() }).loose();
 const GraphqlErrorsSchema = z.array(GraphqlErrorSchema).optional();
 
-const ViewerSchema = z.object({ id: PositiveIntSchema }).nullable();
+const ScoreFormatSchema = z.enum(SCORE_FORMATS);
+const ViewerSchema = z
+	.object({
+		id: PositiveIntSchema,
+		mediaListOptions: z
+			.object({ scoreFormat: ScoreFormatSchema.nullable().optional() })
+			.loose()
+			.nullable()
+			.optional(),
+	})
+	.nullable();
 const ViewerDataSchema = z.object({ Viewer: ViewerSchema }).optional();
 const ViewerResponseSchema = z
 	.object({
@@ -70,9 +86,10 @@ const MediaListEntriesSchema = z.array(MediaListEntrySchema).nullable();
 const MediaListBucketSchema = z
 	.object({
 		entries: MediaListEntriesSchema,
+		isCustomList: z.boolean().nullable().optional(),
 	})
 	.loose();
-const MediaListBucketsSchema = z.array(MediaListBucketSchema);
+const MediaListBucketsSchema = z.array(MediaListBucketSchema).nullable();
 const MediaListCollectionNodeSchema = z
 	.object({
 		lists: MediaListBucketsSchema,
@@ -127,17 +144,6 @@ const anilistStatusOf = (status: string | null | undefined): string => {
 	}
 };
 
-/** AniList scores are often 0–100; normalize to the shared 1–10 scale. */
-const scoreOf = (score: number | null | undefined): number | undefined => {
-	if (score === null || score === undefined || score <= 0) {
-		return undefined;
-	}
-	if (score > 10) {
-		return Math.round(score / 10);
-	}
-	return score;
-};
-
 const updatedAtOf = (
 	updatedAt: number | null | undefined,
 ): string | undefined => {
@@ -149,6 +155,7 @@ const updatedAtOf = (
 
 const entryOf = (
 	row: z.infer<typeof MediaListEntrySchema>,
+	scoreFormat: ScoreFormat | undefined,
 ): ImportListEntry | undefined => {
 	const mediaId = row.media?.id;
 	if (mediaId === undefined) {
@@ -157,7 +164,7 @@ const entryOf = (
 	return {
 		externalTitleId: String(mediaId),
 		progress: row.progress ?? undefined,
-		score: scoreOf(row.score),
+		score: scoreOf(row.score ?? undefined, scoreFormat),
 		status: anilistStatusOf(row.status),
 		title: row.media?.title?.userPreferred ?? undefined,
 		updatedAt: updatedAtOf(row.updatedAt),
@@ -191,12 +198,17 @@ const graphql = async (
 	return response.json();
 };
 
-const resolveViewerId = async (
+interface ViewerIdentity {
+	readonly scoreFormat: ScoreFormat | undefined;
+	readonly userId: number;
+}
+
+const resolveViewer = async (
 	fetchImpl: typeof fetch,
 	baseUrl: string,
 	accessToken: string,
 	timeoutMs: number,
-): Promise<number> => {
+): Promise<ViewerIdentity> => {
 	const raw = await graphql(
 		fetchImpl,
 		baseUrl,
@@ -208,11 +220,16 @@ const resolveViewerId = async (
 	if (parsed.errors !== undefined && parsed.errors.length > 0) {
 		throw new Error(`anilist: ${parsed.errors[0]?.message ?? "GraphQL error"}`);
 	}
-	const viewerId = parsed.data?.Viewer?.id;
-	if (viewerId === undefined) {
+	const viewer = parsed.data?.Viewer;
+	const userId = viewer?.id;
+	if (userId === undefined) {
 		throw new Error("anilist: viewer id missing");
 	}
-	return viewerId;
+	const format = viewer?.mediaListOptions?.scoreFormat;
+	return {
+		scoreFormat: format ?? undefined,
+		userId,
+	};
 };
 
 const fetchAnilistAnimeList = async (
@@ -221,7 +238,7 @@ const fetchAnilistAnimeList = async (
 	const fetchImpl = input.fetchImpl ?? fetch;
 	const timeoutMs = input.timeoutMs ?? DEFAULT_TIMEOUT_MS;
 	const baseUrl = input.baseUrl ?? DEFAULT_ANILIST_URL;
-	const userId = await resolveViewerId(
+	const viewer = await resolveViewer(
 		fetchImpl,
 		baseUrl,
 		input.accessToken,
@@ -233,7 +250,7 @@ const fetchAnilistAnimeList = async (
 		input.accessToken,
 		timeoutMs,
 		MEDIA_LIST_COLLECTION_QUERY,
-		{ userId },
+		{ userId: viewer.userId },
 	);
 	const parsed = MediaListCollectionSchema.parse(raw);
 	if (parsed.errors !== undefined && parsed.errors.length > 0) {
@@ -243,8 +260,11 @@ const fetchAnilistAnimeList = async (
 	const entries: ImportListEntry[] = [];
 	const seen = new Set<string>();
 	for (const list of parsed.data?.MediaListCollection?.lists ?? []) {
+		if (list.isCustomList === true) {
+			continue;
+		}
 		for (const row of list.entries ?? []) {
-			const entry = entryOf(row);
+			const entry = entryOf(row, viewer.scoreFormat);
 			if (entry === undefined || seen.has(entry.externalTitleId)) {
 				continue;
 			}
