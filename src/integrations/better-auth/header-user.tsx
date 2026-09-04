@@ -22,6 +22,7 @@ const signOutButton = tv({
 });
 
 const SIGN_OUT = "Sign out";
+const SETTINGS = "Settings";
 
 function userInitial(name: string | undefined): string {
 	const trimmed = name?.trim();
@@ -66,6 +67,9 @@ function BetterAuthHeader() {
 			<span className="text-ink/70 max-w-[10rem] truncate font-mono text-xs">
 				{user.name}
 			</span>
+			<a className={signOutButton()} href="/settings">
+				{SETTINGS}
+			</a>
 			<button className={signOutButton()} onClick={handleSignOut} type="button">
 				{SIGN_OUT}
 			</button>

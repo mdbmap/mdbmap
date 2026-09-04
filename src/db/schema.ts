@@ -224,6 +224,29 @@ const researchPolicy = sqliteTable("research_policy", {
 	updatedAt: timestamp("updated_at").$onUpdateFn(() => new Date()),
 });
 
+// ADR-0009: sync gate reads this row; Stripe webhooks write it. No receipt
+// payloads — only coarse status and provider ids.
+const syncEntitlementStatuses = ["active", "inactive"] as const;
+type SyncEntitlementStatus = (typeof syncEntitlementStatuses)[number];
+
+const syncEntitlement = sqliteTable("sync_entitlement", {
+	periodEnd: integer("period_end", { mode: "timestamp" }),
+	status: text({ enum: syncEntitlementStatuses }).notNull().default("inactive"),
+	stripeCustomerId: text("stripe_customer_id"),
+	stripeSubscriptionId: text("stripe_subscription_id"),
+	updatedAt: timestamp("updated_at").$onUpdateFn(() => new Date()),
+	userId: text("user_id")
+		.primaryKey()
+		.references(() => user.id, { onDelete: "cascade" }),
+});
+
+// ADR-0009: webhook handlers are idempotent on Stripe event id.
+const stripeWebhookEvent = sqliteTable("stripe_webhook_event", {
+	id: text().primaryKey(),
+	processedAt: integer("processed_at", { mode: "timestamp" }),
+	type: text().notNull(),
+});
+
 export {
 	account,
 	apiKey,
@@ -237,6 +260,9 @@ export {
 	researchTimings,
 	DEFAULT_RESEARCH_TIMING,
 	session,
+	stripeWebhookEvent,
+	syncEntitlement,
+	syncEntitlementStatuses,
 	user,
 	vercelAiSdkProviderKinds,
 	verification,
@@ -251,5 +277,6 @@ export type {
 	RateableUnitKey,
 	RateableUnitKind,
 	ResearchTiming,
+	SyncEntitlementStatus,
 	WatchStatus,
 };

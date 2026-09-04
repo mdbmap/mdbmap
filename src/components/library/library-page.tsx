@@ -1,5 +1,5 @@
 import { Link } from "@tanstack/react-router";
-import { useMemo } from "react";
+import { useCallback, useMemo } from "react";
 import { tv } from "tailwind-variants";
 
 import { Label } from "@/components/ui/label";
@@ -8,11 +8,13 @@ import { imageUrl, posterHue } from "@/components/work/metadata/placeholders";
 import type { WatchStatus } from "@/db/schema";
 import { workPathId } from "@/engine/continuity/keys";
 import { BetterAuthHeader } from "@/integrations/better-auth/header-user";
-import type { LibraryEntry } from "@/orpc/schema";
+import type { LibraryEntry, LibrarySort } from "@/orpc/schema";
+
+import { LibraryControls } from "./library-controls";
 
 const BRAND = "mdbmap";
 const TITLE = "Library";
-const TAGLINE = "Everything you track, most recently touched first.";
+const TAGLINE = "Everything you track, filtered and sorted your way.";
 const EMPTY_HEADING = "Nothing tracked yet.";
 const EMPTY_BODY =
 	"Open a work and set a watch status or tick an episode. It shows up here the moment you do.";
@@ -22,6 +24,10 @@ const SEARCH_PATH = "/search";
 const UNTITLED = "Title unavailable";
 const UNRATED = "—";
 const OUT_OF_TEN = "/10";
+const FILTER_EMPTY_HEADING = "Nothing in this view.";
+const FILTER_EMPTY_BODY =
+	"No tracked works match this status. Clear the filter to see everything again.";
+const CLEAR_FILTER = "Show all";
 
 const row = tv({
 	base: "border-line hover:bg-ink/[0.04] border-t *:flex *:items-start *:gap-4 *:px-8 *:py-4",
@@ -142,7 +148,81 @@ function EmptyLibrary() {
 	);
 }
 
-function LibraryPage({ entries }: { entries: readonly LibraryEntry[] }) {
+function EmptyFilter({ onClear }: { onClear: () => void }) {
+	return (
+		<div className="border-line border-t px-8 py-16">
+			<p className="text-ink/90 font-serif text-2xl italic">
+				{FILTER_EMPTY_HEADING}
+			</p>
+			<p className="text-ink/70 mt-3 max-w-[56ch] text-[15px] leading-relaxed">
+				{FILTER_EMPTY_BODY}
+			</p>
+			<p className="mt-6">
+				<button
+					className="text-accent font-mono text-xs tracking-[0.1em] uppercase"
+					onClick={onClear}
+					type="button"
+				>
+					{CLEAR_FILTER}
+				</button>
+			</p>
+		</div>
+	);
+}
+
+function LibraryList({ entries }: { entries: readonly LibraryEntry[] }) {
+	return (
+		<ul>
+			{entries.map((entry, index) => (
+				<LibraryRow
+					entry={entry}
+					hue={posterHue(index)}
+					key={entry.continuityId}
+				/>
+			))}
+		</ul>
+	);
+}
+
+interface LibraryBodyProps {
+	entries: readonly LibraryEntry[];
+	filteredEmpty: boolean;
+	onClearFilter: () => void;
+}
+
+function LibraryBody({
+	entries,
+	filteredEmpty,
+	onClearFilter,
+}: LibraryBodyProps) {
+	if (entries.length > 0) {
+		return <LibraryList entries={entries} />;
+	}
+	if (filteredEmpty) {
+		return <EmptyFilter onClear={onClearFilter} />;
+	}
+	return <EmptyLibrary />;
+}
+
+interface LibraryPageProps {
+	entries: readonly LibraryEntry[];
+	onSortChange: (sort: LibrarySort) => void;
+	onStatusChange: (status: WatchStatus | undefined) => void;
+	sort: LibrarySort;
+	status: WatchStatus | undefined;
+}
+
+function LibraryPage({
+	entries,
+	onSortChange,
+	onStatusChange,
+	sort,
+	status,
+}: LibraryPageProps) {
+	const filteredEmpty = entries.length === 0 && status !== undefined;
+	const onClearFilter = useCallback(() => {
+		onStatusChange(undefined);
+	}, [onStatusChange]);
 	return (
 		<main className="mx-auto min-h-screen max-w-[1200px] pb-24">
 			<LibraryHeader />
@@ -150,20 +230,18 @@ function LibraryPage({ entries }: { entries: readonly LibraryEntry[] }) {
 				<Label>{trackedCount(entries.length)}</Label>
 				<h1 className="text-ink/95 mt-1 font-serif text-4xl italic">{TITLE}</h1>
 				<p className="text-ink/60 mt-2 font-mono text-xs">{TAGLINE}</p>
+				<LibraryControls
+					onSortChange={onSortChange}
+					onStatusChange={onStatusChange}
+					sort={sort}
+					status={status}
+				/>
 			</section>
-			{entries.length === 0 ? (
-				<EmptyLibrary />
-			) : (
-				<ul>
-					{entries.map((entry, index) => (
-						<LibraryRow
-							entry={entry}
-							hue={posterHue(index)}
-							key={entry.continuityId}
-						/>
-					))}
-				</ul>
-			)}
+			<LibraryBody
+				entries={entries}
+				filteredEmpty={filteredEmpty}
+				onClearFilter={onClearFilter}
+			/>
 		</main>
 	);
 }

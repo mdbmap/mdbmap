@@ -35,6 +35,14 @@ const SearchQueryInput = z.object({
 	query: z.string(),
 });
 
+const librarySorts = ["activity", "title", "rating"] as const;
+type LibrarySort = (typeof librarySorts)[number];
+
+const LibraryListInput = z.object({
+	sort: z.enum(librarySorts).optional(),
+	status: WatchStatusSchema.optional(),
+});
+
 const SetStatusInput = z.object({
 	continuityId: z.string().min(1),
 	status: WatchStatusSchema,
@@ -348,6 +356,8 @@ export {
 	RemoveProviderInput,
 	ResearchTimingSchema,
 	RevokeApiKeyInput,
+	LibraryListInput,
+	librarySorts,
 	SearchQueryInput,
 	SetEpisodeWatchedInput,
 	SetRatingInput,
@@ -369,6 +379,7 @@ export type {
 	EpisodeWatchedResult,
 	FilmView,
 	LibraryEntry,
+	LibrarySort,
 	MintedApiKey,
 	MovieRateableUnit,
 	PartView,

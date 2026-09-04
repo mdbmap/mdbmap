@@ -77,8 +77,8 @@ store status per season or cour entry. One local "completed" fans out to exactly
 the entries the mapping says it covers. This is the whole reason work-level
 tracking is safe: the engine already knows which entries a work spans.
 
-Sync is expected to be paid. The mechanism is deferred and decided near launch,
-and is not Ko-fi. ADR-0003 (Ko-fi email ownership) is superseded.
+Sync is expected to be paid. The mechanism is Stripe Checkout (ADR-0009), and is
+not Ko-fi. ADR-0003 (Ko-fi email ownership) is superseded.
 
 ### Persistence split
 

@@ -45,6 +45,11 @@ export const env = createEnv({
 		PROVIDER_CONFIG_MASTER_KEY: ProviderConfigMasterKeySchema.optional(),
 		SERVER_URL: z.url().optional(),
 		SIMKL_API_KEY: z.string().optional(),
+		// Deploy-time Stripe secrets (ADR-0009). Optional so local/dev boots
+		// without billing; checkout/portal/webhook refuse when unset.
+		STRIPE_PRICE_ID: z.string().optional(),
+		STRIPE_SECRET_KEY: z.string().optional(),
+		STRIPE_WEBHOOK_SECRET: z.string().optional(),
 		TMDB_API_KEY: z.string().optional(),
 		TVDB_API_KEY: z.string().optional(),
 	},
