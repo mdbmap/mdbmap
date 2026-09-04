@@ -23,13 +23,12 @@ import type {
 // episodes. Results snapshot to KV split by volatility, and a snapshot hit
 // performs zero upstream subrequests and never touches the rate limiter.
 
-const SNAPSHOT_VERSION = 2;
+const SNAPSHOT_VERSION = 3;
 const DEFAULT_BASE_URL = "http://api.anidb.net:9001/httpapi";
 const DEFAULT_CORE_TTL_SECONDS = 604_800;
 const DEFAULT_VOLATILE_TTL_SECONDS = 21_600;
 const ANIDB_FLOOD_INTERVAL_MS = 2000;
 const MAX_CAST = 30;
-const MAX_GENRES = 8;
 const MAX_SIMILAR = 12;
 const REGULAR_EPISODE_TYPE = "1";
 const YEAR_LENGTH = 4;
@@ -120,7 +119,6 @@ interface AnimeEntry {
 	cast: Credit[];
 	coverRef: string | undefined;
 	episodes: EpisodeMetadata[];
-	genres: string[];
 	ifYouLiked: Similar[];
 	nativeTitle: string | undefined;
 	productionStatus: string | undefined;
@@ -158,35 +156,6 @@ const positiveMinutes = (value: string | undefined): number | undefined => {
 	}
 	const minutes = Number(value);
 	return Number.isFinite(minutes) && minutes > 0 ? minutes : undefined;
-};
-
-const uniqueGenres = (names: readonly string[]): string[] => {
-	const seen = new Set<string>();
-	const genres: string[] = [];
-	for (const name of names) {
-		const trimmed = name.trim();
-		if (trimmed === "" || seen.has(trimmed)) {
-			continue;
-		}
-		seen.add(trimmed);
-		genres.push(trimmed);
-		if (genres.length >= MAX_GENRES) {
-			break;
-		}
-	}
-	return genres;
-};
-
-const isInfoboxTag = (tag: XmlNode): boolean => tag.attrs["infobox"] === "true";
-
-const tagNameOf = (tag: XmlNode): string =>
-	firstChild(tag, "name")?.text ?? tag.text;
-
-const normaliseGenres = (anime: XmlNode): string[] => {
-	const tags = childrenNamed(firstChild(anime, "tags") ?? emptyNode, "tag");
-	const infobox = tags.filter((tag) => isInfoboxTag(tag));
-	const preferred = infobox.length > 0 ? infobox : tags;
-	return uniqueGenres(preferred.map((tag) => tagNameOf(tag)));
 };
 
 const runtimeMinutesOf = (anime: XmlNode): number | undefined => {
@@ -361,7 +330,6 @@ const parseAnime = (xml: string): AnimeEntry => {
 		cast: normaliseCast(anime),
 		coverRef: imageRef(firstChild(anime, "picture")?.text ?? ""),
 		episodes: normaliseEpisodes(anime),
-		genres: normaliseGenres(anime),
 		ifYouLiked: normaliseSimilar(anime),
 		nativeTitle: nativeTitle === title ? undefined : nativeTitle,
 		productionStatus: undefined,
@@ -393,7 +361,7 @@ const buildSnapshots = (
 		backdropRef: undefined,
 		cast: head?.cast ?? [],
 		coverRef: head?.coverRef,
-		genres: head?.genres ?? [],
+		genres: [],
 		ifYouLiked: head?.ifYouLiked ?? [],
 		nativeTitle: head?.nativeTitle,
 		productionStatus: head?.productionStatus,

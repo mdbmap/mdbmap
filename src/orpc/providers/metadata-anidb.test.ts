@@ -148,7 +148,7 @@ describe("anidb metadata provider", () => {
 		expect(meta.backdropRef).toBeUndefined();
 		expect(meta.span).toBe("2022");
 		expect(meta.studios).toStrictEqual(["Wit Studio", "CloverWorks"]);
-		expect(meta.genres).toStrictEqual(["Comedy", "Action"]);
+		expect(meta.genres).toStrictEqual([]);
 		expect(meta.runtimeMinutes).toBe(24);
 		expect(meta.productionStatus).toBeUndefined();
 
@@ -198,8 +198,8 @@ describe("anidb metadata provider", () => {
 
 		await makeProvider(fetchFn, kv).fetchWork(resolved);
 
-		const coreKey = `anidb:v2:core:${COUR1_ID}`;
-		const volatileKey = `anidb:v2:volatile:${COUR1_ID}`;
+		const coreKey = `anidb:v3:core:${COUR1_ID}`;
+		const volatileKey = `anidb:v3:volatile:${COUR1_ID}`;
 		expect(store.has(coreKey)).toBe(true);
 		expect(store.has(volatileKey)).toBe(true);
 

@@ -36,7 +36,7 @@ const spyXFamily: SampleHeader = {
 		{ name: "Saori Hayami", ref: "anidb:creator:203", role: "Yor Forger" },
 	],
 	coverRef: "anidb:16947/cover",
-	genres: ["Comedy", "Action"],
+	genres: [],
 	ifYouLiked: [
 		{
 			continuityId: "continuity:mob-psycho-100",

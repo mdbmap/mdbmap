@@ -12,6 +12,7 @@ const defaultProviders: Providers = {
 };
 
 export { defaultProviders };
+export { fetchDisplayMetadata } from "./display-metadata.ts";
 export { createCatalogueSearchProvider } from "./catalogue-search.ts";
 export { createServiceRatingsProvider } from "./service-ratings.ts";
 export type {
