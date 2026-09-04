@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 
 import { freshDb } from "@/db/test-helpers";
 import { seedTmdbContinuity } from "@/engine/test-continuity";
-import type { ORPCContext } from "@/orpc/context";
+import type { ORPCContext, SessionUser } from "@/orpc/context";
 import { defaultProviders } from "@/orpc/providers";
 import type { CatalogueSearchHit, Providers } from "@/orpc/providers";
 
@@ -11,14 +11,12 @@ import { router } from "./index.ts";
 
 type TestDb = Awaited<ReturnType<typeof freshDb>>;
 
-const clientFor = (db: TestDb, providers: Providers) =>
+const clientFor = (db: TestDb, providers: Providers, user?: SessionUser) =>
 	createRouterClient(router, {
 		context: {
 			db,
 			providers,
-			resolveSession: () => {
-				/* empty */
-			},
+			resolveSession: () => user,
 		} satisfies ORPCContext,
 	});
 
