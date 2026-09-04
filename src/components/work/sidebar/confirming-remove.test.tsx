@@ -1,7 +1,7 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 
-import { isArmedFor } from "./confirming-remove";
+import { disarmIfTargetChanged, isArmedFor } from "./confirming-remove";
 import type { ConfirmTarget } from "./confirming-remove";
 
 const CONFIRM_REMOVE = "confirm remove";
@@ -48,5 +48,21 @@ describe("isArmedFor", () => {
 		expect(isArmedFor(watchingA, completedA)).toBe(false);
 		expect(isArmedFor(undefined, watchingA)).toBe(false);
 		expect(isArmedFor(watchingA, watchingA)).toBe(true);
+	});
+
+	it("requires a fresh confirmation after the target changes and returns", () => {
+		let armed: ConfirmTarget | undefined = watchingA;
+		let previous = watchingA;
+		const apply = (next: ConfirmTarget) => {
+			armed = disarmIfTargetChanged(armed, previous, next);
+			previous = next;
+		};
+		apply(watchingB);
+		expect(isArmedFor(armed, watchingB)).toBe(false);
+		apply(watchingA);
+		expect(
+			renderToStaticMarkup(<ConfirmLabel armed={armed} target={watchingA} />),
+		).toBe(REMOVE_FROM_LIBRARY);
+		expect(isArmedFor(armed, watchingA)).toBe(false);
 	});
 });

@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useMemo } from "react";
 
 import { Label } from "@/components/ui/label";
 import { totalEpisodes } from "@/components/work/parts";
@@ -9,7 +9,7 @@ import type { WatchStatus } from "@/db/schema";
 import { useRequireAuth } from "@/integrations/better-auth/require-auth";
 import type { RateableUnit, ViewerTracking, WorkBlock } from "@/orpc/schema";
 
-import { isArmedFor } from "./confirming-remove";
+import { useArmedConfirm } from "./confirming-remove";
 import type { ConfirmTarget } from "./confirming-remove";
 import { StatusSelect } from "./status-select";
 
@@ -104,8 +104,8 @@ function YouBlock({ continuityId, order, parts, viewer }: YouBlockProps) {
 		() => ({ continuityId, status: viewer?.status }),
 		[continuityId, viewer?.status],
 	);
-	const [armed, setArmed] = useState<ConfirmTarget | undefined>();
-	const confirmingRemove = isArmedFor(armed, target);
+	const { confirming: confirmingRemove, requestConfirm } =
+		useArmedConfirm(target);
 	const workUnit = useMemo<RateableUnit>(
 		() => ({ key: continuityId, kind: "work" }),
 		[continuityId],
@@ -133,9 +133,9 @@ function YouBlock({ continuityId, order, parts, viewer }: YouBlockProps) {
 				remove();
 				return;
 			}
-			setArmed(target);
+			requestConfirm();
 		});
-	}, [confirmingRemove, remove, requireAuth, target]);
+	}, [confirmingRemove, remove, requestConfirm, requireAuth]);
 	const changeRewatch = useCallback(
 		(count: number) => {
 			requireAuth(() => {
