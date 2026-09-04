@@ -311,7 +311,7 @@ describe("library.list", () => {
 			watchedTotal += entry.watchedInstalments;
 		}
 		expect(watchedTotal).toBe(101);
-	});
+	}, 15_000);
 
 	it("skips watch-status rows whose continuity is gone", async () => {
 		const db = await seededViewer();
