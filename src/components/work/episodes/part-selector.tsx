@@ -6,7 +6,7 @@ import {
 	watchedCount as watchedOnPart,
 } from "@/components/work/parts";
 import type { PresentationOrderSlug } from "@/db/engine-schema";
-import type { WorkBlock } from "@/orpc/schema";
+import type { CommunityOrderRef, WorkBlock } from "@/orpc/schema";
 
 const ORDER_LABELS = {
 	release: "Release",
@@ -15,6 +15,7 @@ const ORDER_LABELS = {
 
 const MARK_PART = "mark part watched";
 const CLEAR_PART = "clear part watched";
+const PROPOSE = "Propose order";
 
 const tab = tv({
 	base: "cursor-pointer border-b-[1.5px] pb-px",
@@ -61,21 +62,93 @@ function OrderTab({ active, onSelect, order }: OrderTabProps) {
 	);
 }
 
-interface OrderToggleProps {
-	onSelect: (order: PresentationOrderSlug) => void;
-	order: PresentationOrderSlug | undefined;
-	orders: readonly PresentationOrderSlug[];
+interface CommunityOrderTabProps {
+	active: boolean;
+	name: string;
+	onSelect: (id: number) => void;
+	proposalId: number;
 }
 
-function OrderToggle({ onSelect, order, orders }: OrderToggleProps) {
+function CommunityOrderTab({
+	active,
+	name,
+	onSelect,
+	proposalId,
+}: CommunityOrderTabProps) {
+	const handleSelect = useCallback(() => {
+		onSelect(proposalId);
+	}, [onSelect, proposalId]);
+	return (
+		<button className={tab({ active })} onClick={handleSelect} type="button">
+			{name}
+		</button>
+	);
+}
+
+interface OrderToggleProps {
+	communityOrders: readonly CommunityOrderRef[];
+	onPropose?: (() => void) | undefined;
+	onSelect: (order: PresentationOrderSlug) => void;
+	onSelectProposal?: ((proposalId: number) => void) | undefined;
+	order: PresentationOrderSlug | undefined;
+	orders: readonly PresentationOrderSlug[];
+	selectedProposalId?: number | undefined;
+}
+
+function OrderToggle({
+	communityOrders,
+	onPropose,
+	onSelect,
+	onSelectProposal,
+	order,
+	orders,
+	selectedProposalId,
+}: OrderToggleProps) {
+	const builtins =
+		orders.length >= 2 || communityOrders.length > 0 ? orders : [];
 	return (
 		<div className="mt-2 flex flex-wrap items-center gap-2 font-mono text-xs">
-			{orders.map((slug, index) => (
+			{builtins.map((slug, index) => (
 				<Fragment key={slug}>
 					{index > 0 && <span className="text-ink/30">·</span>}
-					<OrderTab active={slug === order} onSelect={onSelect} order={slug} />
+					<OrderTab
+						active={selectedProposalId === undefined && slug === order}
+						onSelect={onSelect}
+						order={slug}
+					/>
 				</Fragment>
 			))}
+			{communityOrders.map((communityOrder, index) => (
+				<Fragment key={communityOrder.id}>
+					{(builtins.length > 0 || index > 0) && (
+						<span className="text-ink/30">·</span>
+					)}
+					{onSelectProposal === undefined ? (
+						<span className="text-ink/50">{communityOrder.name}</span>
+					) : (
+						<CommunityOrderTab
+							active={communityOrder.id === selectedProposalId}
+							name={communityOrder.name}
+							onSelect={onSelectProposal}
+							proposalId={communityOrder.id}
+						/>
+					)}
+				</Fragment>
+			))}
+			{onPropose === undefined ? undefined : (
+				<>
+					{(builtins.length > 0 || communityOrders.length > 0) && (
+						<span className="text-ink/30">·</span>
+					)}
+					<button
+						className="text-ink/50 hover:text-accent cursor-pointer"
+						onClick={onPropose}
+						type="button"
+					>
+						{PROPOSE}
+					</button>
+				</>
+			)}
 		</div>
 	);
 }
@@ -141,27 +214,37 @@ function PartMarkControl({ onMark, part }: PartMarkControlProps) {
 	);
 }
 
+const EMPTY_COMMUNITY_ORDERS: readonly CommunityOrderRef[] = [];
+
 interface PartSelectorProps {
+	communityOrders?: readonly CommunityOrderRef[] | undefined;
 	episodeCount: number;
 	onMarkPart: (locators: string[], watched: boolean) => void;
+	onPropose?: (() => void) | undefined;
 	onSelect: (index: number) => void;
 	onSelectOrder?: ((order: PresentationOrderSlug) => void) | undefined;
+	onSelectProposal?: ((proposalId: number) => void) | undefined;
 	order?: PresentationOrderSlug | undefined;
 	orders?: readonly PresentationOrderSlug[] | undefined;
 	parts: WorkBlock[];
 	selectedIndex: number;
+	selectedProposalId?: number | undefined;
 	watchedCount: number;
 }
 
 function PartSelector({
+	communityOrders = EMPTY_COMMUNITY_ORDERS,
 	episodeCount,
 	onMarkPart,
+	onPropose,
 	onSelect,
 	onSelectOrder,
+	onSelectProposal,
 	order,
 	orders,
 	parts,
 	selectedIndex,
+	selectedProposalId,
 	watchedCount,
 }: PartSelectorProps) {
 	const selected = parts[selectedIndex];
@@ -178,11 +261,13 @@ function PartSelector({
 		selected === undefined ? undefined : (
 			<PartMarkControl onMark={onMarkPart} part={selected} />
 		);
-	if (
-		orders === undefined ||
-		onSelectOrder === undefined ||
-		orders.length < 2
-	) {
+	const showOrders =
+		onSelectOrder !== undefined &&
+		orders !== undefined &&
+		(orders.length >= 2 ||
+			communityOrders.length > 0 ||
+			onPropose !== undefined);
+	if (!showOrders || orders === undefined || onSelectOrder === undefined) {
 		return (
 			<div>
 				{tabs}
@@ -194,7 +279,15 @@ function PartSelector({
 		<div>
 			{tabs}
 			{mark}
-			<OrderToggle onSelect={onSelectOrder} order={order} orders={orders} />
+			<OrderToggle
+				communityOrders={communityOrders}
+				onPropose={onPropose}
+				onSelect={onSelectOrder}
+				onSelectProposal={onSelectProposal}
+				order={order}
+				orders={orders}
+				selectedProposalId={selectedProposalId}
+			/>
 		</div>
 	);
 }
