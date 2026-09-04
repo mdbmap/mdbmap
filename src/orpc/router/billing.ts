@@ -15,7 +15,7 @@ const EmptyInput = z.object({}).strict();
 
 const mapBillingError = (error: unknown, fallback: string): never => {
 	if (error instanceof BillingError) {
-		if (error.code === "customer_missing") {
+		if (error.code === "already_active" || error.code === "customer_missing") {
 			throw new ORPCError("BAD_REQUEST", { message: error.message });
 		}
 		throw new ORPCError("INTERNAL_SERVER_ERROR", { message: error.message });

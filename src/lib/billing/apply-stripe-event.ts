@@ -23,11 +23,14 @@ interface EntitlementWrite {
 }
 
 const HANDLED_EVENT_TYPES = new Set([
+	"checkout.session.async_payment_succeeded",
 	"checkout.session.completed",
 	"customer.subscription.created",
 	"customer.subscription.deleted",
 	"customer.subscription.updated",
 ]);
+
+const PAID_CHECKOUT_STATUSES = new Set(["paid", "no_payment_required"]);
 
 const asString = (value: unknown): string | undefined =>
 	typeof value === "string" && value.length > 0 ? value : undefined;
@@ -122,14 +125,25 @@ const userIdForCustomer = async (
 	return row?.userId;
 };
 
+const checkoutPaymentSettled = (object: Record<string, unknown>): boolean => {
+	const paymentStatus = asString(object["payment_status"]);
+	if (paymentStatus === undefined) {
+		return true;
+	}
+	return PAID_CHECKOUT_STATUSES.has(paymentStatus);
+};
+
 const applyCheckoutSessionCompleted = async (
 	db: Db,
 	object: Record<string, unknown>,
-): Promise<boolean> => {
+): Promise<"applied" | "ignored" | "unresolved"> => {
 	const userId =
 		asString(object["client_reference_id"]) ?? metadataUserId(object);
 	if (userId === undefined) {
-		return false;
+		return "unresolved";
+	}
+	if (!checkoutPaymentSettled(object)) {
+		return "ignored";
 	}
 	const write: EntitlementWrite = {
 		status: "active",
@@ -144,22 +158,68 @@ const applyCheckoutSessionCompleted = async (
 		write.stripeSubscriptionId = subscriptionId;
 	}
 	await upsertEntitlement(db, write);
-	return true;
+	return "applied";
+};
+
+const shouldIgnoreStaleReactivation = async (
+	db: Db,
+	input: {
+		ignoreStaleReactivation: boolean;
+		nextStatus: SyncEntitlementStatus;
+		subscriptionId: string | undefined;
+		userId: string;
+	},
+): Promise<boolean> => {
+	if (
+		!input.ignoreStaleReactivation ||
+		input.nextStatus !== "active" ||
+		input.subscriptionId === undefined
+	) {
+		return false;
+	}
+	const existing = await db
+		.select({
+			status: syncEntitlement.status,
+			stripeSubscriptionId: syncEntitlement.stripeSubscriptionId,
+		})
+		.from(syncEntitlement)
+		.where(eq(syncEntitlement.userId, input.userId))
+		.get();
+	return (
+		existing?.status === "inactive" &&
+		existing.stripeSubscriptionId === input.subscriptionId
+	);
 };
 
 const applySubscription = async (
 	db: Db,
 	object: Record<string, unknown>,
-	statusOverride?: SyncEntitlementStatus,
-): Promise<boolean> => {
+	options?: {
+		ignoreStaleReactivation?: boolean;
+		statusOverride?: SyncEntitlementStatus;
+	},
+): Promise<"applied" | "ignored" | "unresolved"> => {
 	const customerId = asString(object["customer"]);
 	const userId =
 		metadataUserId(object) ?? (await userIdForCustomer(db, customerId));
 	if (userId === undefined) {
-		return false;
+		return "unresolved";
+	}
+	const subscriptionId = asString(object["id"]);
+	const nextStatus =
+		options?.statusOverride ?? subscriptionStatus(asString(object["status"]));
+	if (
+		await shouldIgnoreStaleReactivation(db, {
+			ignoreStaleReactivation: options?.ignoreStaleReactivation === true,
+			nextStatus,
+			subscriptionId,
+			userId,
+		})
+	) {
+		return "ignored";
 	}
 	const write: EntitlementWrite = {
-		status: statusOverride ?? subscriptionStatus(asString(object["status"])),
+		status: nextStatus,
 		userId,
 	};
 	const periodEnd = asUnixDate(object["current_period_end"]);
@@ -169,59 +229,85 @@ const applySubscription = async (
 	if (customerId !== undefined) {
 		write.stripeCustomerId = customerId;
 	}
-	const subscriptionId = asString(object["id"]);
 	if (subscriptionId !== undefined) {
 		write.stripeSubscriptionId = subscriptionId;
 	}
 	await upsertEntitlement(db, write);
-	return true;
+	return "applied";
+};
+
+const claimStripeEvent = async (
+	db: Db,
+	event: StripeEventLike,
+): Promise<boolean> => {
+	const claimed = await db
+		.insert(stripeWebhookEvent)
+		.values({ id: event.id, type: event.type })
+		.onConflictDoNothing()
+		.returning({ id: stripeWebhookEvent.id })
+		.all();
+	return claimed.length > 0;
+};
+
+const releaseStripeEventClaim = async (
+	db: Db,
+	eventId: string,
+): Promise<void> => {
+	await db
+		.delete(stripeWebhookEvent)
+		.where(eq(stripeWebhookEvent.id, eventId))
+		.run();
 };
 
 const applyStripeEvent = async (
 	db: Db,
 	event: StripeEventLike,
 ): Promise<ApplyResult> => {
-	const seen = await db
-		.select({ id: stripeWebhookEvent.id })
-		.from(stripeWebhookEvent)
-		.where(eq(stripeWebhookEvent.id, event.id))
-		.get();
-	if (seen !== undefined) {
+	const claimed = await claimStripeEvent(db, event);
+	if (!claimed) {
 		return "duplicate";
 	}
 
-	const { object } = event.data;
-	let wrote = false;
-	switch (event.type) {
-		case "checkout.session.completed": {
-			wrote = await applyCheckoutSessionCompleted(db, object);
-			break;
+	try {
+		const { object } = event.data;
+		let outcome: "applied" | "ignored" | "unresolved" = "ignored";
+		switch (event.type) {
+			case "checkout.session.async_payment_succeeded":
+			case "checkout.session.completed": {
+				outcome = await applyCheckoutSessionCompleted(db, object);
+				break;
+			}
+			case "customer.subscription.created": {
+				outcome = await applySubscription(db, object);
+				break;
+			}
+			case "customer.subscription.updated": {
+				outcome = await applySubscription(db, object, {
+					ignoreStaleReactivation: true,
+				});
+				break;
+			}
+			case "customer.subscription.deleted": {
+				outcome = await applySubscription(db, object, {
+					statusOverride: "inactive",
+				});
+				break;
+			}
+			default: {
+				outcome = "ignored";
+				break;
+			}
 		}
-		case "customer.subscription.created":
-		case "customer.subscription.updated": {
-			wrote = await applySubscription(db, object);
-			break;
+
+		if (outcome === "unresolved" && HANDLED_EVENT_TYPES.has(event.type)) {
+			throw unresolvedBillingSubjectError(event.type);
 		}
-		case "customer.subscription.deleted": {
-			wrote = await applySubscription(db, object, "inactive");
-			break;
-		}
-		default: {
-			wrote = false;
-			break;
-		}
+
+		return outcome === "applied" ? "applied" : "ignored";
+	} catch (error) {
+		await releaseStripeEventClaim(db, event.id);
+		throw error;
 	}
-
-	if (!wrote && HANDLED_EVENT_TYPES.has(event.type)) {
-		throw unresolvedBillingSubjectError(event.type);
-	}
-
-	await db
-		.insert(stripeWebhookEvent)
-		.values({ id: event.id, type: event.type })
-		.run();
-
-	return wrote ? "applied" : "ignored";
 };
 
 export { applyStripeEvent };

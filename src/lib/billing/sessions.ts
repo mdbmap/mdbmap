@@ -5,7 +5,11 @@ import type { Db } from "@/db";
 import { syncEntitlement } from "@/db/schema";
 import { env } from "@/env";
 
-import { billingConfigError, billingCustomerMissingError } from "./errors.ts";
+import {
+	billingAlreadyActiveError,
+	billingConfigError,
+	billingCustomerMissingError,
+} from "./errors.ts";
 import { createStripe, stripePriceId } from "./stripe-client.ts";
 
 interface CheckoutResult {
@@ -44,10 +48,16 @@ const createCheckoutSession = async (
 ): Promise<CheckoutResult> => {
 	const returnOrigin = resolveReturnOrigin(input.headers);
 	const existing = await db
-		.select({ stripeCustomerId: syncEntitlement.stripeCustomerId })
+		.select({
+			status: syncEntitlement.status,
+			stripeCustomerId: syncEntitlement.stripeCustomerId,
+		})
 		.from(syncEntitlement)
 		.where(eq(syncEntitlement.userId, input.userId))
 		.get();
+	if (existing?.status === "active") {
+		throw billingAlreadyActiveError();
+	}
 
 	const client = stripe ?? createStripe();
 	const params: Stripe.Checkout.SessionCreateParams = {

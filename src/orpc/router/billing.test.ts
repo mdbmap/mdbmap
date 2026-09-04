@@ -73,6 +73,22 @@ describe("billing.createCheckout", () => {
 			clientFor(db, undefined).billing.createCheckout({}),
 		).rejects.toMatchObject({ code: "UNAUTHORIZED" });
 	});
+
+	it("rejects when entitlement is already active", async () => {
+		const db = await seeded();
+		await db
+			.insert(syncEntitlement)
+			.values({
+				status: "active",
+				stripeCustomerId: "cus_1",
+				stripeSubscriptionId: "sub_1",
+				userId: "user-1",
+			})
+			.run();
+		await expect(
+			clientFor(db, "user-1").billing.createCheckout({}),
+		).rejects.toMatchObject({ code: "BAD_REQUEST" });
+	});
 });
 
 describe("billing.createPortal", () => {

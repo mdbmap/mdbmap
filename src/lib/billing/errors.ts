@@ -1,4 +1,8 @@
-type BillingErrorCode = "config" | "customer_missing" | "unresolved_subject";
+type BillingErrorCode =
+	| "already_active"
+	| "config"
+	| "customer_missing"
+	| "unresolved_subject";
 
 class BillingError extends Error {
 	public readonly code: BillingErrorCode;
@@ -9,6 +13,12 @@ class BillingError extends Error {
 		this.code = code;
 	}
 }
+
+const billingAlreadyActiveError = (): BillingError =>
+	new BillingError(
+		"already_active",
+		"Sync entitlement is already active. Use the billing portal to manage it.",
+	);
 
 const billingConfigError = (message: string): BillingError =>
 	new BillingError("config", message);
@@ -26,6 +36,7 @@ const unresolvedBillingSubjectError = (eventType: string): BillingError =>
 	);
 
 export {
+	billingAlreadyActiveError,
 	billingConfigError,
 	billingCustomerMissingError,
 	BillingError,
