@@ -11,6 +11,7 @@ import type {
 	ViewerTracking,
 } from "@/orpc/schema";
 
+import { CommunityBlock } from "./community-block";
 import { PartDetails, PartPanel } from "./part-panel";
 import { YouBlock } from "./you-block";
 
@@ -164,12 +165,7 @@ describe("YouBlock", () => {
 			},
 		});
 		const html = render(
-			<YouBlock
-				communityScore={emptyCommunity}
-				continuityId="continuity:x"
-				parts={parts}
-				viewer={viewer}
-			/>,
+			<YouBlock continuityId="continuity:x" parts={parts} viewer={viewer} />,
 		);
 		expect(html).toContain("You · whole series");
 		expect(html).toContain("watching");
@@ -178,51 +174,8 @@ describe("YouBlock", () => {
 		expect(html).toContain('value="8"');
 		expect(html).toContain("selected");
 		expect(html).not.toContain("data-auth-dialog");
-	});
-
-	it("shows an empty community mean and count 0 when nobody has rated", () => {
-		useSession.mockReturnValue({
-			...idleSession,
-			data: {
-				session: { id: "s1", userId: "u1" },
-				user: { email: "ada@example.com", id: "u1", name: "Ada" },
-			},
-		});
-		const html = render(
-			<YouBlock
-				communityScore={emptyCommunity}
-				continuityId="continuity:x"
-				parts={parts}
-				viewer={viewer}
-			/>,
-		);
-		expect(html).toContain("mdbmap average");
-		expect(html).toContain("—");
-		expect(html).toContain(">0<");
-		expect(html).toContain('value="8"');
-	});
-
-	it("shows the work-level community mean and count beside personal rating", () => {
-		useSession.mockReturnValue({
-			...idleSession,
-			data: {
-				session: { id: "s1", userId: "u1" },
-				user: { email: "ada@example.com", id: "u1", name: "Ada" },
-			},
-		});
-		const html = render(
-			<YouBlock
-				communityScore={populatedCommunity}
-				continuityId="continuity:x"
-				parts={parts}
-				viewer={viewer}
-			/>,
-		);
-		expect(html).toContain("mdbmap average");
-		expect(html).toContain("8.6");
-		expect(html).toContain("48K");
-		expect(html).toContain('value="8"');
-		expect(html).not.toContain("mal");
+		expect(html).not.toContain("mdbmap average");
+		expect(html).not.toContain("mdbmap · whole series");
 	});
 
 	it("falls back to zero progress when the viewer is untracked", () => {
@@ -234,12 +187,7 @@ describe("YouBlock", () => {
 			},
 		});
 		const html = render(
-			<YouBlock
-				communityScore={emptyCommunity}
-				continuityId="continuity:x"
-				parts={parts}
-				viewer={undefined}
-			/>,
+			<YouBlock continuityId="continuity:x" parts={parts} viewer={undefined} />,
 		);
 		expect(html).toContain("0 / 36 across 3 parts");
 		expect(html).toContain("rewatch ×0");
@@ -249,12 +197,7 @@ describe("YouBlock", () => {
 	it("embeds a sign-in dialog for signed-out tracking mutations", () => {
 		useSession.mockReturnValue(idleSession);
 		const html = render(
-			<YouBlock
-				communityScore={emptyCommunity}
-				continuityId="continuity:x"
-				parts={parts}
-				viewer={undefined}
-			/>,
+			<YouBlock continuityId="continuity:x" parts={parts} viewer={undefined} />,
 		);
 		expect(html).toContain("data-auth-dialog");
 		expect(html).toContain('data-dialog-open="false"');
@@ -267,14 +210,31 @@ describe("YouBlock", () => {
 			isPending: true,
 		});
 		const html = render(
-			<YouBlock
-				communityScore={emptyCommunity}
-				continuityId="continuity:x"
-				parts={parts}
-				viewer={undefined}
-			/>,
+			<YouBlock continuityId="continuity:x" parts={parts} viewer={undefined} />,
 		);
 		expect(html).not.toContain("data-auth-dialog");
+	});
+});
+
+describe("CommunityBlock", () => {
+	it("shows an empty community mean and count 0 when nobody has rated", () => {
+		const html = render(<CommunityBlock score={emptyCommunity} />);
+		expect(html).toContain("mdbmap · whole series");
+		expect(html).toContain("mdbmap average");
+		expect(html).toContain("—");
+		expect(html).toContain('data-votes="0"');
+		expect(html).not.toContain("You · whole series");
+	});
+
+	it("shows the work-level community mean and count", () => {
+		const html = render(<CommunityBlock score={populatedCommunity} />);
+		expect(html).toContain("mdbmap · whole series");
+		expect(html).toContain("mdbmap average");
+		expect(html).toContain("8.6");
+		expect(html).toContain("48K");
+		expect(html).toContain('data-votes="48000"');
+		expect(html).not.toContain("You · whole series");
+		expect(html).not.toContain("mal");
 	});
 });
 
