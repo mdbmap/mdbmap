@@ -1,4 +1,5 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { useNavigate } from "@tanstack/react-router";
 import { useCallback } from "react";
 
 import { workGetInput } from "@/components/work/part-state";
@@ -14,6 +15,7 @@ interface CacheContext {
 }
 
 interface WorkTracking {
+	remove: () => void;
 	setRating: (unit: RateableUnit, score: number | undefined) => void;
 	setRewatch: (count: number) => void;
 	setStatus: (status: WatchStatus) => void;
@@ -27,10 +29,12 @@ function useWorkTracking(
 	continuityId: string,
 	order?: PresentationOrderSlug,
 ): WorkTracking {
+	const navigate = useNavigate();
 	const queryClient = useQueryClient();
 	const queryKey = orpc.work.get.queryKey({
 		input: workGetInput(continuityId, order),
 	});
+	const libraryQueryKey = orpc.library.list.queryKey();
 
 	const patch = async (
 		transform: (work: WorkView) => WorkView,
@@ -81,10 +85,23 @@ function useWorkTracking(
 			onSettled: settle,
 		}),
 	);
+	const removeMutation = useMutation(
+		orpc.tracking.remove.mutationOptions({
+			onError: (_error, _variables, context: CacheContext | undefined) => {
+				rollback(context);
+			},
+			onSuccess: async () => {
+				await queryClient.invalidateQueries({ queryKey });
+				await queryClient.invalidateQueries({ queryKey: libraryQueryKey });
+				await navigate({ to: "/library" });
+			},
+		}),
+	);
 
 	const { mutate: mutateStatus } = statusMutation;
 	const { mutate: mutateRewatch } = rewatchMutation;
 	const { mutate: mutateRating } = ratingMutation;
+	const { mutate: mutateRemove } = removeMutation;
 
 	const setStatus = useCallback(
 		(status: WatchStatus) => {
@@ -104,8 +121,11 @@ function useWorkTracking(
 		},
 		[mutateRating],
 	);
+	const remove = useCallback(() => {
+		mutateRemove({ continuityId });
+	}, [continuityId, mutateRemove]);
 
-	return { setRating, setRewatch, setStatus };
+	return { remove, setRating, setRewatch, setStatus };
 }
 
 export { useWorkTracking };

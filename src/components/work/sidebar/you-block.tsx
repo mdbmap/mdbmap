@@ -1,4 +1,4 @@
-import { useCallback, useMemo } from "react";
+import { useCallback, useMemo, useState } from "react";
 
 import { Label } from "@/components/ui/label";
 import { totalEpisodes } from "@/components/work/parts";
@@ -15,6 +15,8 @@ const HEADING = "You · whole series";
 const OUT_OF_TEN = "/10";
 const MINUS = "−";
 const PLUS = "+";
+const REMOVE_FROM_LIBRARY = "remove from library";
+const CONFIRM_REMOVE = "confirm remove";
 
 function ProgressBar({ percent }: { percent: number }) {
 	const style = useMemo(() => ({ width: `${percent}%` }), [percent]);
@@ -60,6 +62,28 @@ function RewatchStepper({ count, onChange }: RewatchStepperProps) {
 	);
 }
 
+interface RemoveFromLibraryButtonProps {
+	confirming: boolean;
+	onClick: () => void;
+}
+
+function RemoveFromLibraryButton({
+	confirming,
+	onClick,
+}: RemoveFromLibraryButtonProps) {
+	return (
+		<div className="text-ink/50 mt-1.5 font-mono text-[11px]">
+			<button
+				className="text-ink/60 hover:text-accent cursor-pointer"
+				onClick={onClick}
+				type="button"
+			>
+				{confirming ? CONFIRM_REMOVE : REMOVE_FROM_LIBRARY}
+			</button>
+		</div>
+	);
+}
+
 interface YouBlockProps {
 	continuityId: string;
 	order?: PresentationOrderSlug | undefined;
@@ -69,10 +93,11 @@ interface YouBlockProps {
 
 function YouBlock({ continuityId, order, parts, viewer }: YouBlockProps) {
 	const { authDialog, requireAuth } = useRequireAuth();
-	const { setRating, setRewatch, setStatus } = useWorkTracking(
+	const { remove, setRating, setRewatch, setStatus } = useWorkTracking(
 		continuityId,
 		order,
 	);
+	const [confirmingRemove, setConfirmingRemove] = useState(false);
 	const workUnit = useMemo<RateableUnit>(
 		() => ({ key: continuityId, kind: "work" }),
 		[continuityId],
@@ -88,12 +113,22 @@ function YouBlock({ continuityId, order, parts, viewer }: YouBlockProps) {
 	);
 	const changeStatus = useCallback(
 		(status: WatchStatus) => {
+			setConfirmingRemove(false);
 			requireAuth(() => {
 				setStatus(status);
 			});
 		},
 		[requireAuth, setStatus],
 	);
+	const requestRemove = useCallback(() => {
+		requireAuth(() => {
+			if (confirmingRemove) {
+				remove();
+				return;
+			}
+			setConfirmingRemove(true);
+		});
+	}, [confirmingRemove, remove, requireAuth]);
 	const changeRewatch = useCallback(
 		(count: number) => {
 			requireAuth(() => {
@@ -128,6 +163,12 @@ function YouBlock({ continuityId, order, parts, viewer }: YouBlockProps) {
 				count={viewer?.rewatchCount ?? 0}
 				onChange={changeRewatch}
 			/>
+			{viewer?.status === undefined ? undefined : (
+				<RemoveFromLibraryButton
+					confirming={confirmingRemove}
+					onClick={requestRemove}
+				/>
+			)}
 			{authDialog}
 		</div>
 	);

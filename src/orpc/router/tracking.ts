@@ -2,7 +2,9 @@ import { and, eq, inArray } from "drizzle-orm";
 
 import type { WatchStatus } from "@/db/schema";
 import { episodeProgress, personalRating, watchStatus } from "@/db/schema";
-import type { EngineRead } from "@/engine";
+import type { EngineRead, ResolveResult } from "@/engine";
+import { parseContinuityKey } from "@/engine/continuity/keys";
+import { retiredContinuityKeys } from "@/engine/continuity/persist";
 import { authed } from "@/orpc/base";
 import type { Db } from "@/orpc/context";
 import { instalmentsOf } from "@/orpc/instalments";
@@ -10,9 +12,11 @@ import type {
 	EpisodeWatchedResult,
 	RateableUnit,
 	RatingResult,
+	TrackingRemoveResult,
 	TrackingSummary,
 } from "@/orpc/schema";
 import {
+	RemoveTrackingInput,
 	SetEpisodeWatchedInput,
 	SetRatingInput,
 	SetRewatchInput,
@@ -67,6 +71,74 @@ const canonicalContinuityId = async (
 	const resolved = await engine.resolveContinuity(requestedId);
 	return resolved.continuityId;
 };
+
+const isMissingContinuity = (error: unknown): boolean =>
+	error instanceof Error && error.message.startsWith("engine: no continuity ");
+
+const resolveOrMissing = async (
+	engine: EngineRead,
+	requestedId: string,
+): Promise<ResolveResult | undefined> => {
+	try {
+		return await engine.resolveContinuity(requestedId);
+	} catch (error) {
+		if (isMissingContinuity(error)) {
+			return undefined;
+		}
+		throw error;
+	}
+};
+
+const watchStatusKeys = async (
+	db: Db,
+	canonicalId: string,
+	requestedId: string,
+): Promise<string[]> => {
+	const parsed = parseContinuityKey(canonicalId);
+	const aliases =
+		parsed === undefined ? [] : await retiredContinuityKeys(db, parsed);
+	return [...new Set([canonicalId, requestedId, ...aliases])];
+};
+
+const deleteEpisodeProgress = async (
+	db: Db,
+	userId: string,
+	locators: readonly string[],
+): Promise<void> => {
+	if (locators.length === 0) {
+		return;
+	}
+	await db
+		.delete(episodeProgress)
+		.where(
+			and(
+				eq(episodeProgress.userId, userId),
+				inArray(episodeProgress.instalmentLocator, locators),
+			),
+		)
+		.run();
+};
+
+const deleteWatchStatus = async (
+	db: Db,
+	userId: string,
+	keys: readonly string[],
+): Promise<void> => {
+	if (keys.length === 0) {
+		return;
+	}
+	await db
+		.delete(watchStatus)
+		.where(
+			and(
+				eq(watchStatus.userId, userId),
+				inArray(watchStatus.continuityKey, keys),
+			),
+		)
+		.run();
+};
+
+const TRACKING_REMOVED: TrackingRemoveResult = { removed: true };
 
 const canonicalRateableUnit = async (
 	engine: EngineRead,
@@ -229,6 +301,31 @@ const setRating = authed
 		return { score: input.score, unit };
 	});
 
-const tracking = { setEpisodeWatched, setRating, setRewatch, setStatus };
+const remove = authed
+	.input(RemoveTrackingInput)
+	.handler(async ({ context, input }): Promise<TrackingRemoveResult> => {
+		const userId = context.user.id;
+		const requestedId = input.continuityId;
+		const resolved = await resolveOrMissing(context.engine, requestedId);
+		if (resolved === undefined) {
+			await deleteWatchStatus(context.db, userId, [requestedId]);
+			return TRACKING_REMOVED;
+		}
+		await deleteEpisodeProgress(context.db, userId, instalmentsOf(resolved));
+		await deleteWatchStatus(
+			context.db,
+			userId,
+			await watchStatusKeys(context.db, resolved.continuityId, requestedId),
+		);
+		return TRACKING_REMOVED;
+	});
+
+const tracking = {
+	remove,
+	setEpisodeWatched,
+	setRating,
+	setRewatch,
+	setStatus,
+};
 
 export { tracking };
