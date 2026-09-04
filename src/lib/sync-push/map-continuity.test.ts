@@ -100,4 +100,27 @@ describe("mapContinuity", () => {
 			),
 		).toBe(true);
 	});
+
+	it("warns for episode ratings on unknown locators", () => {
+		const result = mapContinuity({
+			continuityId: "continuity:1",
+			providers: ["anilist"],
+			resolved,
+			tracking: {
+				episodeWatched: new Set(),
+				ratings: [{ score: 8, unitKey: "orphan:99#1", unitKind: "episode" }],
+				status: undefined,
+			},
+		});
+
+		expect(result.targets).toEqual([]);
+		expect(
+			result.warnings.some(
+				(warning) =>
+					warning.kind === "instalment" &&
+					warning.instalmentLocator === "orphan:99#1" &&
+					warning.reason === "unmapped_instalment",
+			),
+		).toBe(true);
+	});
 });

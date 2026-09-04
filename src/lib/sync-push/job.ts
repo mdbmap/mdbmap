@@ -157,20 +157,20 @@ const pushOneTarget = async (input: {
 		userId,
 	} = input;
 
-	const credentials = await store.readCredentials(
-		db,
-		masterKeyBase64,
-		userId,
-		provider,
-	);
-	if (credentials === undefined) {
-		const error = "Linked account credentials are unavailable.";
-		await store.recordError(db, userId, provider, error);
-		return { counts: emptyCounts(), error, ok: false, provider };
-	}
-
 	const counts = countsOf(batch);
 	try {
+		const credentials = await store.readCredentials(
+			db,
+			masterKeyBase64,
+			userId,
+			provider,
+		);
+		if (credentials === undefined) {
+			const error = "Linked account credentials are unavailable.";
+			await store.recordError(db, userId, provider, error);
+			return { counts: emptyCounts(), error, ok: false, provider };
+		}
+
 		await createClient(provider, credentials).push(batch);
 		const cursor = `${continuityId}@${new Date().toISOString()}`;
 		await store.updateCursor(db, userId, provider, cursor);

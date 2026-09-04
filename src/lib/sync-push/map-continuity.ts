@@ -75,12 +75,18 @@ const batchHasWrites = (batch: MutableBatch): boolean =>
 const warnUnknownLocators = (
 	continuityId: string,
 	resolved: ResolveResult,
-	episodeWatched: ReadonlySet<string>,
+	tracking: TrackingSnapshot,
 ): UnmappedWarning[] => {
 	const knownLocators = new Set(
 		resolved.segments.flatMap((segment) => [...segment.instalments]),
 	);
-	return [...episodeWatched]
+	const candidateLocators = new Set(tracking.episodeWatched);
+	for (const rating of tracking.ratings) {
+		if (rating.unitKind === "episode" || rating.unitKind === "movie") {
+			candidateLocators.add(rating.unitKey);
+		}
+	}
+	return [...candidateLocators]
 		.filter((locator) => !knownLocators.has(locator))
 		.map((locator) => ({
 			continuityId,
@@ -215,7 +221,7 @@ const mapContinuity = (input: MapContinuityInput): MapContinuityResult => {
 	const warnings = warnUnknownLocators(
 		input.continuityId,
 		input.resolved,
-		input.tracking.episodeWatched,
+		input.tracking,
 	);
 	const batches = new Map<SyncAccountProvider, MutableBatch>();
 	for (const provider of input.providers) {

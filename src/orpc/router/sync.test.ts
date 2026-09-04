@@ -191,7 +191,7 @@ describe("sync.push", () => {
 		).rejects.toMatchObject({ code: "FORBIDDEN" });
 	});
 
-	it("pushes mapped status to linked targets and advances cursors", async () => {
+	it("runs entitlement-gated push without advancing cursors until live transport exists", async () => {
 		const db = await seeded();
 		await grantActive(db);
 		const masterKey = randomMasterKey();
@@ -237,17 +237,24 @@ describe("sync.push", () => {
 		});
 
 		const result = await pushClient.sync.push({ continuityId: "continuity:1" });
-		expect(result.targets).toEqual([
-			expect.objectContaining({
-				ok: true,
-				provider: "anilist",
-			}),
-		]);
+		expect(result.targets).toHaveLength(1);
+		const [target] = result.targets;
+		expect(target).toBeDefined();
+		if (target === undefined) {
+			throw new Error("expected push target result");
+		}
+		expect(target.ok).toBe(false);
+		if (target.ok) {
+			throw new Error("expected failed push target");
+		}
+		expect(target.provider).toBe("anilist");
+		expect(target.error).toContain("not implemented");
 		expect(result.warningCount).toBe(0);
 		assertNoSecret(result, "tok-push");
 
 		const listed = await client.sync.list();
-		expect(listed[0]?.cursor).toEqual(expect.stringContaining("continuity:1@"));
-		expect(listed[0]?.lastError).toBeNull();
+		const [account] = listed;
+		expect(account?.cursor).toBeNull();
+		expect(account?.lastError ?? "").toContain("not implemented");
 	});
 });
