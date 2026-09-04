@@ -249,10 +249,17 @@ describe("Episodes order selector", () => {
 	});
 
 	it("hides the order control when only one order exists", () => {
-		const html = renderIdleOrdered(releaseOnly, [], sampleProposalSegments);
+		const html = renderIdleOrdered(releaseOnly);
 		expect(html).not.toContain("Release");
 		expect(html).not.toContain("Watch");
 		expect(html).not.toContain("Propose order");
+	});
+
+	it("still offers propose when only one order exists", () => {
+		const html = renderIdleOrdered(releaseOnly, [], sampleProposalSegments);
+		expect(html).not.toContain("Release");
+		expect(html).not.toContain("Watch");
+		expect(html).toContain("Propose order");
 	});
 
 	it("shows an accepted community order in the selector", () => {
