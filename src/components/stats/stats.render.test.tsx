@@ -66,6 +66,8 @@ describe("StatsPage snapshot", () => {
 		expect(html).toContain("Stats");
 		expect(html).toContain("A snapshot of what you track.");
 		expect(html).toContain("3 works");
+		expect(html).toContain('href="/library"');
+		expect(html).toContain('href="/"');
 	});
 
 	it("lists every watch status including zeros", () => {

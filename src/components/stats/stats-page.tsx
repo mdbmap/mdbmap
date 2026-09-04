@@ -19,6 +19,8 @@ const EMPTY_BODY =
 const EMPTY_CTA = "Search catalogues";
 const SEARCH_NAV = "Search";
 const SEARCH_PATH = "/search";
+const LIBRARY_NAV = "Library";
+const LIBRARY_PATH = "/library";
 const UNRATED = "—";
 const OUT_OF_TEN = "/10";
 const RATED = "rated";
@@ -39,17 +41,30 @@ const formatRewatch = (count: number) => `×${count}`;
 
 const navClass =
 	"text-ink/50 hover:text-accent font-mono text-xs tracking-[0.1em] uppercase";
+const brandClass =
+	"text-accent font-mono text-xs font-medium tracking-[0.1em] uppercase";
+
+function HeaderNavLink({
+	label,
+	to,
+}: {
+	label: string;
+	to: "/" | typeof LIBRARY_PATH | typeof SEARCH_PATH;
+}) {
+	return (
+		<Link to={to}>
+			<span className={to === "/" ? brandClass : navClass}>{label}</span>
+		</Link>
+	);
+}
 
 function StatsHeader() {
 	return (
 		<header className="flex items-center justify-between px-8 py-3.5">
 			<nav className="flex items-center gap-5">
-				<span className="text-accent font-mono text-xs font-medium tracking-[0.1em] uppercase">
-					{BRAND}
-				</span>
-				<a className={navClass} href={SEARCH_PATH}>
-					{SEARCH_NAV}
-				</a>
+				<HeaderNavLink label={BRAND} to="/" />
+				<HeaderNavLink label={SEARCH_NAV} to={SEARCH_PATH} />
+				<HeaderNavLink label={LIBRARY_NAV} to={LIBRARY_PATH} />
 			</nav>
 			<div className="flex items-center gap-4">
 				<BetterAuthHeader />
