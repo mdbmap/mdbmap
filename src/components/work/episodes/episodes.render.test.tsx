@@ -1,5 +1,4 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import type { ReactNode } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
@@ -28,56 +27,8 @@ const noopClose = () => {
 };
 
 vi.mock("react-aria-components", async () => {
-	const { createElement } = await import("react");
-	const passthrough = (tag: string) => {
-		function Component({
-			children,
-			...rest
-		}: {
-			children?: ReactNode;
-		} & Record<string, unknown>) {
-			return createElement(tag, rest, children);
-		}
-		return Component;
-	};
-	return {
-		Button: passthrough("button"),
-		Dialog: ({
-			children,
-		}: {
-			children?: ReactNode | ((opts: { close: () => void }) => ReactNode);
-		}) => {
-			const content =
-				typeof children === "function"
-					? children({ close: noopClose })
-					: children;
-			return createElement("div", { role: "dialog" }, content);
-		},
-		DialogTrigger: ({
-			children,
-			isOpen,
-		}: {
-			children?: ReactNode;
-			isOpen?: boolean;
-		}) =>
-			createElement(
-				"div",
-				{ "data-dialog-open": String(isOpen === true) },
-				children,
-			),
-		Form: passthrough("form"),
-		Heading: passthrough("h2"),
-		Input: passthrough("input"),
-		Label: passthrough("label"),
-		Modal: passthrough("div"),
-		ModalOverlay: ({
-			children,
-			...rest
-		}: {
-			children?: ReactNode;
-		} & Record<string, unknown>) => createElement("div", rest, children),
-		TextField: passthrough("div"),
-	};
+	const { reactAriaTestShim } = await import("./react-aria-test-shim");
+	return reactAriaTestShim;
 });
 
 const emptyScore = { count: 0, mean: undefined };
