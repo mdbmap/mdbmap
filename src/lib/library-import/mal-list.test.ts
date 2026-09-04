@@ -55,12 +55,32 @@ describe("fetchMalAnimeList", () => {
 			{
 				externalTitleId: "2",
 				progress: 3,
-				score: 0,
+				score: undefined,
 				status: "rewatching",
 				title: "Title 2",
 				updatedAt: "2024-01-02T00:00:00Z",
 			},
 		]);
+	});
+
+	it("stops pagination when next repeats a visited URL", async () => {
+		const loopUrl =
+			"https://api.myanimelist.net/v2/users/@me/animelist?offset=0";
+		const firstPage = page([row(1, "watching")], loopUrl);
+		const fetchImpl = vi
+			.fn()
+			.mockImplementation(async () =>
+				Promise.resolve(Response.json(firstPage)),
+			);
+
+		const entries = await fetchMalAnimeList({
+			accessToken: "tok",
+			baseUrl: "https://api.myanimelist.net/v2",
+			fetchImpl,
+		});
+
+		expect(fetchImpl).toHaveBeenCalledTimes(2);
+		expect(entries).toHaveLength(2);
 	});
 
 	it("stops pagination when next is cross-origin", async () => {

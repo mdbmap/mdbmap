@@ -87,6 +87,31 @@ describe("fetchAnilistAnimeList", () => {
 		expect(entries[0]?.score).toBe(8);
 	});
 
+	it("clamps low POINT_100 scores to 1", async () => {
+		const fetchImpl = vi
+			.fn<typeof fetch>()
+			.mockResolvedValueOnce(viewer("POINT_100"))
+			.mockResolvedValueOnce(
+				ok({
+					data: {
+						MediaListCollection: {
+							lists: [
+								{
+									entries: [row(1, "Low", 1, 3, "COMPLETED", 1)],
+									isCustomList: false,
+								},
+							],
+						},
+					},
+				}),
+			);
+		const entries = await fetchAnilistAnimeList({
+			accessToken: "tok",
+			fetchImpl,
+		});
+		expect(entries[0]?.score).toBe(1);
+	});
+
 	it("throws on non-OK responses", async () => {
 		const fetchImpl = vi
 			.fn<typeof fetch>()

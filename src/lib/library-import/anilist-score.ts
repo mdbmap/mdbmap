@@ -23,7 +23,7 @@ const scoreOf = (
 	}
 	switch (format) {
 		case "POINT_100": {
-			return Math.round(score / 10);
+			return Math.max(1, Math.round(score / 10));
 		}
 		case "POINT_5": {
 			return Math.round(score * 2);
@@ -42,7 +42,7 @@ const scoreOf = (
 			return score;
 		}
 		case undefined: {
-			return score > 10 ? Math.round(score / 10) : score;
+			return score > 10 ? Math.max(1, Math.round(score / 10)) : score;
 		}
 		default: {
 			return score;
