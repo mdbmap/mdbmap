@@ -240,6 +240,13 @@ const syncEntitlement = sqliteTable("sync_entitlement", {
 		.references(() => user.id, { onDelete: "cascade" }),
 });
 
+// ADR-0009: webhook handlers are idempotent on Stripe event id.
+const stripeWebhookEvent = sqliteTable("stripe_webhook_event", {
+	id: text().primaryKey(),
+	processedAt: timestamp("processed_at"),
+	type: text().notNull(),
+});
+
 export {
 	account,
 	apiKey,
@@ -253,6 +260,7 @@ export {
 	researchTimings,
 	DEFAULT_RESEARCH_TIMING,
 	session,
+	stripeWebhookEvent,
 	syncEntitlement,
 	syncEntitlementStatuses,
 	user,
