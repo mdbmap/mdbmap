@@ -95,6 +95,7 @@ describe("sync account store upsert and unlink", () => {
 	it("upserts the same provider and preserves an existing cursor", async () => {
 		await linkSyncAccount(db, {
 			credentials: { apiKey: "key-1" },
+			externalAccountId: "mal-9",
 			masterKeyBase64: masterKey,
 			provider: "mal",
 			userId: "user-1",
@@ -124,6 +125,31 @@ describe("sync account store upsert and unlink", () => {
 		await expect(db.select().from(syncAccountLink).all()).resolves.toHaveLength(
 			1,
 		);
+	});
+
+	it("clears cursor when the external account id changes", async () => {
+		await linkSyncAccount(db, {
+			credentials: { accessToken: "tok-1" },
+			externalAccountId: "acct-1",
+			masterKeyBase64: masterKey,
+			provider: "anilist",
+			userId: "user-1",
+		});
+		await db
+			.update(syncAccountLink)
+			.set({ cursor: "cursor-v1" })
+			.where(eq(syncAccountLink.userId, "user-1"))
+			.run();
+
+		const relinked = await linkSyncAccount(db, {
+			credentials: { accessToken: "tok-2" },
+			externalAccountId: "acct-2",
+			masterKeyBase64: masterKey,
+			provider: "anilist",
+			userId: "user-1",
+		});
+		expect(relinked.externalAccountId).toBe("acct-2");
+		expect(relinked.cursor).toBeNull();
 	});
 
 	it("unlinks a provider and reports missing rows", async () => {

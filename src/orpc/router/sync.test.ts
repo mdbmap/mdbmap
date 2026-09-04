@@ -54,7 +54,7 @@ describe("sync account entitlement gate", () => {
 		});
 	});
 
-	it("forbids list, connect, and disconnect without an active entitlement", async () => {
+	it("forbids list and connect without an active entitlement", async () => {
 		const db = await seeded();
 		const client = clientFor(db, "user-1");
 		await expect(client.sync.list()).rejects.toMatchObject({
@@ -68,10 +68,10 @@ describe("sync account entitlement gate", () => {
 		).rejects.toMatchObject({ code: "FORBIDDEN" });
 		await expect(
 			client.sync.disconnect({ provider: "anilist" }),
-		).rejects.toMatchObject({ code: "FORBIDDEN" });
+		).rejects.toMatchObject({ code: "NOT_FOUND" });
 	});
 
-	it("forbids a signed-in user with an inactive entitlement", async () => {
+	it("forbids list and connect when entitlement is inactive", async () => {
 		const db = await seeded();
 		await db
 			.insert(syncEntitlement)
@@ -91,9 +91,23 @@ describe("sync account entitlement gate", () => {
 				provider: "anilist",
 			}),
 		).rejects.toMatchObject({ code: "FORBIDDEN" });
+	});
+
+	it("allows disconnect after entitlement lapses", async () => {
+		const db = await seeded();
+		await grantActive(db);
+		const client = clientFor(db, "user-1");
+		await client.sync.connect({
+			credentials: { accessToken: "tok" },
+			provider: "anilist",
+		});
+		await db.update(syncEntitlement).set({ status: "inactive" }).run();
 		await expect(
 			client.sync.disconnect({ provider: "anilist" }),
-		).rejects.toMatchObject({ code: "FORBIDDEN" });
+		).resolves.toEqual({ ok: true });
+		await expect(
+			client.sync.disconnect({ provider: "anilist" }),
+		).rejects.toMatchObject({ code: "NOT_FOUND" });
 	});
 });
 

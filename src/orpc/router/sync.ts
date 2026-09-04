@@ -54,10 +54,10 @@ const connect = authed
 		});
 	});
 
+// Disconnect stays available after entitlement lapse so linked secrets can be revoked.
 const disconnect = authed
 	.input(SyncProviderInput)
 	.handler(async ({ context, input }) => {
-		await requireSyncEntitlement(context.db, context.user.id);
 		const removed = await unlinkSyncAccount(
 			context.db,
 			context.user.id,

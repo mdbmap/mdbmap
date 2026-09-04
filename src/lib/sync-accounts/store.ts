@@ -116,6 +116,25 @@ const linkSyncAccount = async (
 		wrapIv: envelope.wrapIv,
 		wrappedKey: envelope.wrappedKey,
 	};
+	const existing =
+		input.externalAccountId === undefined
+			? undefined
+			: await db
+					.select({
+						externalAccountId: syncAccountLink.externalAccountId,
+					})
+					.from(syncAccountLink)
+					.where(
+						and(
+							eq(syncAccountLink.userId, input.userId),
+							eq(syncAccountLink.provider, input.provider),
+						),
+					)
+					.get();
+	const externalAccountChanged =
+		input.externalAccountId !== undefined &&
+		existing !== undefined &&
+		existing.externalAccountId !== input.externalAccountId;
 	await db
 		.insert(syncAccountLink)
 		.values({
@@ -133,6 +152,7 @@ const linkSyncAccount = async (
 				...(input.externalAccountId === undefined
 					? {}
 					: { externalAccountId: input.externalAccountId }),
+				...(externalAccountChanged ? { cursor: sql`NULL` } : {}),
 				lastError: sql`NULL`,
 				linkedAt,
 			},
