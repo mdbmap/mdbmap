@@ -183,6 +183,19 @@ type AdminIngestStartResult =
 	| { readonly kind: "retryable"; readonly retryAfterSeconds: number }
 	| { readonly kind: "unknown" };
 
+const WorkOpenInput = IngestStartInput;
+
+type WorkOpenResult =
+	| { readonly kind: "conflict"; readonly review: string }
+	| {
+			readonly continuityId: string;
+			readonly kind: "pending";
+			readonly retryAfterSeconds: number;
+			readonly statusUrl?: string;
+	  }
+	| { readonly continuityId: string; readonly kind: "ready" }
+	| { readonly kind: "unknown" };
+
 interface CommunityScore {
 	count: number;
 	mean: number | undefined;
@@ -325,6 +338,7 @@ export {
 	CreateProviderInput,
 	IngestStartInput,
 	ManualPairInput,
+	WorkOpenInput,
 	MarkMatchedInput,
 	MintApiKeyInput,
 	RateableUnitInput,
@@ -364,6 +378,7 @@ export type {
 	TrackingSummary,
 	ViewerTracking,
 	WorkBlock,
+	WorkOpenResult,
 	WorkView,
 };
 export type { ResearchTiming } from "@/db/schema";

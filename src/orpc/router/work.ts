@@ -26,6 +26,8 @@ import type {
 import { WorkGetInput } from "@/orpc/schema";
 import { resolveSimilar } from "@/orpc/similar";
 
+import { open } from "./work-open";
+
 interface ViewerState {
 	personalByUnit: Map<string, number>;
 	statusRow:
@@ -349,6 +351,6 @@ const get = pub
 		};
 	});
 
-const work = { get };
+const work = { get, open };
 
 export { work };

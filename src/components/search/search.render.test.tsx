@@ -4,7 +4,8 @@ import { describe, expect, it, vi } from "vitest";
 
 import type { SearchHit } from "@/orpc/schema";
 
-import { SearchPage } from "./search-page";
+import { OPENING } from "./open-hit";
+import { SearchPage, UnmappedHitView } from "./search-page";
 import type { SearchView } from "./search-page";
 
 vi.mock("@tanstack/react-router", () => ({
@@ -21,15 +22,35 @@ vi.mock("@tanstack/react-router", () => ({
 			{children}
 		</a>
 	),
+	useNavigate: () => vi.fn(),
 }));
 
 vi.mock("@/integrations/better-auth/header-user", () => ({
 	BetterAuthHeader: () => false,
 }));
 
+vi.mock("./use-open-hit", () => ({
+	useOpenHit: () => ({
+		onOpen: () => {
+			/* empty */
+		},
+		state: { kind: "idle" as const },
+	}),
+}));
+
 const noop = (_value: string) => {
 	/* empty */
 };
+
+const noopOpen = () => {
+	/* empty */
+};
+
+const openingState = { kind: "opening" } as const;
+const openErrorState = {
+	kind: "error",
+	message: "This title could not be opened from the catalogues.",
+} as const;
 
 const hit = (overrides: Partial<SearchHit> = {}): SearchHit => ({
 	catalogue: {
@@ -98,10 +119,51 @@ describe("SearchPage populated list", () => {
 		expect(html).toContain("poster-300");
 	});
 
-	it("links mapped hits and keeps unmapped rows keyboard-focusable", () => {
+	it("links mapped hits and keeps unmapped rows as open buttons", () => {
 		expect(html).toContain('href="/work/12"');
+		expect(html).toContain('aria-label="Open"');
 		expect(html).toContain('type="button"');
 		expect(html.match(/href="\/work\//gu) ?? []).toHaveLength(1);
+	});
+});
+
+describe("UnmappedHitView open states", () => {
+	const unmapped = hit({
+		catalogue: { id: "1396", namespace: "tv", service: "tmdb" },
+		mediaKind: "tv",
+		title: "Breaking Bad",
+		year: 2008,
+	});
+
+	it("shows an opening label while the open mutation runs", () => {
+		const html = renderToStaticMarkup(
+			<ul>
+				<UnmappedHitView
+					hit={unmapped}
+					hue="poster-300"
+					onOpen={noopOpen}
+					state={openingState}
+				/>
+			</ul>,
+		);
+		expect(html).toContain(OPENING);
+		expect(html).toContain('aria-busy="true"');
+	});
+
+	it("shows a clear error when open cannot resolve a work", () => {
+		const html = renderToStaticMarkup(
+			<ul>
+				<UnmappedHitView
+					hit={unmapped}
+					hue="poster-300"
+					onOpen={noopOpen}
+					state={openErrorState}
+				/>
+			</ul>,
+		);
+		expect(html).toContain(
+			"This title could not be opened from the catalogues.",
+		);
 	});
 });
 

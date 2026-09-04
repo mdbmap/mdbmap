@@ -29,7 +29,7 @@ function Episodes({
 	parts,
 }: EpisodesProps) {
 	const { selectPart, selectedIndex, selectedPart } = useSelectedPart(parts);
-	const { toggle } = useEpisodeWatched(continuityId, order);
+	const { authDialog, toggle } = useEpisodeWatched(continuityId, order);
 
 	return (
 		<Section>
@@ -59,6 +59,7 @@ function Episodes({
 					)}
 				</>
 			)}
+			{authDialog}
 		</Section>
 	);
 }

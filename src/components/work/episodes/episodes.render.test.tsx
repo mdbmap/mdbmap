@@ -1,4 +1,5 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import type { ReactNode } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
@@ -12,7 +13,82 @@ import type { EpisodeView, FilmView, PartView, WorkBlock } from "@/orpc/schema";
 import { EpisodeList } from "./episode-list";
 import { Episodes } from "./episodes";
 
+const { useSession } = vi.hoisted(() => ({
+	useSession: vi.fn(),
+}));
+
+vi.mock("@/lib/auth-client", () => ({
+	authClient: {
+		useSession,
+	},
+}));
+
+const noopClose = () => {
+	/* empty */
+};
+
+vi.mock("react-aria-components", async () => {
+	const { createElement } = await import("react");
+	const passthrough = (tag: string) => {
+		function Component({
+			children,
+			...rest
+		}: {
+			children?: ReactNode;
+		} & Record<string, unknown>) {
+			return createElement(tag, rest, children);
+		}
+		return Component;
+	};
+	return {
+		Button: passthrough("button"),
+		Dialog: ({
+			children,
+		}: {
+			children?: ReactNode | ((opts: { close: () => void }) => ReactNode);
+		}) => {
+			const content =
+				typeof children === "function"
+					? children({ close: noopClose })
+					: children;
+			return createElement("div", { role: "dialog" }, content);
+		},
+		DialogTrigger: ({
+			children,
+			isOpen,
+		}: {
+			children?: ReactNode;
+			isOpen?: boolean;
+		}) =>
+			createElement(
+				"div",
+				{ "data-dialog-open": String(isOpen === true) },
+				children,
+			),
+		Form: passthrough("form"),
+		Heading: passthrough("h2"),
+		Input: passthrough("input"),
+		Label: passthrough("label"),
+		Modal: passthrough("div"),
+		ModalOverlay: ({
+			children,
+			...rest
+		}: {
+			children?: ReactNode;
+		} & Record<string, unknown>) => createElement("div", rest, children),
+		TextField: passthrough("div"),
+	};
+});
+
 const emptyScore = { count: 0, mean: undefined };
+
+const idleSession = {
+	data: undefined,
+	error: undefined,
+	isPending: false,
+	isRefetching: false,
+	refetch: noopClose,
+};
 
 const episode = (locator: string, title: string): EpisodeView => ({
 	airDate: "2022-04-09",
@@ -90,9 +166,17 @@ const renderOrdered = (orders: readonly PresentationOrderSlug[]) =>
 describe("Episodes", () => {
 	afterEach(() => {
 		usePartSelectionStore.setState({ selectedKey: undefined });
+		useSession.mockReset();
 	});
 
 	it("shows the selected part's episode list with a watched control", () => {
+		useSession.mockReturnValue({
+			...idleSession,
+			data: {
+				session: { id: "s1", userId: "u1" },
+				user: { email: "ada@example.com", id: "u1", name: "Ada" },
+			},
+		});
 		const html = renderEpisodes();
 		// An untouched selection resolves to the last part (newest cour).
 		expect(html).toContain("The Counterespionage");
@@ -114,14 +198,38 @@ describe("Episodes", () => {
 		expect(html).toContain("Operation Strix");
 		expect(html).not.toContain("The Counterespionage");
 	});
+
+	it("embeds a sign-in dialog for signed-out episode watched toggles", () => {
+		useSession.mockReturnValue(idleSession);
+		const html = renderEpisodes();
+		expect(html).toContain("data-auth-dialog");
+		expect(html).toContain("Sign in");
+	});
+
+	it("does not embed a sign-in dialog while the session is pending", () => {
+		useSession.mockReturnValue({
+			...idleSession,
+			isPending: true,
+		});
+		const html = renderEpisodes();
+		expect(html).not.toContain("data-auth-dialog");
+	});
 });
 
 describe("Episodes films", () => {
 	afterEach(() => {
 		usePartSelectionStore.setState({ selectedKey: undefined });
+		useSession.mockReset();
 	});
 
 	it("shows a film in the selector and a watched control on its row", () => {
+		useSession.mockReturnValue({
+			...idleSession,
+			data: {
+				session: { id: "s1", userId: "u1" },
+				user: { email: "ada@example.com", id: "u1", name: "Ada" },
+			},
+		});
 		const html = renderEpisodes(courThenFilm);
 		expect(html).toContain("Part 1");
 		expect(html).toContain("Dawn of the Deep Soul");
@@ -131,18 +239,27 @@ describe("Episodes films", () => {
 	});
 
 	it("shows a release/watch control when both orders exist", () => {
+		useSession.mockReturnValue(idleSession);
 		const html = renderOrdered(bothOrders);
 		expect(html).toContain("Release");
 		expect(html).toContain("Watch");
 	});
 
 	it("hides the order control when only one order exists", () => {
+		useSession.mockReturnValue(idleSession);
 		const html = renderOrdered(releaseOnly);
 		expect(html).not.toContain("Release");
 		expect(html).not.toContain("Watch");
 	});
 
 	it("keeps film and part labels when watch order puts the film first", () => {
+		useSession.mockReturnValue({
+			...idleSession,
+			data: {
+				session: { id: "s1", userId: "u1" },
+				user: { email: "ada@example.com", id: "u1", name: "Ada" },
+			},
+		});
 		const html = renderEpisodes(filmThenCour);
 		expect(html).toContain("Dawn of the Deep Soul");
 		expect(html).toContain("Part 1");
