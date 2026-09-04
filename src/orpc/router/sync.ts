@@ -11,7 +11,6 @@ import {
 	unlinkSyncAccount,
 } from "@/lib/sync-accounts";
 import { pushContinuity } from "@/lib/sync-push";
-import type { PushResult } from "@/lib/sync-push";
 import { authed } from "@/orpc/base";
 import { requireSyncEntitlement } from "@/orpc/sync-entitlement";
 
@@ -93,6 +92,37 @@ const push = authed.input(PushInput).handler(async ({ context, input }) => {
 	});
 });
 
+const PUSH_LIBRARY_CONCURRENCY = 3;
+
+const mapPool = async <T, R>(
+	items: readonly T[],
+	concurrency: number,
+	mapper: (item: T, index: number) => Promise<R>,
+): Promise<R[]> => {
+	if (items.length === 0) {
+		return [];
+	}
+	const results: R[] = Array.from({ length: items.length });
+	let nextIndex = 0;
+	const worker = async (): Promise<void> => {
+		const index = nextIndex;
+		nextIndex += 1;
+		if (index >= items.length) {
+			return;
+		}
+		const item = items[index];
+		if (item === undefined) {
+			return;
+		}
+		results[index] = await mapper(item, index);
+		await worker();
+	};
+	await Promise.all(
+		Array.from({ length: Math.min(concurrency, items.length) }, worker),
+	);
+	return results;
+};
+
 const pushLibrary = authed.input(EmptyInput).handler(async ({ context }) => {
 	await requireSyncEntitlement(context.db, context.user.id);
 	const masterKeyBase64 = masterKeyOf(context.providerConfigMasterKey);
@@ -102,8 +132,10 @@ const pushLibrary = authed.input(EmptyInput).handler(async ({ context }) => {
 		.where(eq(watchStatus.userId, context.user.id))
 		.all();
 	const continuityIds = [...new Set(rows.map((row) => row.continuityKey))];
-	const results: PushResult[] = await Promise.all(
-		continuityIds.map(async (continuityId) =>
+	const results = await mapPool(
+		continuityIds,
+		PUSH_LIBRARY_CONCURRENCY,
+		async (continuityId) =>
 			pushContinuity({
 				continuityId,
 				db: context.db,
@@ -111,7 +143,6 @@ const pushLibrary = authed.input(EmptyInput).handler(async ({ context }) => {
 				masterKeyBase64,
 				userId: context.user.id,
 			}),
-		),
 	);
 	return {
 		continuityCount: continuityIds.length,

@@ -255,6 +255,7 @@ const syncAccountLink = sqliteTable(
 		externalAccountId: text("external_account_id"),
 		id: integer({ mode: "number" }).primaryKey({ autoIncrement: true }),
 		lastError: text("last_error"),
+		lastSuccessfulAt: integer("last_successful_at", { mode: "timestamp" }),
 		linkedAt: timestamp("linked_at"),
 		provider: text({ enum: syncAccountProviders }).notNull(),
 		updatedAt: timestamp("updated_at").$onUpdateFn(() => new Date()),

@@ -12,12 +12,15 @@ const noop = () => {
 const EMPTY_ACCOUNTS: readonly SyncAccountPublic[] = [];
 const EMPTY_TOKENS = {};
 
+const successAt = new Date("2026-01-01T00:00:00.000Z");
+
 const linkedAnilist = {
 	cursor: "continuity:1@2026-01-01T00:00:00.000Z",
 	externalAccountId: "ani-1",
 	// SyncAccountPublic.lastError is string | null from the store seam.
 	// oxlint-disable-next-line unicorn/no-null -- wire format uses SQL NULL
 	lastError: null,
+	lastSuccessfulAt: successAt,
 	linkedAt: new Date("2026-01-01T00:00:00.000Z"),
 	provider: "anilist",
 } as const satisfies SyncAccountPublic;
@@ -66,7 +69,7 @@ describe("SyncTargetsPanel", () => {
 		expect(html).toContain("data-sync-entitled");
 		expect(html).toContain('data-sync-provider="anilist"');
 		expect(html).toContain("Last success");
-		expect(html).toContain("continuity:1@2026-01-01T00:00:00.000Z");
+		expect(html).toContain(successAt.toISOString());
 		expect(html).toContain("Disconnect");
 		expect(html).toContain("Sync now");
 		expect(html).toContain('data-sync-provider="mal"');

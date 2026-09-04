@@ -102,7 +102,7 @@ function LinkedTargetSummary({
 				{`Linked ${account.linkedAt.toISOString()}`}
 			</p>
 			<p className="font-mono text-xs">
-				{`${LAST_SUCCESS}: ${account.cursor ?? NONE}`}
+				{`${LAST_SUCCESS}: ${account.lastSuccessfulAt?.toISOString() ?? NONE}`}
 			</p>
 			<p className="font-mono text-xs">
 				{`${LAST_ERROR}: ${account.lastError ?? NONE}`}
