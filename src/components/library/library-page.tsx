@@ -2,27 +2,22 @@ import { Link } from "@tanstack/react-router";
 import { useCallback, useMemo } from "react";
 import { tv } from "tailwind-variants";
 
+import { SiteHeader } from "@/components/site-header";
 import { Label } from "@/components/ui/label";
-import { ThemeToggle } from "@/components/ui/theme-toggle";
 import { imageUrl, posterHue } from "@/components/work/metadata/placeholders";
 import type { WatchStatus } from "@/db/schema";
 import { workPathId } from "@/engine/continuity/keys";
-import { BetterAuthHeader } from "@/integrations/better-auth/header-user";
 import type { LibraryEntry, LibrarySort } from "@/orpc/schema";
 
 import { LibraryControls } from "./library-controls";
 
-const BRAND = "mdbmap";
 const TITLE = "Library";
 const TAGLINE = "Everything you track, filtered and sorted your way.";
 const EMPTY_HEADING = "Nothing tracked yet.";
 const EMPTY_BODY =
 	"Open a work and set a watch status or tick an episode. It shows up here the moment you do.";
 const EMPTY_CTA = "Search catalogues";
-const SEARCH_NAV = "Search";
 const SEARCH_PATH = "/search";
-const STATS_NAV = "Stats";
-const STATS_PATH = "/stats";
 const UNTITLED = "Title unavailable";
 const UNRATED = "—";
 const OUT_OF_TEN = "/10";
@@ -109,39 +104,6 @@ function LibraryRow({ entry, hue }: { entry: LibraryEntry; hue: string }) {
 				<EntryBody entry={entry} hue={hue} />
 			</Link>
 		</li>
-	);
-}
-
-function StatsNavLink() {
-	return (
-		<Link to={STATS_PATH}>
-			<span className="text-ink/50 hover:text-accent font-mono text-xs tracking-[0.1em] uppercase">
-				{STATS_NAV}
-			</span>
-		</Link>
-	);
-}
-
-function LibraryHeader() {
-	return (
-		<header className="flex items-center justify-between px-8 py-3.5">
-			<nav className="flex items-center gap-5">
-				<span className="text-accent font-mono text-xs font-medium tracking-[0.1em] uppercase">
-					{BRAND}
-				</span>
-				<a
-					className="text-ink/50 hover:text-accent font-mono text-xs tracking-[0.1em] uppercase"
-					href={SEARCH_PATH}
-				>
-					{SEARCH_NAV}
-				</a>
-				<StatsNavLink />
-			</nav>
-			<div className="flex items-center gap-4">
-				<BetterAuthHeader />
-				<ThemeToggle />
-			</div>
-		</header>
 	);
 }
 
@@ -238,7 +200,7 @@ function LibraryPage({
 	}, [onStatusChange]);
 	return (
 		<main className="mx-auto min-h-screen max-w-[1200px] pb-24">
-			<LibraryHeader />
+			<SiteHeader current="library" />
 			<section className="px-8 pt-6 pb-7">
 				<Label>{trackedCount(entries.length)}</Label>
 				<h1 className="text-ink/95 mt-1 font-serif text-4xl italic">{TITLE}</h1>

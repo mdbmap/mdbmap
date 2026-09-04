@@ -32,6 +32,15 @@ vi.mock("@/integrations/better-auth/header-user", () => ({
 	BetterAuthHeader: () => false,
 }));
 
+vi.mock("@/lib/auth-client", () => ({
+	authClient: {
+		useSession: () => ({
+			data: undefined,
+			isPending: false,
+		}),
+	},
+}));
+
 const onSortChange = vi.fn<(sort: LibrarySort) => void>();
 const onStatusChange = vi.fn<(status: WatchStatus | undefined) => void>();
 
@@ -124,9 +133,10 @@ describe("LibraryPage rows", () => {
 		expect(html).toContain("Recent activity");
 	});
 
-	it("links to the stats page from the header", () => {
-		expect(html).toContain("Stats");
-		expect(html).toContain('href="/stats"');
+	it("links the brand home and search in the site header", () => {
+		expect(html).toContain('href="/"');
+		expect(html).toContain('href="/search"');
+		expect(html).not.toContain('href="/library"');
 	});
 });
 
@@ -138,6 +148,7 @@ describe("LibraryPage empty states", () => {
 		expect(html).toContain("Search catalogues");
 		expect(html).toContain('href="/search"');
 		expect(html).toContain("data-cta");
+		expect(html).toContain('href="/"');
 		expect(html).not.toContain("/work/");
 	});
 

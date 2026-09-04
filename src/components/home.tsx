@@ -1,10 +1,9 @@
 import { useState } from "react";
 
+import { SiteHeader } from "@/components/site-header";
 import { Label } from "@/components/ui/label";
 import { Section } from "@/components/ui/section";
-import { ThemeToggle } from "@/components/ui/theme-toggle";
 import { AuthDialog } from "@/integrations/better-auth/auth-dialog";
-import { BetterAuthHeader } from "@/integrations/better-auth/header-user";
 import { authClient } from "@/lib/auth-client";
 
 const BRAND = "mdbmap";
@@ -12,7 +11,6 @@ const HEADLINE = "Television, film and anime, tracked as one story.";
 const SUPPORT =
 	"mdbmap matches instalments across catalogues, so your progress and ratings stay with the work itself rather than whichever service happened to list it.";
 const LIBRARY_PATH = "/library";
-const SEARCH_NAV = "Search";
 const SEARCH_PATH = "/search";
 
 const COPY = {
@@ -30,23 +28,6 @@ const tracked = [
 	{ detail: "standalone and grouped instalments", kind: "Film" },
 	{ detail: "cours, specials and OVAs", kind: "Anime" },
 ] as const;
-
-function Header() {
-	return (
-		<header className="flex items-center justify-between">
-			<a
-				className="text-ink/50 hover:text-accent font-mono text-xs tracking-[0.1em] uppercase"
-				href={SEARCH_PATH}
-			>
-				{SEARCH_NAV}
-			</a>
-			<div className="flex items-center gap-4">
-				<BetterAuthHeader />
-				<ThemeToggle />
-			</div>
-		</header>
-	);
-}
 
 function SearchLink() {
 	return (
@@ -171,7 +152,7 @@ export function Home({
 }) {
 	return (
 		<main className="mx-auto flex min-h-screen max-w-3xl flex-col gap-14 px-8 py-14">
-			<Header />
+			<SiteHeader current="home" padded={false} />
 			{onSigninOpenChange === undefined ? (
 				<Hero signinOpen={signinOpen} />
 			) : (

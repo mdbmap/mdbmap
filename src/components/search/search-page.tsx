@@ -3,21 +3,18 @@ import { useCallback, useMemo } from "react";
 import type { ChangeEvent } from "react";
 import { tv } from "tailwind-variants";
 
+import { SiteHeader } from "@/components/site-header";
 import { Label } from "@/components/ui/label";
-import { ThemeToggle } from "@/components/ui/theme-toggle";
 import { imageUrl, posterHue } from "@/components/work/metadata/placeholders";
 import { workPathId } from "@/engine/continuity/keys";
-import { BetterAuthHeader } from "@/integrations/better-auth/header-user";
 import type { SearchHit } from "@/orpc/schema";
 
 import { OPENING } from "./open-hit";
 import type { OpenHitState } from "./open-hit";
 import { useOpenHit } from "./use-open-hit";
 
-const BRAND = "mdbmap";
 const TITLE = "Search";
 const TAGLINE = "Television, film and anime across catalogues.";
-const SEARCH_NAV = "Search";
 const INPUT_LABEL = "Query";
 const INPUT_PLACEHOLDER = "Title…";
 const IDLE_HEADING = "Type a title to search.";
@@ -147,25 +144,6 @@ function MappedHit({ hit, hue }: { hit: SearchHit; hue: string }) {
 	);
 }
 
-function SearchHeader() {
-	return (
-		<header className="flex items-center justify-between px-8 py-3.5">
-			<nav className="flex items-center gap-5">
-				<span className="text-accent font-mono text-xs font-medium tracking-[0.1em] uppercase">
-					{BRAND}
-				</span>
-				<span className="text-accent font-mono text-xs tracking-[0.1em] uppercase">
-					{SEARCH_NAV}
-				</span>
-			</nav>
-			<div className="flex items-center gap-4">
-				<BetterAuthHeader />
-				<ThemeToggle />
-			</div>
-		</header>
-	);
-}
-
 function StatusBlock({ body, heading }: { body: string; heading: string }) {
 	return (
 		<div className="border-line border-t px-8 py-16">
@@ -266,7 +244,7 @@ function SearchIntro({
 function SearchPage({ draft, onDraftChange, view }: SearchPageProps) {
 	return (
 		<main className="mx-auto min-h-screen max-w-[1200px] pb-24">
-			<SearchHeader />
+			<SiteHeader current="search" />
 			<SearchIntro draft={draft} onDraftChange={onDraftChange} />
 			<SearchBody view={view} />
 		</main>
