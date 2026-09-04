@@ -54,9 +54,7 @@ const patchesOf = (batch: TargetWriteBatch): Map<number, TitlePatch> => {
 	for (const row of batch.status) {
 		const patch = patchFor(row.externalTitleId);
 		patch.status = malStatusOf(row.status);
-		if (row.status === "repeating") {
-			patch.isRewatching = true;
-		}
+		patch.isRewatching = row.status === "repeating";
 	}
 	for (const row of batch.progress) {
 		if (!row.watched) {
@@ -102,8 +100,8 @@ const putAnimeListStatus = async (
 	if (patch.score !== undefined) {
 		body.set("score", String(patch.score));
 	}
-	if (patch.isRewatching === true) {
-		body.set("is_rewatching", "true");
+	if (patch.isRewatching !== undefined) {
+		body.set("is_rewatching", patch.isRewatching ? "true" : "false");
 	}
 	const response = await fetchFn(`${baseUrl}/anime/${animeId}/my_list_status`, {
 		body,
