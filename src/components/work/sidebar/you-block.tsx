@@ -9,6 +9,8 @@ import type { WatchStatus } from "@/db/schema";
 import { useRequireAuth } from "@/integrations/better-auth/require-auth";
 import type { RateableUnit, ViewerTracking, WorkBlock } from "@/orpc/schema";
 
+import { isArmedFor } from "./confirming-remove";
+import type { ConfirmTarget } from "./confirming-remove";
 import { StatusSelect } from "./status-select";
 
 const HEADING = "You · whole series";
@@ -98,7 +100,12 @@ function YouBlock({ continuityId, order, parts, viewer }: YouBlockProps) {
 		continuityId,
 		order,
 	);
-	const [confirmingRemove, setConfirmingRemove] = useState(false);
+	const target = useMemo<ConfirmTarget>(
+		() => ({ continuityId, status: viewer?.status }),
+		[continuityId, viewer?.status],
+	);
+	const [armed, setArmed] = useState<ConfirmTarget | undefined>();
+	const confirmingRemove = isArmedFor(armed, target);
 	const workUnit = useMemo<RateableUnit>(
 		() => ({ key: continuityId, kind: "work" }),
 		[continuityId],
@@ -114,7 +121,6 @@ function YouBlock({ continuityId, order, parts, viewer }: YouBlockProps) {
 	);
 	const changeStatus = useCallback(
 		(status: WatchStatus) => {
-			setConfirmingRemove(false);
 			requireAuth(() => {
 				setStatus(status);
 			});
@@ -127,9 +133,9 @@ function YouBlock({ continuityId, order, parts, viewer }: YouBlockProps) {
 				remove();
 				return;
 			}
-			setConfirmingRemove(true);
+			setArmed(target);
 		});
-	}, [confirmingRemove, remove, requireAuth]);
+	}, [confirmingRemove, remove, requireAuth, target]);
 	const changeRewatch = useCallback(
 		(count: number) => {
 			requireAuth(() => {
