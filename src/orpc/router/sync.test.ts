@@ -1,5 +1,5 @@
 import { createRouterClient } from "@orpc/server";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import {
 	syncAccountLink,
@@ -9,6 +9,7 @@ import {
 } from "@/db/schema";
 import { freshDb } from "@/db/test-helpers";
 import { randomMasterKey } from "@/lib/provider-config/test-support.ts";
+import { updateSyncAccountCursor } from "@/lib/sync-accounts";
 import type { ORPCContext } from "@/orpc/context";
 
 import { router } from "./index.ts";
@@ -191,70 +192,86 @@ describe("sync.push", () => {
 		).rejects.toMatchObject({ code: "FORBIDDEN" });
 	});
 
-	it("runs entitlement-gated push without advancing cursors until live transport exists", async () => {
-		const db = await seeded();
-		await grantActive(db);
-		const masterKey = randomMasterKey();
-		const client = clientFor(db, "user-1", masterKey);
-		await client.sync.connect({
-			credentials: { accessToken: "tok-push" },
-			externalAccountId: "ani-1",
-			provider: "anilist",
+	it("runs entitlement-gated AniList push and keeps cursors/secrets safe on transport failure", async () => {
+		const fetchMock = vi.fn(async (): Promise<Response> => {
+			await Promise.resolve();
+			return new Response("unauthorized", { status: 401 });
 		});
-		await db
-			.insert(watchStatus)
-			.values({
-				continuityKey: "continuity:1",
-				status: "completed",
-				userId: "user-1",
-			})
-			.run();
+		vi.stubGlobal("fetch", fetchMock);
 
-		const engine = {
-			resolveContinuity: async () => {
-				await Promise.resolve();
-				return {
-					continuityId: "continuity:1",
-					mediaKind: "anime" as const,
-					segments: [
-						{
-							instalments: ["anidb:1#1"],
-							kind: "episodic" as const,
-							members: { anilist: "10" },
-						},
-					],
-				};
-			},
-		};
+		try {
+			const db = await seeded();
+			await grantActive(db);
+			const masterKey = randomMasterKey();
+			const client = clientFor(db, "user-1", masterKey);
+			await client.sync.connect({
+				credentials: { accessToken: "tok-push" },
+				externalAccountId: "ani-1",
+				provider: "anilist",
+			});
+			const seededCursor = "continuity:0@seed";
+			await updateSyncAccountCursor(db, "user-1", "anilist", seededCursor);
+			await db
+				.insert(watchStatus)
+				.values({
+					continuityKey: "continuity:1",
+					status: "completed",
+					userId: "user-1",
+				})
+				.run();
 
-		const pushClient = createRouterClient(router, {
-			context: {
-				db,
-				engine,
-				providerConfigMasterKey: masterKey,
-				resolveSession: () => ({ id: "user-1" }),
-			} satisfies ORPCContext,
-		});
+			const engine = {
+				resolveContinuity: async () => {
+					await Promise.resolve();
+					return {
+						continuityId: "continuity:1",
+						mediaKind: "anime" as const,
+						segments: [
+							{
+								instalments: ["anidb:1#1"],
+								kind: "episodic" as const,
+								members: { anilist: "10" },
+							},
+						],
+					};
+				},
+			};
 
-		const result = await pushClient.sync.push({ continuityId: "continuity:1" });
-		expect(result.targets).toHaveLength(1);
-		const [target] = result.targets;
-		expect(target).toBeDefined();
-		if (target === undefined) {
-			throw new Error("expected push target result");
+			const pushClient = createRouterClient(router, {
+				context: {
+					db,
+					engine,
+					providerConfigMasterKey: masterKey,
+					resolveSession: () => ({ id: "user-1" }),
+				} satisfies ORPCContext,
+			});
+
+			const result = await pushClient.sync.push({
+				continuityId: "continuity:1",
+			});
+			expect(result.targets).toHaveLength(1);
+			const [target] = result.targets;
+			expect(target).toBeDefined();
+			if (target === undefined) {
+				throw new Error("expected push target result");
+			}
+			expect(target.ok).toBe(false);
+			if (target.ok) {
+				throw new Error("expected failed push target");
+			}
+			expect(target.provider).toBe("anilist");
+			expect(target.error).toContain("anilist:");
+			expect(result.warningCount).toBe(0);
+			assertNoSecret(result, "tok-push");
+
+			const listed = await client.sync.list();
+			const [account] = listed;
+			expect(account?.cursor).toBe(seededCursor);
+			expect(account?.lastError ?? "").toContain("anilist:");
+			assertNoSecret(account, "tok-push");
+			expect(fetchMock).toHaveBeenCalled();
+		} finally {
+			vi.unstubAllGlobals();
 		}
-		expect(target.ok).toBe(false);
-		if (target.ok) {
-			throw new Error("expected failed push target");
-		}
-		expect(target.provider).toBe("anilist");
-		expect(target.error).toContain("not implemented");
-		expect(result.warningCount).toBe(0);
-		assertNoSecret(result, "tok-push");
-
-		const listed = await client.sync.list();
-		const [account] = listed;
-		expect(account?.cursor).toBeNull();
-		expect(account?.lastError ?? "").toContain("not implemented");
 	});
 });
