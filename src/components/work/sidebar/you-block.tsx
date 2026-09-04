@@ -31,10 +31,11 @@ function ProgressBar({ percent }: { percent: number }) {
 
 interface RewatchStepperProps {
 	count: number;
+	disabled?: boolean;
 	onChange: (count: number) => void;
 }
 
-function RewatchStepper({ count, onChange }: RewatchStepperProps) {
+function RewatchStepper({ count, disabled, onChange }: RewatchStepperProps) {
 	const decrease = useCallback(() => {
 		onChange(Math.max(0, count - 1));
 	}, [count, onChange]);
@@ -46,7 +47,8 @@ function RewatchStepper({ count, onChange }: RewatchStepperProps) {
 			<span>{`rewatch ×${count}`}</span>
 			<button
 				aria-label="Decrease rewatch count"
-				className="text-ink/60 hover:text-accent cursor-pointer"
+				className="text-ink/60 hover:text-accent cursor-pointer disabled:cursor-not-allowed"
+				disabled={disabled}
 				onClick={decrease}
 				type="button"
 			>
@@ -54,7 +56,8 @@ function RewatchStepper({ count, onChange }: RewatchStepperProps) {
 			</button>
 			<button
 				aria-label="Increase rewatch count"
-				className="text-ink/60 hover:text-accent cursor-pointer"
+				className="text-ink/60 hover:text-accent cursor-pointer disabled:cursor-not-allowed"
+				disabled={disabled}
 				onClick={increase}
 				type="button"
 			>
@@ -66,18 +69,21 @@ function RewatchStepper({ count, onChange }: RewatchStepperProps) {
 
 interface RemoveFromLibraryButtonProps {
 	confirming: boolean;
+	disabled?: boolean;
 	onClick: () => void;
 }
 
 function RemoveFromLibraryButton({
 	confirming,
+	disabled,
 	onClick,
 }: RemoveFromLibraryButtonProps) {
 	return (
 		<div className="text-ink/50 mt-1.5 font-mono text-[11px]">
 			<button
 				aria-label={confirming ? CONFIRM_REMOVE : REMOVE_FROM_LIBRARY}
-				className="text-ink/60 hover:text-accent cursor-pointer"
+				className="text-ink/60 hover:text-accent cursor-pointer disabled:cursor-not-allowed"
+				disabled={disabled}
 				onClick={onClick}
 				type="button"
 			>
@@ -96,10 +102,8 @@ interface YouBlockProps {
 
 function YouBlock({ continuityId, order, parts, viewer }: YouBlockProps) {
 	const { authDialog, requireAuth } = useRequireAuth();
-	const { remove, setRating, setRewatch, setStatus } = useWorkTracking(
-		continuityId,
-		order,
-	);
+	const { remove, removing, setRating, setRewatch, setStatus } =
+		useWorkTracking(continuityId, order);
 	const target = useMemo<ConfirmTarget>(
 		() => ({ continuityId, status: viewer?.status }),
 		[continuityId, viewer?.status],
@@ -161,18 +165,24 @@ function YouBlock({ continuityId, order, parts, viewer }: YouBlockProps) {
 				/>
 				<span className="text-ink/40 font-mono text-[13px]">{OUT_OF_TEN}</span>
 			</div>
-			<StatusSelect onChange={changeStatus} value={viewer?.status} />
+			<StatusSelect
+				disabled={removing}
+				onChange={changeStatus}
+				value={viewer?.status}
+			/>
 			<ProgressBar percent={percent} />
 			<div className="text-ink/50 mt-1.5 font-mono text-[11px]">
 				{`${watched} / ${total} across ${parts.length} parts`}
 			</div>
 			<RewatchStepper
 				count={viewer?.rewatchCount ?? 0}
+				disabled={removing}
 				onChange={changeRewatch}
 			/>
 			{viewer?.status === undefined ? undefined : (
 				<RemoveFromLibraryButton
 					confirming={confirmingRemove}
+					disabled={removing}
 					onClick={requestRemove}
 				/>
 			)}

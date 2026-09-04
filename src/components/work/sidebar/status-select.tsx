@@ -17,11 +17,12 @@ const UNSET_LABEL = "set status";
 const formatStatus = (status: WatchStatus) => status.replace("_", " ");
 
 interface StatusSelectProps {
+	disabled?: boolean;
 	onChange: (status: WatchStatus) => void;
 	value: WatchStatus | undefined;
 }
 
-function StatusSelect({ onChange, value }: StatusSelectProps) {
+function StatusSelect({ disabled, onChange, value }: StatusSelectProps) {
 	const handleChange = useCallback(
 		(event: ChangeEvent<HTMLSelectElement>) => {
 			const next = STATUSES.find((status) => status === event.target.value);
@@ -34,7 +35,8 @@ function StatusSelect({ onChange, value }: StatusSelectProps) {
 	return (
 		<select
 			aria-label="Watch status"
-			className="mt-3 cursor-pointer appearance-none border-none bg-transparent p-0 font-round text-[15px] font-medium text-ink/90 capitalize outline-none"
+			className="font-round text-ink/90 mt-3 cursor-pointer appearance-none border-none bg-transparent p-0 text-[15px] font-medium capitalize outline-none disabled:cursor-not-allowed"
+			disabled={disabled}
 			onChange={handleChange}
 			value={value ?? UNSET}
 		>
