@@ -22,6 +22,7 @@ const part = (key: string): PartView => ({
 
 const work = (): WorkView => ({
 	cast: [],
+	catalogues: [],
 	continuityId: "continuity:x",
 	header: {
 		backdropRef: undefined,

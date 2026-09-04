@@ -11,6 +11,7 @@ import {
 } from "@/engine/continuity/orders";
 import { retiredContinuityKeys } from "@/engine/continuity/persist";
 import { pub } from "@/orpc/base";
+import { catalogueLinks } from "@/orpc/catalogue-links";
 import type { Db } from "@/orpc/context";
 import { instalmentsOf } from "@/orpc/instalments";
 import type { Providers, WorkMetadata } from "@/orpc/providers";
@@ -333,6 +334,10 @@ const get = pub
 
 		return {
 			cast: [...meta.cast],
+			catalogues: catalogueLinks(
+				resolved.segments,
+				meta.segments.map((segment) => segment.label),
+			),
 			continuityId,
 			header: {
 				backdropRef: meta.backdropRef,

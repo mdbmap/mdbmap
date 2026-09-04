@@ -3,7 +3,7 @@ import type { WorkView } from "@/orpc/schema";
 
 import { Episodes } from "./episodes";
 import { Metadata } from "./metadata";
-import { PartPanel, YouBlock } from "./sidebar";
+import { Catalogues, PartPanel, YouBlock } from "./sidebar";
 
 function Synopsis({ text }: { text: string }) {
 	return (
@@ -50,6 +50,7 @@ function Sidebar({ order, work }: WorkLayoutProps) {
 				parts={work.parts}
 				viewer={work.viewer}
 			/>
+			<Catalogues catalogues={work.catalogues} />
 			<PartPanel
 				continuityId={work.continuityId}
 				order={order}

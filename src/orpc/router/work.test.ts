@@ -219,6 +219,38 @@ describe("work.get presentation orders", () => {
 	});
 });
 
+describe("work.get catalogues", () => {
+	it("surfaces unique Spy × Family counterpart ids and the TMDB tv URL", async () => {
+		const db = await freshDb();
+		const { continuityId } = await seedSpyXFamily(db);
+		const view = await clientFor(db).work.get({ continuityId });
+		const idsOf = (service: string) =>
+			view.catalogues
+				.filter((link) => link.service === service)
+				.map((link) => link.id);
+
+		expect(idsOf("anidb")).toEqual(["16947", "17061", "17784"]);
+		expect(idsOf("mal")).toEqual(["50265", "50602", "53887"]);
+		expect(idsOf("anilist")).toEqual(["140960", "142838", "158927"]);
+		expect(idsOf("tmdb")).toEqual(["120089"]);
+		expect(view.catalogues.find((link) => link.service === "tmdb")?.href).toBe(
+			"https://www.themoviedb.org/tv/120089",
+		);
+		expect(view.catalogues.map((link) => link.service)).toEqual([
+			"anidb",
+			"anidb",
+			"anidb",
+			"mal",
+			"mal",
+			"mal",
+			"anilist",
+			"anilist",
+			"anilist",
+			"tmdb",
+		]);
+	});
+});
+
 describe("work.get film blocks", () => {
 	it("returns a film block on the film title locator, not a series SxEy", async () => {
 		const db = await freshDb();
