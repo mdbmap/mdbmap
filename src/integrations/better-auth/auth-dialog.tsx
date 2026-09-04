@@ -258,7 +258,7 @@ function AuthModal() {
 	);
 }
 
-type AuthTriggerVariant = "hero" | "inline";
+type AuthTriggerVariant = "hero" | "hidden" | "inline";
 
 function AuthTrigger({
 	label,
@@ -267,6 +267,13 @@ function AuthTrigger({
 	label: string;
 	variant: AuthTriggerVariant;
 }) {
+	if (variant === "hidden") {
+		return (
+			<span className="sr-only">
+				<Button data-auth-trigger>{label}</Button>
+			</span>
+		);
+	}
 	if (variant === "hero") {
 		return <Button data-cta>{label}</Button>;
 	}

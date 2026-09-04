@@ -1,8 +1,11 @@
-import { useCallback, useMemo } from "react";
+import { useCallback, useMemo, useState } from "react";
 
 import { Label } from "@/components/ui/label";
 import { totalEpisodes } from "@/components/work/parts";
 import type { PresentationOrderSlug } from "@/db/engine-schema";
+import type { WatchStatus } from "@/db/schema";
+import { AuthDialog } from "@/integrations/better-auth/auth-dialog";
+import { authClient } from "@/lib/auth-client";
 import type { RateableUnit, ViewerTracking, WorkBlock } from "@/orpc/schema";
 
 import { ScoreSelect } from "./score-select";
@@ -13,6 +16,7 @@ const HEADING = "You · whole series";
 const OUT_OF_TEN = "/10";
 const MINUS = "−";
 const PLUS = "+";
+const SIGN_IN = "Sign in";
 
 function ProgressBar({ percent }: { percent: number }) {
 	const style = useMemo(() => ({ width: `${percent}%` }), [percent]);
@@ -66,6 +70,9 @@ interface YouBlockProps {
 }
 
 function YouBlock({ continuityId, order, parts, viewer }: YouBlockProps) {
+	const { data: session } = authClient.useSession();
+	const signedIn = session?.user !== undefined;
+	const [authOpen, setAuthOpen] = useState(false);
 	const { setRating, setRewatch, setStatus } = useWorkTracking(
 		continuityId,
 		order,
@@ -74,11 +81,41 @@ function YouBlock({ continuityId, order, parts, viewer }: YouBlockProps) {
 		() => ({ key: continuityId, kind: "work" }),
 		[continuityId],
 	);
+
+	const requireAuth = useCallback(
+		(action: () => void) => {
+			if (!signedIn) {
+				setAuthOpen(true);
+				return;
+			}
+			action();
+		},
+		[signedIn],
+	);
+
 	const rateWork = useCallback(
 		(score: number | undefined) => {
-			setRating(workUnit, score);
+			requireAuth(() => {
+				setRating(workUnit, score);
+			});
 		},
-		[setRating, workUnit],
+		[requireAuth, setRating, workUnit],
+	);
+	const changeStatus = useCallback(
+		(status: WatchStatus) => {
+			requireAuth(() => {
+				setStatus(status);
+			});
+		},
+		[requireAuth, setStatus],
+	);
+	const changeRewatch = useCallback(
+		(count: number) => {
+			requireAuth(() => {
+				setRewatch(count);
+			});
+		},
+		[requireAuth, setRewatch],
 	);
 
 	const total = totalEpisodes(parts);
@@ -97,12 +134,23 @@ function YouBlock({ continuityId, order, parts, viewer }: YouBlockProps) {
 				/>
 				<span className="text-ink/40 font-mono text-[13px]">{OUT_OF_TEN}</span>
 			</div>
-			<StatusSelect onChange={setStatus} value={viewer?.status} />
+			<StatusSelect onChange={changeStatus} value={viewer?.status} />
 			<ProgressBar percent={percent} />
 			<div className="text-ink/50 mt-1.5 font-mono text-[11px]">
 				{`${watched} / ${total} across ${parts.length} parts`}
 			</div>
-			<RewatchStepper count={viewer?.rewatchCount ?? 0} onChange={setRewatch} />
+			<RewatchStepper
+				count={viewer?.rewatchCount ?? 0}
+				onChange={changeRewatch}
+			/>
+			{signedIn ? undefined : (
+				<AuthDialog
+					isOpen={authOpen}
+					label={SIGN_IN}
+					onOpenChange={setAuthOpen}
+					variant="hidden"
+				/>
+			)}
 		</div>
 	);
 }

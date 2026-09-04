@@ -9,6 +9,71 @@ import type { PartView, ServiceRating, ViewerTracking } from "@/orpc/schema";
 import { PartDetails, PartPanel } from "./part-panel";
 import { YouBlock } from "./you-block";
 
+const { useSession } = vi.hoisted(() => ({
+	useSession: vi.fn(),
+}));
+
+vi.mock("@/lib/auth-client", () => ({
+	authClient: {
+		useSession,
+	},
+}));
+
+const noop = () => {
+	/* empty */
+};
+
+vi.mock("react-aria-components", async () => {
+	const { createElement } = await import("react");
+	const passthrough = (tag: string) => {
+		function Component({
+			children,
+			...rest
+		}: {
+			children?: ReactNode;
+		} & Record<string, unknown>) {
+			return createElement(tag, rest, children);
+		}
+		return Component;
+	};
+	return {
+		Button: passthrough("button"),
+		Dialog: ({
+			children,
+		}: {
+			children?: ReactNode | ((opts: { close: () => void }) => ReactNode);
+		}) => {
+			const content =
+				typeof children === "function" ? children({ close: noop }) : children;
+			return createElement("div", { role: "dialog" }, content);
+		},
+		DialogTrigger: ({
+			children,
+			isOpen,
+		}: {
+			children?: ReactNode;
+			isOpen?: boolean;
+		}) =>
+			createElement(
+				"div",
+				{ "data-dialog-open": String(isOpen === true) },
+				children,
+			),
+		Form: passthrough("form"),
+		Heading: passthrough("h2"),
+		Input: passthrough("input"),
+		Label: passthrough("label"),
+		Modal: passthrough("div"),
+		ModalOverlay: ({
+			children,
+			...rest
+		}: {
+			children?: ReactNode;
+		} & Record<string, unknown>) => createElement("div", rest, children),
+		TextField: passthrough("div"),
+	};
+});
+
 const NO_PARTS: PartView[] = [];
 const noRate = vi.fn<(score: number | undefined) => void>();
 
@@ -63,6 +128,14 @@ const viewer: ViewerTracking = {
 	watched: Array.from({ length: 25 }, (_item, index) => `ep:${index}`),
 };
 
+const idleSession = {
+	data: undefined,
+	error: undefined,
+	isPending: false,
+	isRefetching: false,
+	refetch: noop,
+};
+
 const render = (node: ReactNode) =>
 	renderToStaticMarkup(
 		<QueryClientProvider client={new QueryClient()}>
@@ -71,7 +144,18 @@ const render = (node: ReactNode) =>
 	);
 
 describe("YouBlock", () => {
+	afterEach(() => {
+		useSession.mockReset();
+	});
+
 	it("shows the whole-series status, score, progress and rewatch count", () => {
+		useSession.mockReturnValue({
+			...idleSession,
+			data: {
+				session: { id: "s1", userId: "u1" },
+				user: { email: "ada@example.com", id: "u1", name: "Ada" },
+			},
+		});
 		const html = render(
 			<YouBlock continuityId="continuity:x" parts={parts} viewer={viewer} />,
 		);
@@ -79,18 +163,35 @@ describe("YouBlock", () => {
 		expect(html).toContain("watching");
 		expect(html).toContain("25 / 36 across 3 parts");
 		expect(html).toContain("rewatch ×2");
-		// The viewer's work score is the selected option.
 		expect(html).toContain('value="8"');
 		expect(html).toContain("selected");
+		expect(html).not.toContain("data-auth-dialog");
 	});
 
 	it("falls back to zero progress when the viewer is untracked", () => {
+		useSession.mockReturnValue({
+			...idleSession,
+			data: {
+				session: { id: "s1", userId: "u1" },
+				user: { email: "ada@example.com", id: "u1", name: "Ada" },
+			},
+		});
 		const html = render(
 			<YouBlock continuityId="continuity:x" parts={parts} viewer={undefined} />,
 		);
 		expect(html).toContain("0 / 36 across 3 parts");
 		expect(html).toContain("rewatch ×0");
 		expect(html).toContain("set status");
+	});
+
+	it("embeds a sign-in dialog for signed-out tracking mutations", () => {
+		useSession.mockReturnValue(idleSession);
+		const html = render(
+			<YouBlock continuityId="continuity:x" parts={parts} viewer={undefined} />,
+		);
+		expect(html).toContain("data-auth-dialog");
+		expect(html).toContain('data-dialog-open="false"');
+		expect(html).toContain("Sign in");
 	});
 });
 
@@ -103,12 +204,10 @@ describe("PartPanel", () => {
 		const html = render(
 			<PartPanel continuityId="continuity:x" parts={parts} />,
 		);
-		// Untouched selection resolves to the last part.
 		expect(html).toContain("Season 2 · this part");
 		expect(html).toContain("mdbmap average");
 		expect(html).toContain("8.41");
 		expect(html).toContain("120K");
-		// Service ratings listed in native scale with vote counts, never merged.
 		expect(html).toContain("mal");
 		expect(html).toContain("8.45");
 		expect(html).toContain("/10");
@@ -118,10 +217,6 @@ describe("PartPanel", () => {
 		expect(html).toContain("Oct 2023 – Dec 2023");
 	});
 
-	// The store's SSR snapshot is always its initial (untouched) state, so a
-	// selection change can't be driven through renderToStaticMarkup. The panel's
-	// content is proven to follow whichever part it is handed via PartDetails; the
-	// selection wiring itself is covered by part-state's resolveSelectedIndex.
 	it("renders the facts of whichever part it is given", () => {
 		const html = render(<PartDetails onRate={noRate} part={partOne} />);
 		expect(html).toContain("Part 1 · this part");

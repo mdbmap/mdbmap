@@ -10,6 +10,10 @@ import { workPathId } from "@/engine/continuity/keys";
 import { BetterAuthHeader } from "@/integrations/better-auth/header-user";
 import type { SearchHit } from "@/orpc/schema";
 
+import { OPENING } from "./open-hit";
+import type { OpenHitState } from "./open-hit";
+import { useOpenHit } from "./use-open-hit";
+
 const BRAND = "mdbmap";
 const TITLE = "Search";
 const TAGLINE = "Television, film and anime across catalogues.";
@@ -25,6 +29,7 @@ const EMPTY_BODY = "Try a different spelling or a shorter query.";
 const ERROR_HEADING = "Search failed.";
 const ERROR_BODY =
 	"Something went wrong talking to the catalogues. Try again in a moment.";
+const OPEN_LABEL = "Open";
 
 const row = tv({
 	base: "border-line hover:bg-ink/[0.04] focus-visible:bg-ink/[0.04] border-t outline-none *:flex *:items-start *:gap-4 *:px-8 *:py-4",
@@ -83,14 +88,48 @@ function HitBody({ hit, hue }: { hit: SearchHit; hue: string }) {
 	);
 }
 
-function UnmappedHit({ hit, hue }: { hit: SearchHit; hue: string }) {
+interface UnmappedHitViewProps {
+	hit: SearchHit;
+	hue: string;
+	onOpen: () => void;
+	state: OpenHitState;
+}
+
+function UnmappedHitView({ hit, hue, onOpen, state }: UnmappedHitViewProps) {
+	const busy = state.kind === "opening";
+	const message =
+		state.kind === "pending" || state.kind === "error"
+			? state.message
+			: undefined;
 	return (
 		<li className={row()}>
-			<button className="w-full cursor-default text-left" type="button">
+			<button
+				aria-busy={busy}
+				aria-label={OPEN_LABEL}
+				className="w-full cursor-pointer text-left disabled:cursor-wait"
+				disabled={busy}
+				onClick={onOpen}
+				type="button"
+			>
 				<HitBody hit={hit} hue={hue} />
+				{busy ? (
+					<p className="text-ink/50 mt-2 font-mono text-[11px] tracking-[0.08em] uppercase">
+						{OPENING}
+					</p>
+				) : undefined}
+				{message === undefined ? undefined : (
+					<p className="text-ink/60 mt-2 max-w-[56ch] text-[13px] leading-relaxed">
+						{message}
+					</p>
+				)}
 			</button>
 		</li>
 	);
+}
+
+function UnmappedHit({ hit, hue }: { hit: SearchHit; hue: string }) {
+	const { onOpen, state } = useOpenHit(hit);
+	return <UnmappedHitView hit={hit} hue={hue} onOpen={onOpen} state={state} />;
 }
 
 function MappedHit({ hit, hue }: { hit: SearchHit; hue: string }) {
@@ -237,4 +276,4 @@ function SearchPage({ draft, onDraftChange, view }: SearchPageProps) {
 	);
 }
 
-export { SearchPage, type SearchView };
+export { SearchPage, UnmappedHitView, type SearchView };
