@@ -93,6 +93,25 @@ describe("orderProposals input boundary", () => {
 			proposalId: 3,
 		});
 	});
+
+	it("rejects segment lists over the D1-safe bind cap", () => {
+		expect(() =>
+			CreateProposalInput.parse({
+				continuityId: 1,
+				name: "Too many",
+				rationale: "Exceeds bind budget",
+				segmentIds: Array.from({ length: 34 }, (_ignored, index) => index + 1),
+			}),
+		).toThrow();
+		expect(
+			CreateProposalInput.parse({
+				continuityId: 1,
+				name: "At cap",
+				rationale: "Fits bind budget",
+				segmentIds: Array.from({ length: 33 }, (_ignored, index) => index + 1),
+			}).segmentIds,
+		).toHaveLength(33);
+	});
 });
 
 describe("orderProposals authz", () => {
