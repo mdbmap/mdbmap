@@ -4,6 +4,7 @@ import { describe, expect, it } from "vitest";
 
 import {
 	continuitySegments,
+	presentationOrderProposals,
 	serviceTitles,
 	titleGroups,
 } from "@/db/engine-schema";
@@ -162,6 +163,13 @@ describe("orderProposals happy path", () => {
 			status: "pending",
 		});
 		expect(created.items.map((item) => item.segmentId)).toEqual(ordered);
+
+		const storedAuthor = await db
+			.select({ authorUserId: presentationOrderProposals.authorUserId })
+			.from(presentationOrderProposals)
+			.where(eq(presentationOrderProposals.id, created.id))
+			.get();
+		expect(storedAuthor?.authorUserId).toBe(memberUser.id);
 
 		const listed = await member.orderProposals.list({ continuityId });
 		expect(listed).toHaveLength(1);

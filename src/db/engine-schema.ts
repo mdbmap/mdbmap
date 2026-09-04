@@ -410,6 +410,8 @@ const presentationOrderItems = sqliteTable(
 	],
 );
 
+// authorUserId / reviewedByUserId are retained historical ids without FK
+// cascade; auth user deletion does not scrub proposal audit.
 const presentationOrderProposals = sqliteTable(
 	"presentation_order_proposals",
 	{

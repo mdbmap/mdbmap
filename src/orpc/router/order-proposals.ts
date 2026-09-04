@@ -31,6 +31,19 @@ interface ProposalView {
 	readonly updatedAt: Date;
 }
 
+interface ProposalRow {
+	readonly authorUserId: string;
+	readonly continuityId: number;
+	readonly createdAt: Date;
+	readonly id: number;
+	readonly name: string;
+	readonly rationale: string;
+	readonly reviewedAt: Date | null;
+	readonly reviewedByUserId: string | null;
+	readonly status: (typeof presentationOrderProposalStatuses)[number];
+	readonly updatedAt: Date;
+}
+
 const uniqueSegmentIds = (ids: readonly number[]): boolean =>
 	new Set(ids).size === ids.length;
 
@@ -102,42 +115,60 @@ const itemsFor = async (
 		.orderBy(asc(presentationOrderProposalItems.position))
 		.all();
 
-const toView = async (
+const itemsForMany = async (
 	db: Db,
-	row: {
-		readonly authorUserId: string;
-		readonly continuityId: number;
-		readonly createdAt: Date;
-		readonly id: number;
-		readonly name: string;
-		readonly rationale: string;
-		readonly reviewedAt: Date | null;
-		readonly reviewedByUserId: string | null;
-		readonly status: (typeof presentationOrderProposalStatuses)[number];
-		readonly updatedAt: Date;
-	},
-): Promise<ProposalView> => {
+	proposalIds: readonly number[],
+): Promise<ReadonlyMap<number, readonly ProposalItemView[]>> => {
+	if (proposalIds.length === 0) {
+		return new Map();
+	}
+	const rows = await db
+		.select({
+			position: presentationOrderProposalItems.position,
+			proposalId: presentationOrderProposalItems.proposalId,
+			segmentId: presentationOrderProposalItems.segmentId,
+		})
+		.from(presentationOrderProposalItems)
+		.where(inArray(presentationOrderProposalItems.proposalId, [...proposalIds]))
+		.orderBy(
+			asc(presentationOrderProposalItems.proposalId),
+			asc(presentationOrderProposalItems.position),
+		)
+		.all();
+	const byProposal = new Map<number, ProposalItemView[]>();
+	for (const row of rows) {
+		const items = byProposal.get(row.proposalId) ?? [];
+		items.push({ position: row.position, segmentId: row.segmentId });
+		byProposal.set(row.proposalId, items);
+	}
+	return byProposal;
+};
+
+const toView = (
+	row: ProposalRow,
+	items: readonly ProposalItemView[],
+): ProposalView => {
 	const view: ProposalView = {
 		authorUserId: row.authorUserId,
 		continuityId: row.continuityId,
 		createdAt: row.createdAt,
 		id: row.id,
-		items: await itemsFor(db, row.id),
+		items,
 		name: row.name,
 		rationale: row.rationale,
 		status: row.status,
 		updatedAt: row.updatedAt,
 	};
-	if (row.reviewedAt !== null) {
-		return {
-			...view,
-			reviewedAt: row.reviewedAt,
-			...(row.reviewedByUserId === null
-				? {}
-				: { reviewedByUserId: row.reviewedByUserId }),
-		};
+	if (row.reviewedAt === null) {
+		return view;
 	}
-	return view;
+	return {
+		...view,
+		reviewedAt: row.reviewedAt,
+		...(row.reviewedByUserId === null
+			? {}
+			: { reviewedByUserId: row.reviewedByUserId }),
+	};
 };
 
 const loadProposal = async (
@@ -154,7 +185,23 @@ const loadProposal = async (
 			message: "Proposal not found.",
 		});
 	}
-	return toView(db, row);
+	return toView(row, await itemsFor(db, row.id));
+};
+
+const insertProposalId = (results: D1Result[]): number => {
+	const [proposalResult] = results;
+	const [row] = proposalResult?.results ?? [];
+	if (
+		typeof row !== "object" ||
+		row === null ||
+		!("id" in row) ||
+		typeof row.id !== "number"
+	) {
+		throw new ORPCError("INTERNAL_SERVER_ERROR", {
+			message: "Failed to create proposal.",
+		});
+	}
+	return row.id;
 };
 
 const create = authed
@@ -166,33 +213,38 @@ const create = authed
 			input.continuityId,
 			input.segmentIds,
 		);
-		const inserted = await context.db
-			.insert(presentationOrderProposals)
-			.values({
-				authorUserId: context.user.id,
-				continuityId: input.continuityId,
-				name: input.name,
-				rationale: input.rationale,
-				status: "pending",
-			})
-			.returning()
-			.get();
-		if (inserted === undefined) {
-			throw new ORPCError("INTERNAL_SERVER_ERROR", {
-				message: "Failed to create proposal.",
-			});
-		}
-		await context.db
-			.insert(presentationOrderProposalItems)
-			.values(
-				input.segmentIds.map((segmentId, position) => ({
-					position,
-					proposalId: inserted.id,
-					segmentId,
-				})),
-			)
-			.run();
-		return toView(context.db, inserted);
+		const itemValues = input.segmentIds.map(() => "(?, ?)").join(", ");
+		const itemBinds = input.segmentIds.flatMap((segmentId, position) => [
+			position,
+			segmentId,
+		]);
+		const proposalId = insertProposalId(
+			await context.db.$client.batch([
+				context.db.$client
+					.prepare(
+						`INSERT INTO presentation_order_proposals
+							(author_user_id, continuity_id, name, rationale, status)
+						 VALUES (?, ?, ?, ?, 'pending')
+						 RETURNING id`,
+					)
+					.bind(
+						context.user.id,
+						input.continuityId,
+						input.name,
+						input.rationale,
+					),
+				context.db.$client
+					.prepare(
+						`INSERT INTO presentation_order_proposal_items
+							(proposal_id, position, segment_id)
+						 SELECT p.proposal_id, v.column1, v.column2
+						 FROM (SELECT last_insert_rowid() AS proposal_id) AS p,
+						      (VALUES ${itemValues}) AS v`,
+					)
+					.bind(...itemBinds),
+			]),
+		);
+		return loadProposal(context.db, proposalId);
 	});
 
 const list = authed
@@ -205,7 +257,11 @@ const list = authed
 			.where(eq(presentationOrderProposals.continuityId, input.continuityId))
 			.orderBy(asc(presentationOrderProposals.id))
 			.all();
-		return Promise.all(rows.map(async (row) => toView(context.db, row)));
+		const itemsByProposal = await itemsForMany(
+			context.db,
+			rows.map((row) => row.id),
+		);
+		return rows.map((row) => toView(row, itemsByProposal.get(row.id) ?? []));
 	});
 
 const get = authed
@@ -238,7 +294,7 @@ const review = async (
 			message: "Only pending proposals can be reviewed.",
 		});
 	}
-	await db
+	const updated = await db
 		.update(presentationOrderProposals)
 		.set({
 			reviewedAt: new Date(),
@@ -251,7 +307,13 @@ const review = async (
 				eq(presentationOrderProposals.status, "pending"),
 			),
 		)
-		.run();
+		.returning({ id: presentationOrderProposals.id })
+		.all();
+	if (updated.length === 0) {
+		throw new ORPCError("BAD_REQUEST", {
+			message: "Only pending proposals can be reviewed.",
+		});
+	}
 	return loadProposal(db, proposalId);
 };
 
