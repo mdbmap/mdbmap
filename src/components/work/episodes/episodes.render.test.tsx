@@ -90,11 +90,11 @@ const idleSession = {
 	refetch: noopClose,
 };
 
-const episode = (locator: string, title: string): EpisodeView => ({
+const episode = (locator: string, title: string, number = 1): EpisodeView => ({
 	airDate: "2022-04-09",
 	communityScore: emptyScore,
 	instalmentLocator: locator,
-	number: 1,
+	number,
 	personalRating: undefined,
 	rateableUnit: { key: `episode:${locator}`, kind: "episode" },
 	title,
@@ -118,9 +118,10 @@ const part = (label: string, title: string): PartView => ({
 const partOne = part("Part 1", "Operation Strix");
 const partTwo = part("Part 2", "The Counterespionage");
 const parts = [partOne, partTwo];
-const ratedPartOneEpisodes: EpisodeView[] = partOne.episodes.map(
-	(row, index) => (index === 0 ? { ...row, personalRating: 8 } : row),
-);
+const ratedPartOneEpisodes: EpisodeView[] = [
+	{ ...episode("Part 1:1", "Operation Strix", 1), personalRating: 8 },
+	episode("Part 1:2", "Secure a Wife", 2),
+];
 
 const dawn: FilmView = {
 	airDate: "2020-01-17",
@@ -210,15 +211,7 @@ describe("Episodes", () => {
 		expect(html).not.toContain("The Counterespionage");
 	});
 
-	it("renders a score select on each episode row", () => {
-		useSession.mockReturnValue({
-			...idleSession,
-			data: {
-				session: { id: "s1", userId: "u1" },
-				user: { email: "ada@example.com", id: "u1", name: "Ada" },
-			},
-		});
-		usePartSelectionStore.getState().selectKey(partOne.rateableUnit.key);
+	it("renders a score select reflecting each episode rating", () => {
 		const html = renderToStaticMarkup(
 			<EpisodeList
 				episodes={ratedPartOneEpisodes}
@@ -226,9 +219,12 @@ describe("Episodes", () => {
 				onToggle={noop}
 			/>,
 		);
-		expect(html).toContain('aria-label="Your score for episode 01"');
-		expect(html).toContain('value="8"');
-		expect(html).toContain("selected");
+		expect(html).toMatch(
+			/aria-label="Your score for episode 01"[^>]*>[\s\S]*?<option value="8" selected="">/u,
+		);
+		expect(html).toMatch(
+			/aria-label="Your score for episode 02"[^>]*>[\s\S]*?<option value="" selected="">/u,
+		);
 	});
 
 	it("embeds a sign-in dialog for signed-out episode watched toggles", () => {

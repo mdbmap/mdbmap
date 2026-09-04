@@ -17,7 +17,7 @@ import { Episodes } from "./episodes";
 import { FilmRow } from "./film-row";
 
 const { capturedScores, setRating, useSession } = vi.hoisted(() => {
-	const handlers: ((score: number | undefined) => void)[] = [];
+	const handlers = new Map<string, (score: number | undefined) => void>();
 	return {
 		capturedScores: handlers,
 		setRating: vi.fn<(unit: RateableUnit, score: number | undefined) => void>(),
@@ -100,7 +100,7 @@ vi.mock("@/components/work/score-select", () => ({
 		onChange: (score: number | undefined) => void;
 		value: number | undefined;
 	}) => {
-		capturedScores.push(onChange);
+		capturedScores.set(label, onChange);
 		return (
 			<select aria-label={label} value={value ?? ""}>
 				<option value="">{UNRATED_LABEL}</option>
@@ -183,7 +183,7 @@ const noopToggle =
 
 describe("episode and film rating wiring", () => {
 	afterEach(() => {
-		capturedScores.length = 0;
+		capturedScores.clear();
 		setRating.mockReset();
 		useSession.mockReset();
 		usePartSelectionStore.setState({ selectedKey: undefined });
@@ -199,9 +199,10 @@ describe("episode and film rating wiring", () => {
 				onToggle={noopToggle}
 			/>,
 		);
-		expect(capturedScores).toHaveLength(1);
-		capturedScores[0]?.(7);
-		capturedScores[0]?.(undefined);
+		const rateEpisode = capturedScores.get("Your score for episode 01");
+		expect(rateEpisode).toBeDefined();
+		rateEpisode?.(7);
+		rateEpisode?.(undefined);
 		expect(onRate).toHaveBeenNthCalledWith(
 			1,
 			{ key: "anidb:1#1", kind: "episode" },
@@ -220,8 +221,9 @@ describe("episode and film rating wiring", () => {
 		renderToStaticMarkup(
 			<FilmRow film={dawn} onRate={onRate} onToggle={noopToggle} />,
 		);
-		expect(capturedScores).toHaveLength(1);
-		capturedScores[0]?.(8);
+		const rateFilm = capturedScores.get("Your score for Dawn of the Deep Soul");
+		expect(rateFilm).toBeDefined();
+		rateFilm?.(8);
 		expect(onRate).toHaveBeenCalledWith(
 			{ key: "anidb:film#1", kind: "movie" },
 			8,
@@ -236,8 +238,9 @@ describe("episode and film rating wiring", () => {
 				<Episodes continuityId="continuity:x" parts={partOnly} />
 			</QueryClientProvider>,
 		);
-		expect(capturedScores.length).toBeGreaterThan(0);
-		capturedScores[0]?.(9);
+		const rateEpisode = capturedScores.get("Your score for episode 01");
+		expect(rateEpisode).toBeDefined();
+		rateEpisode?.(9);
 		expect(setRating).toHaveBeenCalledWith(
 			{ key: "anidb:1#1", kind: "episode" },
 			9,
@@ -251,8 +254,9 @@ describe("episode and film rating wiring", () => {
 				<PartPanel continuityId="continuity:x" parts={partOnly} />
 			</QueryClientProvider>,
 		);
-		expect(capturedScores.length).toBeGreaterThan(0);
-		capturedScores[0]?.(9);
+		const ratePart = capturedScores.get("Your score for Part 1");
+		expect(ratePart).toBeDefined();
+		ratePart?.(9);
 		expect(setRating).toHaveBeenCalledWith(
 			{ key: "part:Part 1", kind: "part" },
 			9,
