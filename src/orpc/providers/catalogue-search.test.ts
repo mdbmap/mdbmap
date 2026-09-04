@@ -29,13 +29,21 @@ describe("createCatalogueSearchProvider unfiltered merge", () => {
 		const anilistHits = [anime("1", "A1"), anime("2", "A2"), anime("3", "A3")];
 		const tmdbHits = [film("10", "T1"), film("20", "T2"), film("30", "T3")];
 		const anilist: AnilistCatalogueSearch = {
-			search: (_query: string): readonly CatalogueSearchHit[] => anilistHits,
+			search: async (
+				_query: string,
+			): Promise<readonly CatalogueSearchHit[]> => {
+				await Promise.resolve();
+				return anilistHits;
+			},
 		};
 		const tmdb: TmdbCatalogueSearch = {
-			search: (
+			search: async (
 				_query: string,
 				_scope: TmdbSearchScope,
-			): readonly CatalogueSearchHit[] => tmdbHits,
+			): Promise<readonly CatalogueSearchHit[]> => {
+				await Promise.resolve();
+				return tmdbHits;
+			},
 		};
 		const provider = createCatalogueSearchProvider({
 			anilist,
@@ -46,19 +54,27 @@ describe("createCatalogueSearchProvider unfiltered merge", () => {
 		const results = await provider.search("query");
 		expect(results.map((hit) => hit.title)).toEqual(["T1", "A1", "T2", "A2"]);
 	});
+});
 
+describe("createCatalogueSearchProvider provider failure", () => {
 	it("keeps fulfilled hits when one provider rejects", async () => {
 		const tmdbHits = [film("10", "T1"), film("20", "T2")];
 		const anilist: AnilistCatalogueSearch = {
-			search: (_query: string): readonly CatalogueSearchHit[] => {
+			search: async (
+				_query: string,
+			): Promise<readonly CatalogueSearchHit[]> => {
+				await Promise.resolve();
 				throw new Error("anilist down");
 			},
 		};
 		const tmdb: TmdbCatalogueSearch = {
-			search: (
+			search: async (
 				_query: string,
 				_scope: TmdbSearchScope,
-			): readonly CatalogueSearchHit[] => tmdbHits,
+			): Promise<readonly CatalogueSearchHit[]> => {
+				await Promise.resolve();
+				return tmdbHits;
+			},
 		};
 		const provider = createCatalogueSearchProvider({
 			anilist,
