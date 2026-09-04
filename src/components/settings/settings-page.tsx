@@ -246,7 +246,7 @@ function BillingActions() {
 	);
 }
 
-function SettingsPage({ entries }: { entries: readonly LibraryEntry[] }) {
+export function SettingsPage({ entries }: { entries: readonly LibraryEntry[] }) {
 	return (
 		<main className={page()}>
 			<SettingsHeader />
@@ -257,5 +257,3 @@ function SettingsPage({ entries }: { entries: readonly LibraryEntry[] }) {
 		</main>
 	);
 }
-
-export { SettingsPage };
