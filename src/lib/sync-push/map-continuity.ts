@@ -1,4 +1,8 @@
-import type { SyncAccountProvider, WatchStatus } from "@/db/schema";
+import type {
+	RateableUnitKind,
+	SyncAccountProvider,
+	WatchStatus,
+} from "@/db/schema";
 import type { MemberTitles, ResolveResult } from "@/engine";
 
 import { mapScore, mapWatchStatus } from "./scale.ts";
@@ -15,7 +19,7 @@ interface TrackingSnapshot {
 	readonly ratings: readonly {
 		readonly score: number;
 		readonly unitKey: string;
-		readonly unitKind: "episode" | "movie" | "part" | "work";
+		readonly unitKind: RateableUnitKind;
 	}[];
 	readonly status: WatchStatus | undefined;
 }
