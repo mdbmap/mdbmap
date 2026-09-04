@@ -82,12 +82,13 @@ describe("SiteHeader", () => {
 		expect(html).toContain("px-8 py-3.5");
 	});
 
-	it("links library when signed in", () => {
+	it("links library and stats when signed in", () => {
 		useSession.mockReturnValue(signedIn);
 		const html = renderToStaticMarkup(<SiteHeader current="library" />);
 		expect(html).toContain('href="/"');
 		expect(html).toContain('href="/search"');
 		expect(html).toContain('href="/library"');
+		expect(html).toContain('href="/stats"');
 		expect(classOf(html, "/library")).toContain("text-accent");
 	});
 

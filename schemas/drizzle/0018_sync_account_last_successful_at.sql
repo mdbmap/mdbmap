@@ -1,0 +1,1 @@
+ALTER TABLE `sync_account_link` ADD `last_successful_at` integer;

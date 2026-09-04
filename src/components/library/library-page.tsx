@@ -44,6 +44,8 @@ const metaLine = (entry: LibraryEntry) =>
 		formatStatus(entry.status),
 		`${entry.watchedInstalments} / ${entry.totalInstalments}`,
 		entry.rewatchCount > 0 ? `rewatch ×${entry.rewatchCount}` : undefined,
+		entry.startedAt === undefined ? undefined : `started ${entry.startedAt}`,
+		entry.finishedAt === undefined ? undefined : `finished ${entry.finishedAt}`,
 	]
 		.filter((part) => part !== undefined)
 		.join(" · ");

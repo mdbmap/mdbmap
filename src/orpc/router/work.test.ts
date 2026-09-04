@@ -79,6 +79,15 @@ const similar = (continuityId: string, title: string): Similar => ({
 	title,
 });
 
+describe("work.get missing continuity", () => {
+	it("rejects an unknown continuity as NOT_FOUND", async () => {
+		const db = await freshDb();
+		await expect(
+			clientFor(db).work.get({ continuityId: "continuity:999999" }),
+		).rejects.toMatchObject({ code: "NOT_FOUND" });
+	});
+});
+
 describe("work.get similar links", () => {
 	it("resolves seeded TMDB and AniDB refs while preserving unresolved refs", async () => {
 		const db = await freshDb();
@@ -216,6 +225,38 @@ describe("work.get presentation orders", () => {
 		);
 		expect(release.parts.every((part) => part.kind === "part")).toBe(true);
 		expect(JSON.stringify(watch)).not.toMatch(/matching.?order/iu);
+	});
+});
+
+describe("work.get catalogues", () => {
+	it("surfaces unique Spy × Family counterpart ids and the TMDB tv URL", async () => {
+		const db = await freshDb();
+		const { continuityId } = await seedSpyXFamily(db);
+		const view = await clientFor(db).work.get({ continuityId });
+		const idsOf = (service: string) =>
+			view.catalogues
+				.filter((link) => link.service === service)
+				.map((link) => link.id);
+
+		expect(idsOf("anidb")).toEqual(["16947", "17061", "17784"]);
+		expect(idsOf("mal")).toEqual(["50265", "50602", "53887"]);
+		expect(idsOf("anilist")).toEqual(["140960", "142838", "158927"]);
+		expect(idsOf("tmdb")).toEqual(["120089"]);
+		expect(view.catalogues.find((link) => link.service === "tmdb")?.href).toBe(
+			"https://www.themoviedb.org/tv/120089",
+		);
+		expect(view.catalogues.map((link) => link.service)).toEqual([
+			"anidb",
+			"anidb",
+			"anidb",
+			"mal",
+			"mal",
+			"mal",
+			"anilist",
+			"anilist",
+			"anilist",
+			"tmdb",
+		]);
 	});
 });
 

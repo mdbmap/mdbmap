@@ -6,13 +6,24 @@ import { tv } from "tailwind-variants";
 import { Label } from "@/components/ui/label";
 import { ThemeToggle } from "@/components/ui/theme-toggle";
 import { BetterAuthHeader } from "@/integrations/better-auth/header-user";
+import { authClient } from "@/lib/auth-client";
 import { orpc } from "@/orpc/client";
+import type { LibraryEntry } from "@/orpc/schema";
+
+import { downloadLibraryExport, libraryExportJson } from "./library-export";
+import { SyncTargetsActions } from "./sync-targets-actions.tsx";
 
 const BRAND = "mdbmap";
 const TITLE = "Settings";
-const TAGLINE = "Manage sync billing for this account.";
+const TAGLINE = "Account, a copy of what you track, and paid sync.";
 const LIBRARY_NAV = "Library";
 const SEARCH_NAV = "Search";
+const ACCOUNT = "Account";
+const UNSIGNED = "Sign in to manage your account.";
+const NAME_LABEL = "Name";
+const EMAIL_LABEL = "Email";
+const EXPORT_LABEL = "Export library";
+const EXPORT_HINT = "Downloads a JSON file of every tracked work.";
 const SYNC_HEADING = "Paid sync";
 const SYNC_BODY =
 	"Outbound library sync is a paid feature. Checkout and billing are handled by Stripe.";
@@ -86,6 +97,61 @@ function SettingsIntro() {
 		<section className="flex flex-col gap-3">
 			<Label>{TITLE}</Label>
 			<p className="text-ink/60 max-w-prose text-sm">{TAGLINE}</p>
+		</section>
+	);
+}
+
+function AccountCard({
+	email,
+	name,
+}: {
+	email: string | undefined;
+	name: string | undefined;
+}) {
+	if (email === undefined && name === undefined) {
+		return <p className="text-ink/70 text-[15px]">{UNSIGNED}</p>;
+	}
+	return (
+		<dl>
+			<div className="border-line flex items-baseline justify-between border-t py-4">
+				<dt className="text-ink/50 font-mono text-[11px] uppercase">
+					{NAME_LABEL}
+				</dt>
+				<dd className="text-ink/90 font-serif text-xl italic">{name}</dd>
+			</div>
+			<div className="border-line flex items-baseline justify-between border-t py-4">
+				<dt className="text-ink/50 font-mono text-[11px] uppercase">
+					{EMAIL_LABEL}
+				</dt>
+				<dd className="text-ink/70 font-mono text-[13px]">{email}</dd>
+			</div>
+		</dl>
+	);
+}
+
+function AccountSection() {
+	const { data: session } = authClient.useSession();
+	const user = session?.user;
+	return (
+		<section className="border-line flex flex-col gap-4 border-t pt-6">
+			<h2 className="font-display text-xl tracking-tight">{ACCOUNT}</h2>
+			<AccountCard email={user?.email} name={user?.name} />
+		</section>
+	);
+}
+
+function ExportButton({ entries }: { entries: readonly LibraryEntry[] }) {
+	const onExport = useCallback(() => {
+		downloadLibraryExport(libraryExportJson(entries, new Date().toISOString()));
+	}, [entries]);
+	return (
+		<section className="border-line flex flex-col gap-4 border-t pt-6">
+			<p className="text-ink/60 font-mono text-xs">{EXPORT_HINT}</p>
+			<p>
+				<button data-cta onClick={onExport} type="button">
+					{EXPORT_LABEL}
+				</button>
+			</p>
 		</section>
 	);
 }
@@ -181,14 +247,18 @@ function BillingActions() {
 	);
 }
 
-function SettingsPage() {
+export function SettingsPage({ entries }: { entries: readonly LibraryEntry[] }) {
+	const statusQuery = useQuery(orpc.billing.status.queryOptions());
+	const entitlement = statusQuery.data?.status ?? "inactive";
+
 	return (
 		<main className={page()}>
 			<SettingsHeader />
 			<SettingsIntro />
+			<AccountSection />
+			<ExportButton entries={entries} />
 			<BillingActions />
+			<SyncTargetsActions entitlement={entitlement} />
 		</main>
 	);
 }
-
-export { SettingsPage };

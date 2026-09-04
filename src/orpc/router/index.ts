@@ -1,8 +1,10 @@
 import { apiKeys } from "./api-keys";
 import { billing } from "./billing";
+import { libraryImport } from "./import";
 import { ingest } from "./ingest";
 import { library } from "./library";
 import { moderation } from "./moderation";
+import { orderProposals } from "./order-proposals";
 import { orders } from "./orders";
 import { providers } from "./providers";
 import { search } from "./search";
@@ -13,9 +15,11 @@ import { work } from "./work";
 export const router = {
 	apiKeys,
 	billing,
+	import: libraryImport,
 	ingest,
 	library,
 	moderation,
+	orderProposals,
 	orders,
 	providers,
 	search,

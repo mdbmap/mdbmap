@@ -8,9 +8,11 @@ import { authClient } from "@/lib/auth-client";
 const BRAND = "mdbmap";
 const SEARCH_NAV = "Search";
 const LIBRARY_NAV = "Library";
+const STATS_NAV = "Stats";
 const HOME_PATH = "/";
 const SEARCH_PATH = "/search";
 const LIBRARY_PATH = "/library";
+const STATS_PATH = "/stats";
 
 const header = tv({
 	base: "flex items-center justify-between",
@@ -38,8 +40,8 @@ const navItem = tv({
 	},
 });
 
-type HeaderCurrent = "home" | "library" | "search";
-type HeaderTo = typeof LIBRARY_PATH | typeof SEARCH_PATH;
+type HeaderCurrent = "home" | "library" | "search" | "stats";
+type HeaderTo = typeof LIBRARY_PATH | typeof SEARCH_PATH | typeof STATS_PATH;
 
 interface SiteHeaderProps {
 	current?: HeaderCurrent;
@@ -83,11 +85,18 @@ function SiteHeader({ current, padded = true }: SiteHeaderProps) {
 					to={SEARCH_PATH}
 				/>
 				{showLibrary ? (
-					<HeaderLink
-						active={current === "library"}
-						label={LIBRARY_NAV}
-						to={LIBRARY_PATH}
-					/>
+					<>
+						<HeaderLink
+							active={current === "library"}
+							label={LIBRARY_NAV}
+							to={LIBRARY_PATH}
+						/>
+						<HeaderLink
+							active={current === "stats"}
+							label={STATS_NAV}
+							to={STATS_PATH}
+						/>
+					</>
 				) : undefined}
 			</nav>
 			<div className="flex items-center gap-4">

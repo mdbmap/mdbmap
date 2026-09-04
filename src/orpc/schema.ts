@@ -59,6 +59,10 @@ const SetEpisodeWatchedInput = z.object({
 	watched: z.boolean(),
 });
 
+const RemoveTrackingInput = z.object({
+	continuityId: z.string().min(1),
+});
+
 // Omit `score` (or pass undefined) to clear the rating; the repo avoids null.
 const SetRatingInput = z.object({
 	score: ScoreSchema.optional(),
@@ -299,8 +303,16 @@ interface ViewerTracking {
 	watched: string[];
 }
 
+interface CatalogueLink {
+	href: string;
+	id: string;
+	label: string;
+	service: "anidb" | "anilist" | "imdb" | "mal" | "tmdb";
+}
+
 interface WorkView {
 	cast: Credit[];
+	catalogues: CatalogueLink[];
 	communityScore: CommunityScore;
 	continuityId: string;
 	header: WorkHeader;
@@ -317,13 +329,19 @@ interface TrackingSummary {
 	status: WatchStatus | undefined;
 }
 
+interface TrackingRemoveResult {
+	removed: true;
+}
+
 // `title` and `coverRef` are absent when the metadata provider could not be
 // reached for that continuity; the rest of the row still comes from D1.
 interface LibraryEntry {
 	continuityId: string;
 	coverRef: string | undefined;
+	finishedAt: string | undefined;
 	personalRating: number | undefined;
 	rewatchCount: number;
+	startedAt: string | undefined;
 	status: WatchStatus;
 	title: string | undefined;
 	totalInstalments: number;
@@ -352,6 +370,7 @@ export {
 	MintApiKeyInput,
 	RateableUnitInput,
 	RemoveProviderInput,
+	RemoveTrackingInput,
 	ResearchTimingSchema,
 	RevokeApiKeyInput,
 	LibraryListInput,
@@ -370,6 +389,7 @@ export {
 export type {
 	AdminIngestStartResult,
 	ApiKeyRow,
+	CatalogueLink,
 	CatalogueTitle,
 	CommunityScore,
 	Credit,
@@ -387,6 +407,7 @@ export type {
 	SearchHit,
 	ServiceRating,
 	Similar,
+	TrackingRemoveResult,
 	TrackingSummary,
 	ViewerTracking,
 	WorkBlock,
