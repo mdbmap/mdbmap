@@ -79,11 +79,31 @@ const fetchMalListPage = async (
 	return MalListPageSchema.parse(await response.json());
 };
 
+const allowedNextUrl = (
+	candidate: string | undefined,
+	allowedOrigin: string,
+): string | undefined => {
+	if (candidate === undefined) {
+		return undefined;
+	}
+	let next: URL;
+	try {
+		next = new URL(candidate);
+	} catch {
+		return undefined;
+	}
+	if (next.origin !== allowedOrigin) {
+		return undefined;
+	}
+	return candidate;
+};
+
 const collectMalAnimeList = async (
 	nextUrl: string | undefined,
 	accessToken: string,
 	fetchImpl: typeof fetch,
 	timeoutMs: number,
+	allowedOrigin: string,
 	entries: ImportListEntry[],
 ): Promise<readonly ImportListEntry[]> => {
 	if (nextUrl === undefined) {
@@ -99,10 +119,11 @@ const collectMalAnimeList = async (
 		entries.push(entryOf(row));
 	}
 	return collectMalAnimeList(
-		page.paging?.next,
+		allowedNextUrl(page.paging?.next, allowedOrigin),
 		accessToken,
 		fetchImpl,
 		timeoutMs,
+		allowedOrigin,
 		entries,
 	);
 };
@@ -113,12 +134,14 @@ const fetchMalAnimeList = async (
 	const fetchImpl = input.fetchImpl ?? fetch;
 	const timeoutMs = input.timeoutMs ?? DEFAULT_TIMEOUT_MS;
 	const baseUrl = input.baseUrl ?? DEFAULT_MAL_URL;
+	const allowedOrigin = new URL(baseUrl).origin;
 	const firstUrl = `${baseUrl}/users/@me/animelist?fields=list_status&limit=${String(PAGE_LIMIT)}&nsfw=true`;
 	return collectMalAnimeList(
 		firstUrl,
 		input.accessToken,
 		fetchImpl,
 		timeoutMs,
+		allowedOrigin,
 		[],
 	);
 };

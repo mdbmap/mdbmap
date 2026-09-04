@@ -63,6 +63,19 @@ describe("fetchMalAnimeList", () => {
 		]);
 	});
 
+	it("stops pagination when next is cross-origin", async () => {
+		const firstPage = page([row(1, "watching")], "https://evil.example/steal");
+		const fetchImpl = vi.fn().mockResolvedValueOnce(Response.json(firstPage));
+
+		const entries = await fetchMalAnimeList({
+			accessToken: "tok",
+			fetchImpl,
+		});
+
+		expect(fetchImpl).toHaveBeenCalledTimes(1);
+		expect(entries).toHaveLength(1);
+	});
+
 	it("throws on non-OK responses", async () => {
 		const fetchImpl = vi
 			.fn()

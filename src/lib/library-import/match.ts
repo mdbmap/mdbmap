@@ -1,9 +1,12 @@
 import { and, asc, eq, inArray } from "drizzle-orm";
 
 import type { Db } from "@/db";
-import { continuitySegments, serviceTitles } from "@/db/engine-schema";
+import {
+	continuityAliases,
+	continuitySegments,
+	serviceTitles,
+} from "@/db/engine-schema";
 import { continuityKey } from "@/engine/continuity/keys";
-import { survivorContinuityId } from "@/engine/continuity/persist";
 
 import { proposedScoreOf, proposedStatusOf } from "./map-status.ts";
 import type {
@@ -14,7 +17,7 @@ import type {
 	ImportUnmatchedRow,
 } from "./types.ts";
 
-const CHUNK = 200;
+const CHUNK = 50;
 
 const chunked = <T>(items: readonly T[], size: number): T[][] => {
 	const out: T[][] = [];
@@ -31,6 +34,61 @@ const mergeMalContinuities = (
 ): void => {
 	const prior = byMal.get(serviceId) ?? [];
 	byMal.set(serviceId, [...new Set([...prior, ...keys])]);
+};
+
+const loadSurvivorByRetired = async (
+	db: Db,
+	continuityIds: readonly number[],
+): Promise<ReadonlyMap<number, number>> => {
+	const survivors = new Map<number, number>();
+	for (const id of continuityIds) {
+		survivors.set(id, id);
+	}
+	const uniqueIds = [...new Set(continuityIds)];
+	if (uniqueIds.length === 0) {
+		return survivors;
+	}
+	const pages = await Promise.all(
+		chunked(uniqueIds, CHUNK).map(async (slice) =>
+			db
+				.select({
+					retiredContinuityId: continuityAliases.retiredContinuityId,
+					survivorContinuityId: continuityAliases.survivorContinuityId,
+				})
+				.from(continuityAliases)
+				.where(inArray(continuityAliases.retiredContinuityId, slice))
+				.all(),
+		),
+	);
+	for (const rows of pages) {
+		for (const row of rows) {
+			survivors.set(row.retiredContinuityId, row.survivorContinuityId);
+		}
+	}
+	return survivors;
+};
+
+const loadSegmentRows = async (
+	db: Db,
+	titleIds: readonly number[],
+): Promise<readonly { continuityId: number; titleId: number }[]> => {
+	if (titleIds.length === 0) {
+		return [];
+	}
+	const pages = await Promise.all(
+		chunked(titleIds, CHUNK).map(async (slice) =>
+			db
+				.select({
+					continuityId: continuitySegments.continuityId,
+					titleId: continuitySegments.titleId,
+				})
+				.from(continuitySegments)
+				.where(inArray(continuitySegments.titleId, slice))
+				.orderBy(asc(continuitySegments.continuityId))
+				.all(),
+		),
+	);
+	return pages.flat();
 };
 
 const loadMalContinuityPage = async (
@@ -56,40 +114,31 @@ const loadMalContinuityPage = async (
 	}
 
 	const titleIds = titleRows.map((row) => row.titleId);
-	const segmentRows = await db
-		.select({
-			continuityId: continuitySegments.continuityId,
-			titleId: continuitySegments.titleId,
-		})
-		.from(continuitySegments)
-		.where(inArray(continuitySegments.titleId, titleIds))
-		.orderBy(asc(continuitySegments.continuityId))
-		.all();
+	const segmentRows = await loadSegmentRows(db, titleIds);
 
 	const continuityByTitle = new Map<number, number[]>();
+	const rawContinuityIds: number[] = [];
 	for (const row of segmentRows) {
 		const existing = continuityByTitle.get(row.titleId) ?? [];
 		existing.push(row.continuityId);
 		continuityByTitle.set(row.titleId, existing);
+		rawContinuityIds.push(row.continuityId);
 	}
 
-	await Promise.all(
-		titleRows.map(async (title) => {
-			const rawIds = continuityByTitle.get(title.titleId) ?? [];
-			if (rawIds.length === 0) {
-				byMal.set(title.serviceId, byMal.get(title.serviceId) ?? []);
-				return;
-			}
-			const survivors = await Promise.all(
-				rawIds.map(async (id) => survivorContinuityId(db, id)),
-			);
-			mergeMalContinuities(
-				byMal,
-				title.serviceId,
-				survivors.map((id) => continuityKey(id)),
-			);
-		}),
-	);
+	const survivors = await loadSurvivorByRetired(db, rawContinuityIds);
+
+	for (const title of titleRows) {
+		const rawIds = continuityByTitle.get(title.titleId) ?? [];
+		if (rawIds.length === 0) {
+			byMal.set(title.serviceId, byMal.get(title.serviceId) ?? []);
+			continue;
+		}
+		mergeMalContinuities(
+			byMal,
+			title.serviceId,
+			rawIds.map((id) => continuityKey(survivors.get(id) ?? id)),
+		);
+	}
 
 	return byMal;
 };
