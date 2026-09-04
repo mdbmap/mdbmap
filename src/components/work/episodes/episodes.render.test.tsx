@@ -336,6 +336,14 @@ describe("Episodes orders", () => {
 		expect(html).not.toContain("Propose order");
 	});
 
+	it("still offers propose when only one builtin order exists", () => {
+		useSession.mockReturnValue(idleSession);
+		const html = renderOrdered(releaseOnly, [], sampleProposalSegments);
+		expect(html).not.toContain("Release");
+		expect(html).not.toContain("Watch");
+		expect(html).toContain("Propose order");
+	});
+
 	it("shows an accepted community order in the selector", () => {
 		useSession.mockReturnValue(idleSession);
 		const html = renderOrdered(
