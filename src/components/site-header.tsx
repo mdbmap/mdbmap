@@ -25,6 +25,9 @@ const header = tv({
 	},
 });
 
+const brandClass =
+	"text-accent font-mono text-xs font-medium tracking-[0.1em] uppercase";
+
 const navItem = tv({
 	base: "font-mono text-xs tracking-[0.1em] uppercase",
 	variants: {
@@ -36,11 +39,19 @@ const navItem = tv({
 });
 
 type HeaderCurrent = "home" | "library" | "search";
-type HeaderTo = typeof HOME_PATH | typeof LIBRARY_PATH | typeof SEARCH_PATH;
+type HeaderTo = typeof LIBRARY_PATH | typeof SEARCH_PATH;
 
 interface SiteHeaderProps {
 	current?: HeaderCurrent;
 	padded?: boolean;
+}
+
+function BrandLink({ active }: { active: boolean }) {
+	return (
+		<Link aria-current={active ? "page" : undefined} to={HOME_PATH}>
+			<span className={brandClass}>{BRAND}</span>
+		</Link>
+	);
 }
 
 function HeaderLink({
@@ -53,7 +64,7 @@ function HeaderLink({
 	to: HeaderTo;
 }) {
 	return (
-		<Link to={to}>
+		<Link aria-current={active ? "page" : undefined} to={to}>
 			<span className={navItem({ active })}>{label}</span>
 		</Link>
 	);
@@ -65,7 +76,7 @@ function SiteHeader({ current, padded = true }: SiteHeaderProps) {
 	return (
 		<header className={header({ padded })}>
 			<nav className="flex items-center gap-5">
-				<HeaderLink active={current === "home"} label={BRAND} to={HOME_PATH} />
+				<BrandLink active={current === "home"} />
 				<HeaderLink
 					active={current === "search"}
 					label={SEARCH_NAV}

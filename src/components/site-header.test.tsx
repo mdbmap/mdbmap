@@ -13,8 +13,18 @@ const noop = () => {
 };
 
 vi.mock("@tanstack/react-router", () => ({
-	Link: ({ children, to }: { children: ReactNode; to: string }) => (
-		<a href={to}>{children}</a>
+	Link: ({
+		"aria-current": ariaCurrent,
+		children,
+		to,
+	}: {
+		"aria-current"?: "page";
+		children: ReactNode;
+		to: string;
+	}) => (
+		<a aria-current={ariaCurrent} href={to}>
+			{children}
+		</a>
 	),
 }));
 
@@ -44,12 +54,16 @@ const signedIn = {
 };
 
 const classOf = (html: string, href: string) => {
-	const prefix = `<a href="${href}"><span class="`;
-	const start = html.indexOf(prefix);
-	if (start === -1) {
+	const marker = `href="${href}"`;
+	const hrefAt = html.indexOf(marker);
+	if (hrefAt === -1) {
 		return;
 	}
-	const from = start + prefix.length;
+	const spanAt = html.indexOf('<span class="', hrefAt);
+	if (spanAt === -1) {
+		return;
+	}
+	const from = spanAt + '<span class="'.length;
 	const stop = html.indexOf('"', from);
 	return html.slice(from, stop);
 };
@@ -89,11 +103,12 @@ describe("SiteHeader", () => {
 		expect(html).not.toContain('href="/library"');
 	});
 
-	it("marks the current item and leaves the rest idle", () => {
+	it("marks the current item and keeps the wordmark accented", () => {
 		useSession.mockReturnValue(signedIn);
 		const html = renderToStaticMarkup(<SiteHeader current="search" />);
 		expect(classOf(html, "/search")).toContain("text-accent");
-		expect(classOf(html, "/")).toContain("text-ink/50");
+		expect(html).toContain('aria-current="page"');
+		expect(classOf(html, "/")).toContain("text-accent");
 		expect(classOf(html, "/library")).toContain("text-ink/50");
 	});
 
