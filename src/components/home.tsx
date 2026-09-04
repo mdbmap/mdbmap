@@ -1,5 +1,6 @@
 import { useState } from "react";
 
+import { ContinueWatching } from "@/components/home-continue";
 import { SiteHeader } from "@/components/site-header";
 import { Label } from "@/components/ui/label";
 import { Section } from "@/components/ui/section";
@@ -153,6 +154,7 @@ export function Home({
 	return (
 		<main className="mx-auto flex min-h-screen max-w-3xl flex-col gap-14 px-8 py-14">
 			<SiteHeader current="home" padded={false} />
+			<ContinueWatching />
 			{onSigninOpenChange === undefined ? (
 				<Hero signinOpen={signinOpen} />
 			) : (

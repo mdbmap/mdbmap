@@ -165,6 +165,11 @@ describe("library.list", () => {
 				continuityId,
 				coverRef: `https://img.test/${continuityId}.jpg`,
 				finishedAt: undefined,
+				nextUp: {
+					number: 4,
+					partLabel: "Part 1",
+					title: "Episode 4",
+				},
 				personalRating: 9,
 				rewatchCount: 2,
 				startedAt: "2026-04-09",
