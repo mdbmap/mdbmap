@@ -16,7 +16,7 @@ vi.mock("@tanstack/react-router", () => ({
 		params?: { continuityId: number | string };
 		to: string;
 	}) => (
-		<a href={to.replace("$continuityId", String(params?.continuityId))}>
+		<a href={to.replace("$continuityId", String(params?.continuityId ?? ""))}>
 			{children}
 		</a>
 	),
@@ -96,6 +96,7 @@ describe("LibraryPage empty state", () => {
 		expect(html).toContain("Nothing tracked yet.");
 		expect(html).toContain("0 works");
 		expect(html).toContain('href="/"');
+		expect(html).toContain('href="/search"');
 		expect(html).not.toContain("/work/");
 	});
 });

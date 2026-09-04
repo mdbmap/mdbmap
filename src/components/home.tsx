@@ -12,6 +12,8 @@ const HEADLINE = "Television, film and anime, tracked as one story.";
 const SUPPORT =
 	"mdbmap matches instalments across catalogues, so your progress and ratings stay with the work itself rather than whichever service happened to list it.";
 const LIBRARY_PATH = "/library";
+const SEARCH_NAV = "Search";
+const SEARCH_PATH = "/search";
 
 const COPY = {
 	library: "Open your library",
@@ -27,9 +29,17 @@ const tracked = [
 
 function Header() {
 	return (
-		<header className="flex items-center justify-end gap-4">
-			<BetterAuthHeader />
-			<ThemeToggle />
+		<header className="flex items-center justify-between">
+			<a
+				className="text-ink/50 hover:text-accent font-mono text-xs tracking-[0.1em] uppercase"
+				href={SEARCH_PATH}
+			>
+				{SEARCH_NAV}
+			</a>
+			<div className="flex items-center gap-4">
+				<BetterAuthHeader />
+				<ThemeToggle />
+			</div>
 		</header>
 	);
 }
@@ -144,10 +154,7 @@ export function Home({
 			{onSigninOpenChange === undefined ? (
 				<Hero signinOpen={signinOpen} />
 			) : (
-				<Hero
-					onSigninOpenChange={onSigninOpenChange}
-					signinOpen={signinOpen}
-				/>
+				<Hero onSigninOpenChange={onSigninOpenChange} signinOpen={signinOpen} />
 			)}
 			<TracksSection />
 		</main>

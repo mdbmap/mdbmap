@@ -94,6 +94,7 @@ describe("Home", () => {
 		expect(html).toContain("Television");
 		expect(html).toContain("Film");
 		expect(html).toContain("Anime");
+		expect(html).toContain('href="/search"');
 		expect(html).not.toContain("Design system");
 	});
 
