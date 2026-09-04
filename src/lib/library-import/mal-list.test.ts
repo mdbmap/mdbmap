@@ -69,9 +69,7 @@ describe("fetchMalAnimeList", () => {
 		const firstPage = page([row(1, "watching")], loopUrl);
 		const fetchImpl = vi
 			.fn()
-			.mockImplementation(async () =>
-				Promise.resolve(Response.json(firstPage)),
-			);
+			.mockImplementation(() => Response.json(firstPage));
 
 		const entries = await fetchMalAnimeList({
 			accessToken: "tok",
