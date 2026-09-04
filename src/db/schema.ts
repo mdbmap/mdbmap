@@ -151,6 +151,25 @@ const watchStatus = sqliteTable(
 	],
 );
 
+const workNote = sqliteTable(
+	"work_note",
+	{
+		body: text().notNull(),
+		continuityKey: text("continuity_key").notNull().$type<ContinuityKey>(),
+		id: integer({ mode: "number" }).primaryKey({ autoIncrement: true }),
+		updatedAt: timestamp("updated_at").$onUpdateFn(() => new Date()),
+		userId: text("user_id")
+			.notNull()
+			.references(() => user.id, { onDelete: "cascade" }),
+	},
+	(table) => [
+		uniqueIndex("work_note_user_continuity_idx").on(
+			table.userId,
+			table.continuityKey,
+		),
+	],
+);
+
 const episodeProgress = sqliteTable(
 	"episode_progress",
 	{
@@ -303,6 +322,7 @@ export {
 	verification,
 	watchStatus,
 	watchStatuses,
+	workNote,
 };
 export type {
 	ApiKeyPlan,

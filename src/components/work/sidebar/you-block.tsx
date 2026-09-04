@@ -9,6 +9,7 @@ import type { WatchStatus } from "@/db/schema";
 import { useRequireAuth } from "@/integrations/better-auth/require-auth";
 import type { RateableUnit, ViewerTracking, WorkBlock } from "@/orpc/schema";
 
+import { PrivateNote } from "./private-note";
 import { StatusSelect } from "./status-select";
 
 const HEADING = "You · whole series";
@@ -76,7 +77,7 @@ function YouBlock({
 	viewer,
 }: YouBlockProps) {
 	const { authDialog, requireAuth } = useRequireAuth();
-	const { setRating, setRewatch, setStatus } = useWorkTracking(
+	const { setNote, setRating, setRewatch, setStatus } = useWorkTracking(
 		continuityId,
 		order,
 		proposalId,
@@ -110,6 +111,14 @@ function YouBlock({
 		},
 		[requireAuth, setRewatch],
 	);
+	const changeNote = useCallback(
+		(body: string) => {
+			requireAuth(() => {
+				setNote(body);
+			});
+		},
+		[requireAuth, setNote],
+	);
 
 	const total = totalEpisodes(parts);
 	const watched = viewer?.watched.length ?? 0;
@@ -135,6 +144,11 @@ function YouBlock({
 			<RewatchStepper
 				count={viewer?.rewatchCount ?? 0}
 				onChange={changeRewatch}
+			/>
+			<PrivateNote
+				continuityId={continuityId}
+				note={viewer?.note}
+				onSave={changeNote}
 			/>
 			{authDialog}
 		</div>

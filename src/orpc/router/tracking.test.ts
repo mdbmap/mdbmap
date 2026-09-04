@@ -7,6 +7,7 @@ import {
 	personalRating,
 	user,
 	watchStatus,
+	workNote,
 } from "@/db/schema";
 import { freshDb } from "@/db/test-helpers";
 import { createEngine } from "@/engine";
@@ -281,5 +282,87 @@ describe("tracking.remove", () => {
 		await expect(
 			clientFor(db, undefined).tracking.remove({ continuityId }),
 		).rejects.toThrow(/sign in/iu);
+	});
+});
+
+describe("tracking.setNote", () => {
+	it("stores a trimmed private note on the work viewer", async () => {
+		const { continuityId, db } = await seeded();
+		const client = clientFor(db, "user-1");
+		const result = await client.tracking.setNote({
+			body: "  Yor is the assassin.  ",
+			continuityId,
+		});
+		expect(result).toEqual({ body: "Yor is the assassin." });
+		const view = await client.work.get({ continuityId });
+		expect(view.viewer?.note).toBe("Yor is the assassin.");
+		expect(await db.select().from(workNote).all()).toEqual([
+			expect.objectContaining({
+				body: "Yor is the assassin.",
+				continuityKey: continuityId,
+				userId: "user-1",
+			}),
+		]);
+	});
+
+	it("clears the note when the body is empty", async () => {
+		const { continuityId, db } = await seeded();
+		const client = clientFor(db, "user-1");
+		await client.tracking.setNote({
+			body: "keep",
+			continuityId,
+		});
+		const cleared = await client.tracking.setNote({
+			body: "   ",
+			continuityId,
+		});
+		expect(cleared).toEqual({ body: undefined });
+		const view = await client.work.get({ continuityId });
+		expect(view.viewer?.note).toBeUndefined();
+		expect(await db.select().from(workNote).all()).toHaveLength(0);
+	});
+
+	it("clears a note stored under a retired continuity key", async () => {
+		const db = await freshDb();
+		await db
+			.insert(user)
+			.values({ email: "a@b.test", id: "user-1", name: "Ada" })
+			.run();
+		const survivor = await seedCrossGroupContinuity(db);
+		const retired = await seedSpyXFamily(db);
+		const survivorId = parseContinuityKey(survivor.continuityId);
+		const retiredId = parseContinuityKey(retired.continuityId);
+		if (survivorId === undefined || retiredId === undefined) {
+			throw new Error("expected numeric continuity keys");
+		}
+		await db
+			.insert(continuityAliases)
+			.values({
+				retiredContinuityId: retiredId,
+				survivorContinuityId: survivorId,
+			})
+			.run();
+		await db
+			.insert(workNote)
+			.values({
+				body: "legacy",
+				continuityKey: retired.continuityId,
+				userId: "user-1",
+			})
+			.run();
+		const client = clientFor(db, "user-1");
+		const view = await client.work.get({
+			continuityId: survivor.continuityId,
+		});
+		expect(view.viewer?.note).toBe("legacy");
+		await client.tracking.setNote({
+			body: "",
+			continuityId: survivor.continuityId,
+		});
+		expect(await db.select().from(workNote).all()).toHaveLength(0);
+		const after = await client.work.get({
+			continuityId: survivor.continuityId,
+		});
+		expect(after.viewer?.note).toBeUndefined();
 	});
 });

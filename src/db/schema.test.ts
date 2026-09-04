@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it } from "vitest";
-import { user, watchStatus } from "./schema.ts";
+
+import { user, watchStatus, workNote } from "./schema.ts";
 import { freshDb, rejectionText } from "./test-helpers.ts";
 
 describe("watch_status natural key", () => {
@@ -41,5 +42,38 @@ describe("watch_status natural key", () => {
 		const rows = await db.select().from(watchStatus).all();
 		expect(rows).toHaveLength(1);
 		expect(rows[0]?.status).toBe("completed");
+	});
+});
+
+describe("work_note natural key", () => {
+	it("upserts on the natural key rather than duplicating", async () => {
+		const db = await freshDb();
+		await db
+			.insert(user)
+			.values({ email: "a@b.test", id: "user-1", name: "Ada" })
+			.run();
+		await db
+			.insert(workNote)
+			.values({
+				body: "first",
+				continuityKey: "continuity:demo",
+				userId: "user-1",
+			})
+			.run();
+		await db
+			.insert(workNote)
+			.values({
+				body: "second",
+				continuityKey: "continuity:demo",
+				userId: "user-1",
+			})
+			.onConflictDoUpdate({
+				set: { body: "second" },
+				target: [workNote.userId, workNote.continuityKey],
+			})
+			.run();
+		const rows = await db.select().from(workNote).all();
+		expect(rows).toHaveLength(1);
+		expect(rows[0]?.body).toBe("second");
 	});
 });

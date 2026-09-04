@@ -177,15 +177,15 @@ describe("YouBlock", () => {
 		expect(html).toContain("watching");
 		expect(html).toContain("25 / 36 across 3 parts");
 		expect(html).toContain("rewatch ×2");
+		expect(html).toContain("Private note");
 		expect(html).toContain('value="8"');
 		expect(html).toContain("selected");
-		expect(html).toContain("remove from library");
 		expect(html).not.toContain("data-auth-dialog");
 		expect(html).not.toContain("mdbmap average");
 		expect(html).not.toContain("mdbmap · whole series");
 	});
 
-	it("hides remove from library when the viewer is untracked", () => {
+	it("falls back to zero progress when the viewer is untracked", () => {
 		useSession.mockReturnValue({
 			...idleSession,
 			data: {
@@ -196,8 +196,9 @@ describe("YouBlock", () => {
 		const html = render(
 			<YouBlock continuityId="continuity:x" parts={parts} viewer={undefined} />,
 		);
-		expect(html).not.toContain("remove from library");
-		expect(html).not.toContain("confirm remove");
+		expect(html).toContain("0 / 36 across 3 parts");
+		expect(html).toContain("rewatch ×0");
+		expect(html).toContain("set status");
 	});
 
 	it("falls back to zero progress when the viewer is untracked", () => {

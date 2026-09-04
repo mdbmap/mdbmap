@@ -60,6 +60,11 @@ const SetEpisodeWatchedInput = z.object({
 	watched: z.boolean(),
 });
 
+const SetNoteInput = z.object({
+	body: z.string().max(4000),
+	continuityId: z.string().min(1),
+});
+
 const RemoveTrackingInput = z.object({
 	continuityId: z.string().min(1),
 });
@@ -301,6 +306,7 @@ interface FilmView {
 type WorkBlock = FilmView | PartView;
 
 interface ViewerTracking {
+	note?: string | undefined;
 	personalRating: number | undefined;
 	rewatchCount: number;
 	status: WatchStatus | undefined;
@@ -343,6 +349,10 @@ interface WorkView {
 interface TrackingSummary {
 	rewatchCount: number;
 	status: WatchStatus | undefined;
+}
+
+interface NoteResult {
+	body: string | undefined;
 }
 
 interface TrackingRemoveResult {
@@ -400,6 +410,7 @@ export {
 	librarySorts,
 	SearchQueryInput,
 	SetEpisodeWatchedInput,
+	SetNoteInput,
 	SetRatingInput,
 	SetResearchTimingInput,
 	SetRewatchInput,
@@ -426,6 +437,7 @@ export type {
 	LibrarySort,
 	MintedApiKey,
 	MovieRateableUnit,
+	NoteResult,
 	PartView,
 	ProviderRow,
 	RateableUnit,
