@@ -7,6 +7,10 @@ import type { WorkView } from "@/orpc/schema";
 
 import { WorkPage } from "./work-page";
 
+vi.mock("@tanstack/react-router", () => ({
+	useNavigate: () => vi.fn(),
+}));
+
 vi.mock("@/integrations/better-auth/header-user", () => ({
 	BetterAuthHeader: () => false,
 }));

@@ -74,6 +74,7 @@ function RemoveFromLibraryButton({
 	return (
 		<div className="text-ink/50 mt-1.5 font-mono text-[11px]">
 			<button
+				aria-label={confirming ? CONFIRM_REMOVE : REMOVE_FROM_LIBRARY}
 				className="text-ink/60 hover:text-accent cursor-pointer"
 				onClick={onClick}
 				type="button"
