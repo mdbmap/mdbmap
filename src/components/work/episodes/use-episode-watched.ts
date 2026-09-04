@@ -18,6 +18,7 @@ interface WatchedContext {
 interface EpisodeToggle {
 	authDialog: ReactNode;
 	isPending: boolean;
+	requireAuth: (action: () => void) => void;
 	toggle: (instalmentLocator: string, watched: boolean) => void;
 }
 
@@ -81,7 +82,12 @@ function useEpisodeWatched(
 		[continuityId, mutate, requireAuth],
 	);
 
-	return { authDialog, isPending: mutation.isPending, toggle };
+	return {
+		authDialog,
+		isPending: mutation.isPending,
+		requireAuth,
+		toggle,
+	};
 }
 
 export { useEpisodeWatched };

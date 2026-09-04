@@ -1,7 +1,8 @@
 import { useCallback } from "react";
 import { tv } from "tailwind-variants";
 
-import type { EpisodeView } from "@/orpc/schema";
+import { ScoreSelect } from "@/components/work/sidebar/score-select";
+import type { EpisodeView, RateableUnit } from "@/orpc/schema";
 
 // Ruled still placeholders are hue-parameterised, but Tailwind only emits classes
 // it can see as literals — so the hue cycle maps to static class names here.
@@ -23,20 +24,12 @@ const title = tv({
 
 const padNumber = (value: number) => String(value).padStart(2, "0");
 
-const metaLine = (episode: EpisodeView) =>
-	[
-		episode.personalRating === undefined ? undefined : `${episode.personalRating}/10`,
-		episode.airDate,
-	]
-		.filter((part) => part !== undefined)
-		.join(" · ");
-
 function Still({ hue, watched }: { hue: string; watched: boolean }) {
 	if (watched) {
 		return <div className={`h-[54px] ${hue}`} />;
 	}
 	return (
-		<div className="flex h-[54px] items-center justify-center border border-line bg-no-still font-mono text-[9px] text-ink/30">
+		<div className="border-line bg-no-still text-ink/30 flex h-[54px] items-center justify-center border font-mono text-[9px]">
 			{NO_STILL_LABEL}
 		</div>
 	);
@@ -44,30 +37,44 @@ function Still({ hue, watched }: { hue: string; watched: boolean }) {
 
 interface EpisodeRowProps {
 	episode: EpisodeView;
+	onRate: (unit: RateableUnit, score: number | undefined) => void;
 	onToggle: (instalmentLocator: string, watched: boolean) => void;
 }
 
-function EpisodeRow({ episode, onToggle }: EpisodeRowProps) {
-	const { instalmentLocator, number, watched } = episode;
+function EpisodeRow({ episode, onRate, onToggle }: EpisodeRowProps) {
+	const { instalmentLocator, number, rateableUnit, watched } = episode;
 	const handleToggle = useCallback(() => {
 		onToggle(instalmentLocator, !watched);
 	}, [instalmentLocator, watched, onToggle]);
+	const handleRate = useCallback(
+		(score: number | undefined) => {
+			onRate(rateableUnit, score);
+		},
+		[onRate, rateableUnit],
+	);
 	const hue = stillClass[(number - 1) % stillClass.length] ?? stillClass[0];
+	const padded = padNumber(number);
 
 	return (
-		<div className="grid grid-cols-[13px_96px_28px_1fr_auto] items-center gap-x-3.5 border-t border-line py-2.5 text-sm">
+		<div className="border-line grid grid-cols-[13px_96px_28px_1fr_auto] items-center gap-x-3.5 border-t py-2.5 text-sm">
 			<input
-				aria-label={`Mark episode ${padNumber(number)} watched`}
+				aria-label={`Mark episode ${padded} watched`}
 				checked={watched}
-				className="size-[13px] shrink-0 justify-self-center accent-accent"
+				className="accent-accent size-[13px] shrink-0 justify-self-center"
 				onChange={handleToggle}
 				type="checkbox"
 			/>
 			<Still hue={hue} watched={watched} />
-			<span className="font-mono text-xs text-ink/45">{padNumber(number)}</span>
+			<span className="text-ink/45 font-mono text-xs">{padded}</span>
 			<span className={title({ on: watched })}>{episode.title}</span>
-			<span className="justify-self-end font-mono text-[11px] text-ink/45">
-				{metaLine(episode)}
+			<span className="text-ink/45 flex items-center gap-2.5 justify-self-end font-mono text-[11px]">
+				<ScoreSelect
+					label={`Your score for episode ${padded}`}
+					onChange={handleRate}
+					size="inline"
+					value={episode.personalRating}
+				/>
+				{episode.airDate}
 			</span>
 		</div>
 	);

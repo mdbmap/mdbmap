@@ -1,9 +1,12 @@
+import { useCallback } from "react";
+
 import { Section } from "@/components/ui/section";
 import { SectionHead } from "@/components/ui/section-head";
 import { useSelectedPart } from "@/components/work/part-state";
 import { instalmentCount, watchedCount } from "@/components/work/parts";
+import { useWorkTracking } from "@/components/work/sidebar/use-work-tracking";
 import type { PresentationOrderSlug } from "@/db/engine-schema";
-import type { WorkBlock } from "@/orpc/schema";
+import type { RateableUnit, WorkBlock } from "@/orpc/schema";
 
 import { EpisodeList } from "./episode-list";
 import { FilmRow } from "./film-row";
@@ -29,7 +32,19 @@ function Episodes({
 	parts,
 }: EpisodesProps) {
 	const { selectPart, selectedIndex, selectedPart } = useSelectedPart(parts);
-	const { authDialog, toggle } = useEpisodeWatched(continuityId, order);
+	const { authDialog, requireAuth, toggle } = useEpisodeWatched(
+		continuityId,
+		order,
+	);
+	const { setRating } = useWorkTracking(continuityId, order);
+	const rate = useCallback(
+		(unit: RateableUnit, score: number | undefined) => {
+			requireAuth(() => {
+				setRating(unit, score);
+			});
+		},
+		[requireAuth, setRating],
+	);
 
 	return (
 		<Section>
@@ -49,11 +64,12 @@ function Episodes({
 						watchedCount={watchedCount(selectedPart)}
 					/>
 					{selectedPart.kind === "film" ? (
-						<FilmRow film={selectedPart} onToggle={toggle} />
+						<FilmRow film={selectedPart} onRate={rate} onToggle={toggle} />
 					) : (
 						<EpisodeList
 							key={selectedPart.rateableUnit.key}
 							episodes={selectedPart.episodes}
+							onRate={rate}
 							onToggle={toggle}
 						/>
 					)}

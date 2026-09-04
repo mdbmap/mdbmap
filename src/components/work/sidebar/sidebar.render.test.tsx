@@ -276,6 +276,15 @@ describe("PartPanel", () => {
 		expect(html).not.toContain("Season 2 · this part");
 	});
 
+	it("exposes a part score select wired to the part rateable unit", () => {
+		const onRate = vi.fn<(score: number | undefined) => void>();
+		const html = render(<PartDetails onRate={onRate} part={partOne} />);
+		expect(html).toContain('aria-label="Your score for Part 1"');
+		onRate(9);
+		expect(onRate).toHaveBeenCalledWith(9);
+		expect(partOne.rateableUnit).toEqual({ key: "part:Part 1", kind: "part" });
+	});
+
 	it("shows a placeholder when there are no parts", () => {
 		useSession.mockReturnValue(idleSession);
 		const html = render(
