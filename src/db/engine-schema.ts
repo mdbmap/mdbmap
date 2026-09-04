@@ -438,6 +438,10 @@ const presentationOrderProposals = sqliteTable(
 		index("presentation_order_proposals_continuity_id_idx").on(
 			table.continuityId,
 		),
+		index("presentation_order_proposals_status_id_idx").on(
+			table.status,
+			table.id,
+		),
 	],
 );
 

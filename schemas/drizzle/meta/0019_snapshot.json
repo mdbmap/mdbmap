@@ -1627,6 +1627,24 @@
 					"name": "presentation_order_proposals_continuity_id_idx",
 					"columns": ["continuity_id"],
 					"isUnique": false
+				},
+				"presentation_order_proposals_status_id_idx": {
+					"name": "presentation_order_proposals_status_id_idx",
+					"columns": [
+						{
+							"expression": "status",
+							"isExpression": false,
+							"asc": true,
+							"nulls": "last"
+						},
+						{
+							"expression": "id",
+							"isExpression": false,
+							"asc": true,
+							"nulls": "last"
+						}
+					],
+					"isUnique": false
 				}
 			},
 			"foreignKeys": {

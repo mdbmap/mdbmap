@@ -51,9 +51,13 @@ const CreateProposalInput = z.object({
 	continuityId: z.number().int().min(1),
 	name: z.string().trim().min(1).max(120),
 	rationale: z.string().trim().min(1).max(2000),
-	segmentIds: z.array(z.number().int().min(1)).min(1).refine(uniqueSegmentIds, {
-		message: "Proposal segment ids must be unique",
-	}),
+	segmentIds: z
+		.array(z.number().int().min(1))
+		.min(1)
+		.max(33)
+		.refine(uniqueSegmentIds, {
+			message: "Proposal segment ids must be unique",
+		}),
 });
 
 const ContinuityIdInput = z.object({
