@@ -40,7 +40,10 @@ const work: WorkView = {
 	header: {
 		backdropRef: "anidb:16947/backdrop",
 		coverRef: "anidb:16947/cover",
+		genres: ["Comedy", "Action"],
 		nativeTitle: "SPY×FAMILY",
+		productionStatus: "Ended",
+		runtimeMinutes: 24,
 		span: "2022–2023",
 		synopsis: "A spy builds a fake family for a mission.",
 		title: "Spy × Family",
@@ -72,6 +75,15 @@ const dawn: WorkView["parts"][number] = {
 };
 
 const filmWork: WorkView = { ...work, parts: [...work.parts, dawn] };
+const sparseWork: WorkView = {
+	...work,
+	header: {
+		...work.header,
+		genres: [],
+		productionStatus: undefined,
+		runtimeMinutes: undefined,
+	},
+};
 const bothOrders = ["release", "watch"] as const;
 function ignoreOrder(_order: PresentationOrderSlug) {
 	return;
@@ -83,6 +95,11 @@ describe("WorkPage shell", () => {
 			<WorkPage work={work} />
 		</QueryClientProvider>,
 	);
+	const sparseHtml = renderToStaticMarkup(
+		<QueryClientProvider client={new QueryClient()}>
+			<WorkPage work={sparseWork} />
+		</QueryClientProvider>,
+	);
 
 	it("renders the banner identity from the WorkView", () => {
 		expect(html).toContain("Spy × Family");
@@ -91,6 +108,15 @@ describe("WorkPage shell", () => {
 		expect(html).toContain("2 parts");
 		expect(html).toContain("24 ep");
 		expect(html).toContain("2022–2023");
+		expect(html).toContain("Comedy · Action");
+		expect(html).toContain("24 min");
+		expect(html).toContain("Ended");
+	});
+
+	it("omits empty genres, runtime, and production status from the meta line", () => {
+		expect(sparseHtml).not.toContain("Comedy");
+		expect(sparseHtml).not.toContain("24 min");
+		expect(sparseHtml).not.toContain("Ended");
 	});
 
 	it("renders the synopsis and both layout columns", () => {

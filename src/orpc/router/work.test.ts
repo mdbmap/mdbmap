@@ -21,19 +21,6 @@ import { WorkGetInput } from "@/orpc/schema";
 
 import { router } from "./index.ts";
 
-const clientFor = (
-	db: Awaited<ReturnType<typeof freshDb>>,
-	user?: SessionUser,
-	providers = defaultProviders,
-) =>
-	createRouterClient(router, {
-		context: {
-			db,
-			providers,
-			resolveSession: () => user,
-		} satisfies ORPCContext,
-	});
-
 const locatorsOf = (parts: WorkBlock[]) =>
 	parts.flatMap((part) =>
 		part.kind === "film"
@@ -63,8 +50,11 @@ const metadataFor = (ifYouLiked: readonly Similar[]): WorkMetadata => ({
 	backdropRef: undefined,
 	cast: [],
 	coverRef: undefined,
+	genres: [],
 	ifYouLiked,
 	nativeTitle: undefined,
+	productionStatus: undefined,
+	runtimeMinutes: undefined,
 	segments: [],
 	span: "",
 	staff: [],
@@ -72,6 +62,32 @@ const metadataFor = (ifYouLiked: readonly Similar[]): WorkMetadata => ({
 	synopsis: "",
 	title: "Test work",
 });
+
+const workTestProviders: Providers = {
+	...defaultProviders,
+	metadata: {
+		...defaultProviders.metadata,
+		tmdb: {
+			fetchWork: async () => {
+				const metadata = await Promise.resolve(metadataFor([]));
+				return metadata;
+			},
+		},
+	},
+};
+
+const clientFor = (
+	db: Awaited<ReturnType<typeof freshDb>>,
+	user?: SessionUser,
+	providers = workTestProviders,
+) =>
+	createRouterClient(router, {
+		context: {
+			db,
+			providers,
+			resolveSession: () => user,
+		} satisfies ORPCContext,
+	});
 
 const similar = (continuityId: string, title: string): Similar => ({
 	continuityId,
@@ -211,6 +227,9 @@ describe("work.get presentation orders", () => {
 		const fallback = await client.work.get({ continuityId });
 
 		expect(release.parts.length).toBeGreaterThan(1);
+		expect(release.header.genres).toEqual([]);
+		expect(release.header.runtimeMinutes).toBe(24);
+		expect(release.header.productionStatus).toBeUndefined();
 		expect(watch.parts.map((part) => firstLocator(part))).toEqual(
 			[...release.parts].toReversed().map((part) => firstLocator(part)),
 		);

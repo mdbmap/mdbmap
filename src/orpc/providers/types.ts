@@ -32,8 +32,11 @@ interface WorkMetadata {
 	backdropRef: string | undefined;
 	cast: readonly Credit[];
 	coverRef: string | undefined;
+	genres: readonly string[];
 	ifYouLiked: readonly Similar[];
 	nativeTitle: string | undefined;
+	productionStatus: string | undefined;
+	runtimeMinutes: number | undefined;
 	segments: readonly SegmentMetadata[];
 	span: string;
 	staff: readonly Credit[];

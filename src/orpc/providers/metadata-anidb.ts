@@ -1,7 +1,7 @@
 import { z } from "zod";
 
-import { env } from "@/env";
 import type { ResolveResult } from "@/engine";
+import { env } from "@/env";
 import type { Credit, Similar } from "@/orpc/schema";
 
 import { offlineSample } from "./anidb-offline-sample.ts";
@@ -23,7 +23,7 @@ import type {
 // episodes. Results snapshot to KV split by volatility, and a snapshot hit
 // performs zero upstream subrequests and never touches the rate limiter.
 
-const SNAPSHOT_VERSION = 1;
+const SNAPSHOT_VERSION = 3;
 const DEFAULT_BASE_URL = "http://api.anidb.net:9001/httpapi";
 const DEFAULT_CORE_TTL_SECONDS = 604_800;
 const DEFAULT_VOLATILE_TTL_SECONDS = 21_600;
@@ -91,8 +91,11 @@ const coreSnapshotSchema = z.object({
 	backdropRef: z.string().optional(),
 	cast: z.array(creditSchema),
 	coverRef: z.string().optional(),
+	genres: z.array(z.string()),
 	ifYouLiked: z.array(similarSchema),
 	nativeTitle: z.string().optional(),
+	productionStatus: z.string().optional(),
+	runtimeMinutes: z.number().optional(),
 	segments: z.array(coreSegmentSchema),
 	staff: z.array(creditSchema),
 	studios: z.array(z.string()),
@@ -118,6 +121,8 @@ interface AnimeEntry {
 	episodes: EpisodeMetadata[];
 	ifYouLiked: Similar[];
 	nativeTitle: string | undefined;
+	productionStatus: string | undefined;
+	runtimeMinutes: number | undefined;
 	staff: Credit[];
 	studios: string[];
 	synopsis: string;
@@ -145,6 +150,45 @@ const yearOf = (date: string): number | undefined => {
 const emptyToUndefined = (value: string): string | undefined =>
 	value === "" ? undefined : value;
 
+const positiveMinutes = (value: string | undefined): number | undefined => {
+	if (value === undefined || value === "") {
+		return undefined;
+	}
+	const minutes = Number(value);
+	return Number.isFinite(minutes) && minutes > 0 ? minutes : undefined;
+};
+
+const runtimeMinutesOf = (anime: XmlNode): number | undefined => {
+	const animeLevel =
+		positiveMinutes(firstChild(anime, "length")?.text) ??
+		positiveMinutes(firstChild(anime, "runtime")?.text);
+	if (animeLevel !== undefined) {
+		return animeLevel;
+	}
+	let earliest: { length: number | undefined; number: number } | undefined;
+	for (const episode of childrenNamed(
+		firstChild(anime, "episodes") ?? emptyNode,
+		"episode",
+	)) {
+		const epno = firstChild(episode, "epno");
+		if (epno?.attrs["type"] !== REGULAR_EPISODE_TYPE) {
+			continue;
+		}
+		const number = Number(epno.text);
+		if (Number.isNaN(number)) {
+			continue;
+		}
+		if (earliest !== undefined && number >= earliest.number) {
+			continue;
+		}
+		earliest = {
+			length: positiveMinutes(firstChild(episode, "length")?.text),
+			number,
+		};
+	}
+	return earliest?.length;
+};
+
 const segmentIds = (resolved: ResolveResult): string[] => {
 	const ids: string[] = [];
 	for (const segment of resolved.segments) {
@@ -155,13 +199,22 @@ const segmentIds = (resolved: ResolveResult): string[] => {
 	return ids;
 };
 
-const keyFor = (kind: "core" | "volatile", version: number, primaryId: string) =>
-	`anidb:v${version}:${kind}:${primaryId}`;
+const keyFor = (
+	kind: "core" | "volatile",
+	version: number,
+	primaryId: string,
+) => `anidb:v${version}:${kind}:${primaryId}`;
 
-const titleByType = (titles: readonly XmlNode[], type: string): string | undefined =>
+const titleByType = (
+	titles: readonly XmlNode[],
+	type: string,
+): string | undefined =>
 	titles.find((title) => title.attrs["type"] === type)?.text;
 
-const titleByLang = (titles: readonly XmlNode[], lang: string): string | undefined =>
+const titleByLang = (
+	titles: readonly XmlNode[],
+	lang: string,
+): string | undefined =>
 	titles.find((title) => title.attrs["xml:lang"] === lang)?.text;
 
 const displayTitle = (titles: readonly XmlNode[]): string =>
@@ -172,7 +225,10 @@ const displayTitle = (titles: readonly XmlNode[]): string =>
 
 const normaliseCast = (anime: XmlNode): Credit[] => {
 	const cast: Credit[] = [];
-	for (const character of childrenNamed(firstChild(anime, "characters") ?? emptyNode, "character")) {
+	for (const character of childrenNamed(
+		firstChild(anime, "characters") ?? emptyNode,
+		"character",
+	)) {
 		const seiyuu = firstChild(character, "seiyuu");
 		if (seiyuu === undefined || seiyuu.text === "") {
 			continue;
@@ -190,11 +246,16 @@ const normaliseCast = (anime: XmlNode): Credit[] => {
 	return cast;
 };
 
-const partitionCreators = (anime: XmlNode): { staff: Credit[]; studios: string[] } => {
+const partitionCreators = (
+	anime: XmlNode,
+): { staff: Credit[]; studios: string[] } => {
 	const staff: Credit[] = [];
 	const studios: string[] = [];
 	const seenStudios = new Set<string>();
-	for (const creator of childrenNamed(firstChild(anime, "creators") ?? emptyNode, "name")) {
+	for (const creator of childrenNamed(
+		firstChild(anime, "creators") ?? emptyNode,
+		"name",
+	)) {
 		const type = creator.attrs["type"] ?? "";
 		if (type === STUDIO_ROLE) {
 			if (!seenStudios.has(creator.text)) {
@@ -232,7 +293,10 @@ const episodeTitle = (episode: XmlNode): string => {
 
 const normaliseEpisodes = (anime: XmlNode): EpisodeMetadata[] => {
 	const episodes: EpisodeMetadata[] = [];
-	for (const episode of childrenNamed(firstChild(anime, "episodes") ?? emptyNode, "episode")) {
+	for (const episode of childrenNamed(
+		firstChild(anime, "episodes") ?? emptyNode,
+		"episode",
+	)) {
 		const epno = firstChild(episode, "epno");
 		if (epno?.attrs["type"] !== REGULAR_EPISODE_TYPE) {
 			continue;
@@ -252,7 +316,10 @@ const normaliseEpisodes = (anime: XmlNode): EpisodeMetadata[] => {
 
 const parseAnime = (xml: string): AnimeEntry => {
 	const anime = parseXml(xml);
-	const titles = childrenNamed(firstChild(anime, "titles") ?? emptyNode, "title");
+	const titles = childrenNamed(
+		firstChild(anime, "titles") ?? emptyNode,
+		"title",
+	);
 	const title = displayTitle(titles);
 	const nativeTitle = titleByLang(titles, "ja");
 	const startDate = firstChild(anime, "startdate")?.text ?? "";
@@ -265,6 +332,8 @@ const parseAnime = (xml: string): AnimeEntry => {
 		episodes: normaliseEpisodes(anime),
 		ifYouLiked: normaliseSimilar(anime),
 		nativeTitle: nativeTitle === title ? undefined : nativeTitle,
+		productionStatus: undefined,
+		runtimeMinutes: runtimeMinutesOf(anime),
 		staff,
 		studios,
 		synopsis: firstChild(anime, "description")?.text ?? "",
@@ -283,15 +352,24 @@ const spanOf = (entries: readonly AnimeEntry[]): string => {
 	return to === undefined || to === from ? `${from}` : `${from}–${to}`;
 };
 
-const buildSnapshots = (version: number, entries: readonly AnimeEntry[]): Snapshots => {
+const buildSnapshots = (
+	version: number,
+	entries: readonly AnimeEntry[],
+): Snapshots => {
 	const [head] = entries;
 	const core = coreSnapshotSchema.parse({
 		backdropRef: undefined,
 		cast: head?.cast ?? [],
 		coverRef: head?.coverRef,
+		genres: [],
 		ifYouLiked: head?.ifYouLiked ?? [],
 		nativeTitle: head?.nativeTitle,
-		segments: entries.map((entry) => ({ label: entry.title, year: entry.year })),
+		productionStatus: head?.productionStatus,
+		runtimeMinutes: head?.runtimeMinutes,
+		segments: entries.map((entry) => ({
+			label: entry.title,
+			year: entry.year,
+		})),
 		staff: head?.staff ?? [],
 		studios: head?.studios ?? [],
 		synopsis: head?.synopsis ?? "",
@@ -324,27 +402,37 @@ const toEpisode = (
 	title: episode.title,
 });
 
-const assemble = (core: CoreSnapshot, volatile: VolatileSnapshot): WorkMetadata => {
-	const segments: SegmentMetadata[] = core.segments.map((coreSegment, index) => {
-		const volatileSegment = volatile.segments[index];
-		return {
-			airedFrom: volatileSegment?.airedFrom,
-			airedTo: volatileSegment?.airedTo,
-			episodes: (volatileSegment?.episodes ?? []).map((episode) => toEpisode(episode)),
-			label: coreSegment.label,
-			year: coreSegment.year,
-		};
-	});
+const assemble = (
+	core: CoreSnapshot,
+	volatile: VolatileSnapshot,
+): WorkMetadata => {
+	const segments: SegmentMetadata[] = core.segments.map(
+		(coreSegment, index) => {
+			const volatileSegment = volatile.segments[index];
+			return {
+				airedFrom: volatileSegment?.airedFrom,
+				airedTo: volatileSegment?.airedTo,
+				episodes: (volatileSegment?.episodes ?? []).map((episode) =>
+					toEpisode(episode),
+				),
+				label: coreSegment.label,
+				year: coreSegment.year,
+			};
+		},
+	);
 	return {
 		backdropRef: core.backdropRef,
 		cast: core.cast.map((credit) => toCredit(credit)),
 		coverRef: core.coverRef,
+		genres: [...core.genres],
 		ifYouLiked: core.ifYouLiked.map((similar) => ({
 			continuityId: similar.continuityId,
 			coverRef: similar.coverRef,
 			title: similar.title,
 		})),
 		nativeTitle: core.nativeTitle,
+		productionStatus: core.productionStatus,
+		runtimeMinutes: core.runtimeMinutes,
 		segments,
 		span: volatile.span,
 		staff: core.staff.map((credit) => toCredit(credit)),
@@ -385,9 +473,14 @@ interface HttpContext {
 	rateLimiter: RateLimiter;
 }
 
-const fetchAnime = async (http: HttpContext, aid: string): Promise<AnimeEntry> => {
+const fetchAnime = async (
+	http: HttpContext,
+	aid: string,
+): Promise<AnimeEntry> => {
 	if (http.client === undefined || http.clientVer === undefined) {
-		throw new Error("anidb: ANIDB_CLIENT and ANIDB_CLIENT_VER are not configured");
+		throw new Error(
+			"anidb: ANIDB_CLIENT and ANIDB_CLIENT_VER are not configured",
+		);
 	}
 	const query = new URLSearchParams({
 		aid,
@@ -418,7 +511,13 @@ const createAnidbProvider = (deps: AnidbProviderDeps): MetadataProvider => {
 		version = SNAPSHOT_VERSION,
 		volatileTtlSeconds = DEFAULT_VOLATILE_TTL_SECONDS,
 	} = deps;
-	const http: HttpContext = { baseUrl, client, clientVer, fetchFn, rateLimiter };
+	const http: HttpContext = {
+		baseUrl,
+		client,
+		clientVer,
+		fetchFn,
+		rateLimiter,
+	};
 
 	const fetchWork = async (resolved: ResolveResult): Promise<WorkMetadata> => {
 		const ids = segmentIds(resolved);
@@ -434,7 +533,12 @@ const createAnidbProvider = (deps: AnidbProviderDeps): MetadataProvider => {
 		const volatileKey = keyFor("volatile", version, primaryId);
 
 		const core = await readSnapshot(kv, coreKey, coreSnapshotSchema, version);
-		const volatile = await readSnapshot(kv, volatileKey, volatileSnapshotSchema, version);
+		const volatile = await readSnapshot(
+			kv,
+			volatileKey,
+			volatileSnapshotSchema,
+			version,
+		);
 		if (core !== undefined && volatile !== undefined) {
 			return assemble(core, volatile);
 		}
@@ -446,7 +550,9 @@ const createAnidbProvider = (deps: AnidbProviderDeps): MetadataProvider => {
 			}),
 		);
 		const fetched = buildSnapshots(version, entries);
-		await kv.put(coreKey, JSON.stringify(fetched.core), { expirationTtl: coreTtlSeconds });
+		await kv.put(coreKey, JSON.stringify(fetched.core), {
+			expirationTtl: coreTtlSeconds,
+		});
 		await kv.put(volatileKey, JSON.stringify(fetched.volatile), {
 			expirationTtl: volatileTtlSeconds,
 		});

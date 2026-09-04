@@ -26,8 +26,11 @@ const metadataFor = (resolved: ResolveResult): WorkMetadata => ({
 	backdropRef: undefined,
 	cast: [],
 	coverRef: undefined,
+	genres: [],
 	ifYouLiked: [],
 	nativeTitle: undefined,
+	productionStatus: undefined,
+	runtimeMinutes: undefined,
 	segments: resolved.segments.map((segment, index) => ({
 		airedFrom: today,
 		airedTo: today,

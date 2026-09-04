@@ -9,7 +9,6 @@ import {
 import type { WatchStatus } from "@/db/schema";
 import { episodeProgress, personalRating, watchStatus } from "@/db/schema";
 import type { EngineRead, ResolveResult, Segment } from "@/engine";
-import { metadataProviderFor } from "@/engine";
 import { parseContinuityKey } from "@/engine/continuity/keys";
 import { isMissingContinuity } from "@/engine/continuity/missing";
 import {
@@ -21,6 +20,7 @@ import { pub } from "@/orpc/base";
 import { catalogueLinks } from "@/orpc/catalogue-links";
 import type { Db } from "@/orpc/context";
 import { instalmentsOf } from "@/orpc/instalments";
+import { fetchDisplayMetadata } from "@/orpc/providers";
 import type { Providers, WorkMetadata } from "@/orpc/providers";
 import type {
 	CommunityOrderRef,
@@ -361,10 +361,7 @@ const get = pub
 		const requestedId = input.continuityId;
 		const resolved = await resolveMappedWork(context.engine, requestedId);
 		const { continuityId } = resolved;
-		const meta =
-			await context.providers.metadata[
-				metadataProviderFor(resolved.mediaKind)
-			].fetchWork(resolved);
+		const meta = await fetchDisplayMetadata(context.providers, resolved);
 
 		const parsedCanonical = parseContinuityKey(continuityId);
 		const aliasKeys = [
@@ -479,7 +476,10 @@ const get = pub
 			header: {
 				backdropRef: meta.backdropRef,
 				coverRef: meta.coverRef,
+				genres: [...meta.genres],
 				nativeTitle: meta.nativeTitle,
+				productionStatus: meta.productionStatus,
+				runtimeMinutes: meta.runtimeMinutes,
 				span: meta.span,
 				synopsis: meta.synopsis,
 				title: meta.title,

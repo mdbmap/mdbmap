@@ -10,11 +10,12 @@ import type {
 	WorkMetadata,
 } from "./types.ts";
 
-const SNAPSHOT_VERSION = 1;
+const SNAPSHOT_VERSION = 2;
 const DEFAULT_BASE_URL = "https://api.themoviedb.org/3";
 const DEFAULT_CORE_TTL_SECONDS = 604_800;
 const DEFAULT_VOLATILE_TTL_SECONDS = 21_600;
 const MAX_CAST = 30;
+const MAX_GENRES = 8;
 const MAX_SIMILAR = 12;
 const YEAR_LENGTH = 4;
 
@@ -78,8 +79,11 @@ const coreSnapshotSchema = z.object({
 	backdropRef: z.string().optional(),
 	cast: z.array(creditSchema),
 	coverRef: z.string().optional(),
+	genres: z.array(z.string()),
 	ifYouLiked: z.array(similarSchema),
 	nativeTitle: z.string().optional(),
+	productionStatus: z.string().optional(),
+	runtimeMinutes: z.number().optional(),
 	segments: z.array(coreSegmentSchema),
 	staff: z.array(creditSchema),
 	studios: z.array(z.string()),
@@ -115,6 +119,7 @@ const tmdbCreditsSchema = z.object({
 });
 const tmdbCreatorSchema = z.object({ id: z.number(), name: z.string() });
 const tmdbCompanySchema = z.object({ name: z.string() });
+const tmdbGenreSchema = z.object({ name: z.string() });
 const tmdbRecommendationSchema = z.object({
 	id: z.number(),
 	name: z.string().optional(),
@@ -133,7 +138,9 @@ const tmdbSeriesSchema = z.object({
 	aggregate_credits: tmdbCreditsSchema.optional(),
 	backdrop_path: z.string().optional(),
 	created_by: z.array(tmdbCreatorSchema).optional(),
+	episode_run_time: z.array(z.number()).optional(),
 	first_air_date: z.string().optional(),
+	genres: z.array(tmdbGenreSchema).optional(),
 	last_air_date: z.string().optional(),
 	name: z.string().optional(),
 	original_name: z.string().optional(),
@@ -142,17 +149,21 @@ const tmdbSeriesSchema = z.object({
 	production_companies: z.array(tmdbCompanySchema).optional(),
 	recommendations: tmdbRecommendationsSchema.optional(),
 	seasons: z.array(tmdbSeasonSummarySchema).optional(),
+	status: z.string().optional(),
 });
 
 const tmdbMovieSchema = z.object({
 	backdrop_path: z.string().optional(),
 	credits: tmdbCreditsSchema.optional(),
+	genres: z.array(tmdbGenreSchema).optional(),
 	original_title: z.string().optional(),
 	overview: z.string().optional(),
 	poster_path: z.string().optional(),
 	production_companies: z.array(tmdbCompanySchema).optional(),
 	recommendations: tmdbRecommendationsSchema.optional(),
 	release_date: z.string().optional(),
+	runtime: z.number().optional(),
+	status: z.string().optional(),
 	title: z.string().optional(),
 });
 
@@ -174,6 +185,38 @@ type TmdbResource = { kind: "movie"; id: number } | { kind: "tv"; id: number };
 
 const imageRef = (path: string | undefined): string | undefined =>
 	path === undefined || path === "" ? undefined : `tmdb:${path}`;
+
+const uniqueGenres = (names: readonly string[]): string[] => {
+	const seen = new Set<string>();
+	const genres: string[] = [];
+	for (const name of names) {
+		const trimmed = name.trim();
+		if (trimmed === "" || seen.has(trimmed)) {
+			continue;
+		}
+		seen.add(trimmed);
+		genres.push(trimmed);
+		if (genres.length >= MAX_GENRES) {
+			break;
+		}
+	}
+	return genres;
+};
+
+const genreNamesOf = (
+	genres: readonly { name: string }[] | undefined,
+): string[] => (genres ?? []).map((genre) => genre.name);
+
+const positiveMinutes = (value: number | undefined): number | undefined =>
+	value !== undefined && value > 0 ? value : undefined;
+
+const trimmedStatus = (value: string | undefined): string | undefined => {
+	if (value === undefined) {
+		return undefined;
+	}
+	const trimmed = value.trim();
+	return trimmed === "" ? undefined : trimmed;
+};
 
 const yearOf = (date: string | undefined): number | undefined => {
 	if (date === undefined) {
@@ -408,8 +451,11 @@ const buildSnapshots = (
 		backdropRef: imageRef(series.backdrop_path),
 		cast: normaliseCast(series),
 		coverRef: imageRef(series.poster_path),
+		genres: uniqueGenres(genreNamesOf(series.genres)),
 		ifYouLiked: normaliseSimilar(series),
 		nativeTitle,
+		productionStatus: trimmedStatus(series.status),
+		runtimeMinutes: positiveMinutes(series.episode_run_time?.[0]),
 		segments: summaries.map((summary) => ({
 			label: summary.label,
 			year: summary.year,
@@ -444,8 +490,11 @@ const buildMovieSnapshots = (
 		backdropRef: imageRef(head?.backdrop_path),
 		cast: head === undefined ? [] : normaliseMovieCast(head),
 		coverRef: imageRef(head?.poster_path),
+		genres: uniqueGenres(movies.flatMap((movie) => genreNamesOf(movie.genres))),
 		ifYouLiked: head === undefined ? [] : normaliseMovieSimilar(head),
 		nativeTitle,
+		productionStatus: trimmedStatus(head?.status),
+		runtimeMinutes: positiveMinutes(head?.runtime),
 		segments: movies.map((movie) => ({
 			label: movie.title ?? "",
 			year: yearOf(movie.release_date),
@@ -504,12 +553,15 @@ const assemble = (
 		backdropRef: core.backdropRef,
 		cast: core.cast.map((credit) => toCredit(credit)),
 		coverRef: core.coverRef,
+		genres: [...core.genres],
 		ifYouLiked: core.ifYouLiked.map((similar) => ({
 			continuityId: similar.continuityId,
 			coverRef: similar.coverRef,
 			title: similar.title,
 		})),
 		nativeTitle: core.nativeTitle,
+		productionStatus: core.productionStatus,
+		runtimeMinutes: core.runtimeMinutes,
 		segments,
 		span: volatile.span,
 		staff: core.staff.map((credit) => toCredit(credit)),
@@ -703,8 +755,11 @@ const createTmdbProvider = (deps: TmdbProviderDeps): MetadataProvider => {
 				backdropRef: undefined,
 				cast: [],
 				coverRef: undefined,
+				genres: [],
 				ifYouLiked: [],
 				nativeTitle: undefined,
+				productionStatus: undefined,
+				runtimeMinutes: undefined,
 				segments: segmentsAlignedWithResolved(resolved, [], []),
 				span: "",
 				staff: [],

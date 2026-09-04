@@ -26,7 +26,10 @@ const work = (): WorkView => ({
 	header: {
 		backdropRef: undefined,
 		coverRef: undefined,
+		genres: [],
 		nativeTitle: undefined,
+		productionStatus: undefined,
+		runtimeMinutes: undefined,
 		span: "2022",
 		synopsis: "",
 		title: "X",

@@ -49,7 +49,14 @@ const seriesJson = {
 	},
 	backdrop_path: "/backdrop.jpg",
 	created_by: [{ id: 9, name: "Orig Creator" }],
+	episode_run_time: [45, 50],
 	first_air_date: "2020-04-01",
+	genres: [
+		{ name: "Drama" },
+		{ name: "  " },
+		{ name: "Drama" },
+		{ name: "Comedy" },
+	],
 	last_air_date: "2021-06-30",
 	name: "Test Show",
 	original_name: "テストショー",
@@ -64,6 +71,7 @@ const seriesJson = {
 		{ air_date: "2020-04-01", name: "Season 1", season_number: 1 },
 		{ air_date: "2021-04-01", name: "Season 2", season_number: 2 },
 	],
+	status: " Returning Series ",
 };
 
 const season1Json = {
@@ -85,6 +93,7 @@ const movieJson = {
 		cast: [{ character: "Hero", id: 11, name: "Movie Lead" }],
 		crew: [{ id: 12, job: "Director", name: "Movie Director" }],
 	},
+	genres: [{ name: "Action" }, { name: "" }, { name: "Science Fiction" }],
 	original_title: "映画",
 	overview: "A movie used for tests.",
 	poster_path: "/movie-poster.jpg",
@@ -95,6 +104,8 @@ const movieJson = {
 		],
 	},
 	release_date: "2001-05-16",
+	runtime: 121,
+	status: "Released",
 	title: "Test Movie",
 };
 
@@ -139,7 +150,9 @@ const SECOND_MOVIE_ID = "1000";
 
 const secondMovieJson = {
 	...movieJson,
+	genres: [{ name: "Adventure" }, { name: "Action" }],
 	release_date: "2003-11-05",
+	runtime: 140,
 	title: "Test Movie Two",
 };
 
@@ -262,6 +275,9 @@ describe("tmdb metadata provider", () => {
 		expect(meta.coverRef).toBe("tmdb:/poster.jpg");
 		expect(meta.span).toBe("2020–2021");
 		expect(meta.studios).toStrictEqual(["Studio A", "Studio B"]);
+		expect(meta.genres).toStrictEqual(["Drama", "Comedy"]);
+		expect(meta.runtimeMinutes).toBe(45);
+		expect(meta.productionStatus).toBe("Returning Series");
 
 		expect(meta.cast).toStrictEqual([
 			{ name: "Lead Actor", ref: "tmdb:person:1", role: "Hero" },
@@ -304,8 +320,8 @@ describe("tmdb metadata provider", () => {
 
 		await provider.fetchWork(resolved);
 
-		const coreKey = `tmdb:v1:core:tv:${SERIES_ID}:0:2`;
-		const volatileKey = `tmdb:v1:volatile:tv:${SERIES_ID}:0:2`;
+		const coreKey = `tmdb:v2:core:tv:${SERIES_ID}:0:2`;
+		const volatileKey = `tmdb:v2:volatile:tv:${SERIES_ID}:0:2`;
 		expect(store.has(coreKey)).toBe(true);
 		expect(store.has(volatileKey)).toBe(true);
 
@@ -351,7 +367,10 @@ describe("tmdb metadata provider", () => {
 		expect(meta).toMatchObject({
 			backdropRef: "tmdb:/movie-backdrop.jpg",
 			coverRef: "tmdb:/movie-poster.jpg",
+			genres: ["Action", "Science Fiction"],
 			nativeTitle: "映画",
+			productionStatus: "Released",
+			runtimeMinutes: 121,
 			studios: ["Movie Studio"],
 			synopsis: "A movie used for tests.",
 			title: "Test Movie",
@@ -418,10 +437,10 @@ describe("tmdb metadata provider", () => {
 		const movieMeta = await provider.fetchWork(movieResolved);
 		const tvMeta = await provider.fetchWork(resolved);
 
-		expect(store.has("tmdb:v1:core:movie:999")).toBe(true);
-		expect(store.has("tmdb:v1:volatile:movie:999")).toBe(true);
-		expect(store.has("tmdb:v1:core:tv:999:0:2")).toBe(true);
-		expect(store.has("tmdb:v1:volatile:tv:999:0:2")).toBe(true);
+		expect(store.has("tmdb:v2:core:movie:999")).toBe(true);
+		expect(store.has("tmdb:v2:volatile:movie:999")).toBe(true);
+		expect(store.has("tmdb:v2:core:tv:999:0:2")).toBe(true);
+		expect(store.has("tmdb:v2:volatile:tv:999:0:2")).toBe(true);
 		expect(movieMeta.title).toBe("Test Movie");
 		expect(tvMeta.title).toBe("Test Show");
 		expect(fetchFn).toHaveBeenCalledTimes(4);
@@ -518,8 +537,8 @@ describe("tmdb metadata provider", () => {
 		await provider.fetchWork(oneSegmentResolved);
 		await provider.fetchWork(resolved);
 
-		expect(store.has("tmdb:v1:core:tv:999:0:1")).toBe(true);
-		expect(store.has("tmdb:v1:core:tv:999:0:2")).toBe(true);
+		expect(store.has("tmdb:v2:core:tv:999:0:1")).toBe(true);
+		expect(store.has("tmdb:v2:core:tv:999:0:2")).toBe(true);
 		expect(fetchFn).toHaveBeenCalledTimes(5);
 	});
 
@@ -694,6 +713,13 @@ describe("tmdb metadata provider", () => {
 			]),
 		);
 		expect(meta.span).toBe("2001–2003");
+		expect(meta.genres).toStrictEqual([
+			"Action",
+			"Science Fiction",
+			"Adventure",
+		]);
+		expect(meta.runtimeMinutes).toBe(121);
+		expect(meta.productionStatus).toBe("Released");
 		expect(meta.segments.map((segment) => segment.label)).toEqual([
 			"Test Movie",
 			"Test Movie Two",
@@ -716,6 +742,9 @@ describe("tmdb metadata provider", () => {
 
 		expect(fetchFn).not.toHaveBeenCalled();
 		expect(meta).toMatchObject({
+			genres: [],
+			productionStatus: undefined,
+			runtimeMinutes: undefined,
 			segments: [
 				{
 					airedFrom: undefined,
