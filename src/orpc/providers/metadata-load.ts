@@ -183,5 +183,32 @@ const lastUpdatedIso = (
 	return latest?.toISOString();
 };
 
-export { lastUpdatedIso, resolveCatalogueDocument };
+const settleDocuments = async <Key>(
+	jobs: readonly { key: Key; load: () => Promise<LoadedDocument> }[],
+): Promise<Map<Key, LoadedDocument>> => {
+	const settled = await Promise.allSettled(
+		jobs.map(async (job) => {
+			const document = await job.load();
+			return { document, key: job.key };
+		}),
+	);
+	const documents = new Map<Key, LoadedDocument>();
+	let firstError: unknown;
+	for (const result of settled) {
+		if (result.status === "fulfilled") {
+			documents.set(result.value.key, result.value.document);
+			continue;
+		}
+		firstError ??= result.reason;
+	}
+	if (documents.size === 0 && firstError !== undefined) {
+		if (firstError instanceof Error) {
+			throw firstError;
+		}
+		throw new Error("catalogue metadata fetch failed");
+	}
+	return documents;
+};
+
+export { lastUpdatedIso, resolveCatalogueDocument, settleDocuments };
 export type { LoadedDocument };

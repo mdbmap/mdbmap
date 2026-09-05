@@ -20,9 +20,10 @@ const fetchDisplayMetadata = async (
 	}
 	try {
 		const tmdb = await providers.metadata.tmdb.fetchWork(resolved, {
-			...options,
 			force: false,
 			refreshIfDue: false,
+			...(options.locale === undefined ? {} : { locale: options.locale }),
+			...(options.now === undefined ? {} : { now: options.now }),
 		});
 		return { ...meta, genres: [...tmdb.genres] };
 	} catch {

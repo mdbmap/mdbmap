@@ -8,7 +8,11 @@ import type {
 	MetadataFetchOptions,
 	SnapshotNeed,
 } from "./metadata-freshness.ts";
-import { lastUpdatedIso, resolveCatalogueDocument } from "./metadata-load.ts";
+import {
+	lastUpdatedIso,
+	resolveCatalogueDocument,
+	settleDocuments,
+} from "./metadata-load.ts";
 import type { LoadedDocument } from "./metadata-load.ts";
 import type { MetadataStore } from "./metadata-store.ts";
 import {
@@ -357,30 +361,29 @@ const createTmdbProvider = (deps: TmdbProviderDeps): MetadataProvider => {
 		}
 		const store = await resolveStore();
 		const resources = uniqueResources(runs);
-		const documents = new Map<string, LoadedDocument>();
-		await Promise.all(
-			resources.map(async (resource) => {
-				const entryKey = entryKeyOf(resource);
-				const document = await resolveCatalogueDocument({
-					entryKey,
-					fetchSnapshots: async (need, previous) =>
-						resource.kind === "movie"
-							? fetchMovieSnapshots(http, version, resource)
-							: fetchSeriesSnapshots(
-									http,
-									version,
-									String(resource.id),
-									need,
-									previous,
-								),
-					now,
-					options,
-					provider: "tmdb",
-					store,
-					version,
-				});
-				documents.set(entryKey, document);
-			}),
+		const documents = await settleDocuments(
+			resources.map((resource) => ({
+				key: entryKeyOf(resource),
+				load: async () =>
+					resolveCatalogueDocument({
+						entryKey: entryKeyOf(resource),
+						fetchSnapshots: async (need, previous) =>
+							resource.kind === "movie"
+								? fetchMovieSnapshots(http, version, resource)
+								: fetchSeriesSnapshots(
+										http,
+										version,
+										String(resource.id),
+										need,
+										previous,
+									),
+						now,
+						options,
+						provider: "tmdb",
+						store,
+						version,
+					}),
+			})),
 		);
 
 		const aligned: SegmentMetadata[] = [];

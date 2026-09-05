@@ -14,7 +14,11 @@ import {
 import type { Snapshots } from "./metadata-document.ts";
 import type { MetadataFetchOptions } from "./metadata-freshness.ts";
 import { freshnessClassOf } from "./metadata-freshness.ts";
-import { lastUpdatedIso, resolveCatalogueDocument } from "./metadata-load.ts";
+import {
+	lastUpdatedIso,
+	resolveCatalogueDocument,
+	settleDocuments,
+} from "./metadata-load.ts";
 import type { LocalizedTitle } from "./metadata-locale.ts";
 import { createD1MetadataStore } from "./metadata-store.ts";
 import type { MetadataStore } from "./metadata-store.ts";
@@ -470,22 +474,28 @@ const createAnidbProvider = (deps: AnidbProviderDeps): MetadataProvider => {
 		const locale = options.locale ?? DEFAULT_LOCALE;
 		const now = options.now ?? new Date();
 		const store = await resolveStore();
-		const documents = await Promise.all(
-			ids.map(async (id) =>
-				resolveCatalogueDocument({
-					entryKey: id,
-					fetchSnapshots: async () => {
-						const entry = await fetchAnime(http, id, now);
-						return buildSnapshots(version, entry);
-					},
-					now,
-					options,
-					provider: "anidb",
-					store,
-					version,
-				}),
-			),
+		const documentsById = await settleDocuments(
+			ids.map((id) => ({
+				key: id,
+				load: async () =>
+					resolveCatalogueDocument({
+						entryKey: id,
+						fetchSnapshots: async () => {
+							const entry = await fetchAnime(http, id, now);
+							return buildSnapshots(version, entry);
+						},
+						now,
+						options,
+						provider: "anidb",
+						store,
+						version,
+					}),
+			})),
 		);
+		const documents = ids.flatMap((id) => {
+			const document = documentsById.get(id);
+			return document === undefined ? [] : [document];
+		});
 		const [identityDocument] = documents;
 		if (identityDocument === undefined) {
 			throw new Error("anidb: metadata snapshot run is missing");
@@ -495,13 +505,12 @@ const createAnidbProvider = (deps: AnidbProviderDeps): MetadataProvider => {
 			identityDocument.snapshots.volatile,
 			locale,
 		);
-		const byId = new Map(ids.map((id, index) => [id, documents[index]]));
 		const aligned: SegmentMetadata[] = resolved.segments.map((segment) => {
 			const id = segment.members.anidb;
 			if (id === undefined) {
 				return emptySegment();
 			}
-			const document = byId.get(id);
+			const document = documentsById.get(id);
 			if (document === undefined) {
 				return emptySegment();
 			}
