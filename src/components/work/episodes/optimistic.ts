@@ -44,7 +44,10 @@ function applyEpisodeWatched(
 			watchedSet.delete(instalmentLocator);
 		}
 		viewer.watched = [...watchedSet];
-		if (viewer.status === undefined && watchedSet.size > 0) {
+		if (
+			(viewer.status === undefined || viewer.status === "plan_to_watch") &&
+			watchedSet.size > 0
+		) {
 			viewer.status = "watching";
 		}
 		draft.viewer = viewer;

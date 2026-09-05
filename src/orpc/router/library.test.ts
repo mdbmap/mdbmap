@@ -394,21 +394,35 @@ describe("library.list", () => {
 		const db = await seededViewer();
 		const spy = await seedSpyXFamily(db);
 		const tmdb = await seedTmdbContinuity(db, "movie", "550");
+		const queued = await seedTmdbContinuity(db, "movie", "13");
 		await track(db, spy.continuityId, new Date("2024-01-02T00:00:00.000Z"), {
 			status: "watching",
 		});
 		await track(db, tmdb.continuityId, new Date("2024-01-01T00:00:00.000Z"), {
 			status: "completed",
 		});
+		await track(db, queued.continuityId, new Date("2024-01-03T00:00:00.000Z"), {
+			status: "plan_to_watch",
+		});
 		const client = clientFor(db, "user-1");
+		const all = await client.library.list({});
+		expect(all.map((row) => row.status).toSorted()).toEqual([
+			"completed",
+			"plan_to_watch",
+			"watching",
+		]);
 		const watching = await client.library.list({ status: "watching" });
 		expect(watching).toHaveLength(1);
 		expect(watching[0]?.status).toBe("watching");
+		expect(watching[0]?.continuityId).toBe(spy.continuityId);
 		const completed = await client.library.list({ status: "completed" });
 		expect(completed).toHaveLength(1);
 		expect(completed[0]?.status).toBe("completed");
+		const planned = await client.library.list({ status: "plan_to_watch" });
+		expect(planned).toHaveLength(1);
+		expect(planned[0]?.status).toBe("plan_to_watch");
+		expect(planned[0]?.continuityId).toBe(queued.continuityId);
 		expect(await client.library.list({ status: "dropped" })).toEqual([]);
-		expect(await client.library.list({ status: "plan_to_watch" })).toEqual([]);
 	});
 
 	it("sorts by title and personal rating", async () => {

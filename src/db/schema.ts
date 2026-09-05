@@ -16,11 +16,11 @@ type RateableUnitKey = string;
 
 const watchStatuses = [
 	"watching",
+	"plan_to_watch",
 	"on_hold",
 	"completed",
 	"dropped",
 	"rewatching",
-	"plan_to_watch",
 ] as const;
 type WatchStatus = (typeof watchStatuses)[number];
 
