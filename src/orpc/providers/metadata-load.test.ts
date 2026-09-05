@@ -114,13 +114,16 @@ describe("resolveCatalogueDocument", () => {
 			store,
 			version: VERSION,
 		});
-		expect(fetchSnapshots).not.toHaveBeenCalled();
 		expect(served.coreFetchedAt.toISOString()).toBe(now.toISOString());
+		expect(served.volatileFetchedAt.toISOString()).toBe(now.toISOString());
 		const [task] = scheduled;
 		if (task === undefined) {
 			throw new Error("expected a background refresh");
 		}
 		await task;
 		expect(fetchSnapshots).toHaveBeenCalledTimes(1);
+		const stored = await store.get("tmdb", "movie:1");
+		expect(stored?.volatileFetchedAt.toISOString()).toBe(later.toISOString());
+		expect(stored?.coreFetchedAt.toISOString()).toBe(now.toISOString());
 	});
 });
