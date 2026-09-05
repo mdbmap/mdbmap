@@ -45,6 +45,15 @@ const entry = (overrides: Partial<LibraryEntry> = {}): LibraryEntry => ({
 
 const noRuntimeEntries: LibraryEntry[] = [entry()];
 
+const knownRuntimeEntries: LibraryEntry[] = [
+	entry({ runtimeMinutes: 24, watchedInstalments: 25 }),
+	entry({
+		continuityId: "continuity:34",
+		runtimeMinutes: 12,
+		watchedInstalments: 13,
+	}),
+];
+
 const entries: LibraryEntry[] = [
 	entry({ personalRating: 8, rewatchCount: 2, runtimeMinutes: 24 }),
 	entry({
@@ -75,6 +84,7 @@ describe("StatsPage snapshot", () => {
 		expect(html).toContain("A snapshot of what you track.");
 		expect(html).toContain("3 works");
 		expect(html).toContain('href="/library"');
+		expect(html).toContain('href="/history"');
 		expect(html).toContain('href="/"');
 	});
 
@@ -92,7 +102,7 @@ describe("StatsPage snapshot", () => {
 		expect(html).toContain("8.5/10 · 2 rated");
 		expect(html).toContain("42 / 78");
 		expect(html).toContain("hours watched");
-		expect(html).toContain("12h 36m");
+		expect(html).toContain("12h 36m · some titles omitted");
 		expect(html).toContain("rewatch");
 		expect(html).toContain("×2");
 	});
@@ -120,10 +130,18 @@ describe("StatsPage empty state", () => {
 });
 
 describe("StatsPage hours watched", () => {
-	it("shows 0m when no runtime is known", () => {
+	it("notes omitted titles when no runtime is known", () => {
 		const html = renderToStaticMarkup(<StatsPage entries={noRuntimeEntries} />);
 		expect(html).toContain("hours watched");
-		expect(html).toContain("0m");
+		expect(html).toContain("0m · some titles omitted");
 		expect(html).not.toContain("12h 36m");
+	});
+
+	it("shows a complete total when every watched title has runtime", () => {
+		const html = renderToStaticMarkup(
+			<StatsPage entries={knownRuntimeEntries} />,
+		);
+		expect(html).toContain("12h 36m");
+		expect(html).not.toContain("some titles omitted");
 	});
 });

@@ -1,6 +1,6 @@
 import { useSuspenseQuery } from "@tanstack/react-query";
 import { useNavigate, useSearch } from "@tanstack/react-router";
-import { useCallback } from "react";
+import { useCallback, useEffect, useState } from "react";
 
 import type { WatchStatus } from "@/db/schema";
 import type { MediaKind } from "@/engine";
@@ -10,6 +10,8 @@ import type { LibrarySort } from "@/orpc/schema";
 import { LibraryPage } from "./library-page";
 import { libraryListInput } from "./library-params";
 import type { LibrarySearch } from "./library-params";
+
+const QUERY_DEBOUNCE_MS = 300;
 
 const withStatus =
 	(status: WatchStatus | undefined) =>
@@ -59,9 +61,36 @@ const withKind =
 		return next;
 	};
 
+const useLibraryQueryDraft = (urlQuery: string) => {
+	const navigate = useNavigate({ from: "/library" });
+	const [draft, setDraft] = useState(urlQuery);
+	const [seenUrlQuery, setSeenUrlQuery] = useState(urlQuery);
+
+	if (urlQuery !== seenUrlQuery) {
+		setSeenUrlQuery(urlQuery);
+		setDraft(urlQuery);
+	}
+
+	useEffect(() => {
+		if (draft === urlQuery) {
+			return;
+		}
+		const handle = globalThis.setTimeout(() => {
+			void navigate({ replace: true, search: withQuery(draft) });
+		}, QUERY_DEBOUNCE_MS);
+		return () => {
+			globalThis.clearTimeout(handle);
+		};
+	}, [draft, navigate, urlQuery]);
+
+	return { draft, setDraft };
+};
+
 export function LibraryRoute() {
 	const search = useSearch({ from: "/library" });
 	const navigate = useNavigate({ from: "/library" });
+	const urlQuery = search.q ?? "";
+	const { draft, setDraft } = useLibraryQueryDraft(urlQuery);
 	const { data } = useSuspenseQuery(
 		orpc.library.list.queryOptions({ input: libraryListInput(search) }),
 	);
@@ -80,13 +109,6 @@ export function LibraryRoute() {
 		[navigate],
 	);
 
-	const onQueryChange = useCallback(
-		(query: string) => {
-			void navigate({ replace: true, search: withQuery(query) });
-		},
-		[navigate],
-	);
-
 	const onKindChange = useCallback(
 		(kind: MediaKind | undefined) => {
 			void navigate({ replace: true, search: withKind(kind) });
@@ -99,10 +121,10 @@ export function LibraryRoute() {
 			entries={data}
 			kind={search.kind}
 			onKindChange={onKindChange}
-			onQueryChange={onQueryChange}
+			onQueryChange={setDraft}
 			onSortChange={onSortChange}
 			onStatusChange={onStatusChange}
-			query={search.q ?? ""}
+			query={draft}
 			sort={search.sort ?? "activity"}
 			status={search.status}
 		/>

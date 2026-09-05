@@ -36,7 +36,7 @@ describe("parseLibrarySearch", () => {
 			}),
 		).toEqual({
 			kind: "tv",
-			q: "abyss",
+			q: "  abyss  ",
 			sort: "title",
 			status: "watching",
 		});
@@ -55,6 +55,17 @@ describe("parseLibrarySearch", () => {
 			status: "completed",
 		});
 		expect(parseLibrarySearch(parsed)).toEqual(parsed);
+	});
+});
+
+describe("parseLibrarySearch title query", () => {
+	it("round-trips a multi-word query including interior spaces", () => {
+		expect(parseLibrarySearch({ q: "made in abyss" })).toEqual({
+			q: "made in abyss",
+		});
+		expect(parseLibrarySearch({ q: "made in abyss " })).toEqual({
+			q: "made in abyss ",
+		});
 	});
 });
 

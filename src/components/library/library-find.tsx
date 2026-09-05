@@ -6,11 +6,12 @@ import type { MediaKind } from "@/engine";
 const QUERY_LABEL = "Title";
 const QUERY_PLACEHOLDER = "Title…";
 const KIND_ALL = "all";
+const KIND_GROUP_LABEL = "Media kind";
 
 const kindTabs = [KIND_ALL, "anime", "film", "tv"] as const;
 
 const kindLabels: Record<(typeof kindTabs)[number], string> = {
-	all: "All",
+	all: "Any kind",
 	anime: "Anime",
 	film: "Film",
 	tv: "TV",
@@ -89,7 +90,10 @@ function LibraryFind({
 	return (
 		<div className="mt-5 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
 			<QueryField onQueryChange={onQueryChange} query={query} />
-			<div className="flex flex-wrap gap-2">
+			<fieldset
+				aria-label={KIND_GROUP_LABEL}
+				className="m-0 flex flex-wrap gap-2 border-0 p-0"
+			>
 				{kindTabs.map((tab) => (
 					<KindTab
 						active={tab === KIND_ALL ? kind === undefined : kind === tab}
@@ -98,7 +102,7 @@ function LibraryFind({
 						tab={tab}
 					/>
 				))}
-			</div>
+			</fieldset>
 		</div>
 	);
 }

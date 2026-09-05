@@ -24,11 +24,8 @@ const isMediaKind = (value: unknown): value is MediaKind =>
 const parseLibrarySearch = (search: Record<string, unknown>): LibrarySearch => {
 	const next: LibrarySearch = {};
 	const queryText = search["q"];
-	if (typeof queryText === "string") {
-		const trimmed = queryText.trim();
-		if (trimmed.length > 0) {
-			next.q = trimmed;
-		}
+	if (typeof queryText === "string" && queryText.trim().length > 0) {
+		next.q = queryText;
 	}
 	const { kind, sort, status } = search;
 	if (isMediaKind(kind)) {

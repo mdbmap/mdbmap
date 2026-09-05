@@ -2,7 +2,11 @@ import { describe, expect, it } from "vitest";
 
 import type { LibraryEntry } from "@/orpc/schema";
 
-import { formatWatchedHours, summarise } from "./summarise";
+import {
+	formatHoursWatchedValue,
+	formatWatchedHours,
+	summarise,
+} from "./summarise";
 
 const entry = (overrides: Partial<LibraryEntry> = {}): LibraryEntry => ({
 	continuityId: "continuity:1",
@@ -28,6 +32,7 @@ describe("summarise empty library", () => {
 				tv: 0,
 			},
 			meanRating: undefined,
+			omittedRuntime: false,
 			ratedCount: 0,
 			rewatchCount: 0,
 			statusCounts: {
@@ -136,6 +141,7 @@ describe("summarise hours watched", () => {
 			}),
 		]);
 		expect(stats.watchedMinutes).toBe(756);
+		expect(stats.omittedRuntime).toBe(true);
 	});
 
 	it("skips entries whose runtime is missing", () => {
@@ -143,6 +149,14 @@ describe("summarise hours watched", () => {
 			entry({ runtimeMinutes: undefined, watchedInstalments: 10 }),
 		]);
 		expect(stats.watchedMinutes).toBe(0);
+		expect(stats.omittedRuntime).toBe(true);
+	});
+
+	it("does not mark omitted when every watched title has runtime", () => {
+		const stats = summarise([
+			entry({ runtimeMinutes: 24, watchedInstalments: 4 }),
+		]);
+		expect(stats.omittedRuntime).toBe(false);
 	});
 });
 
@@ -168,5 +182,15 @@ describe("formatWatchedHours", () => {
 		expect(formatWatchedHours(45)).toBe("45m");
 		expect(formatWatchedHours(120)).toBe("2h");
 		expect(formatWatchedHours(756)).toBe("12h 36m");
+	});
+});
+
+describe("formatHoursWatchedValue", () => {
+	it("notes when some watched titles lacked runtime", () => {
+		expect(formatHoursWatchedValue(756, false)).toBe("12h 36m");
+		expect(formatHoursWatchedValue(756, true)).toBe(
+			"12h 36m · some titles omitted",
+		);
+		expect(formatHoursWatchedValue(0, true)).toBe("0m · some titles omitted");
 	});
 });

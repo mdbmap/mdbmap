@@ -53,14 +53,29 @@ const visibleEntries = (
 	entries: readonly LibraryEntry[],
 	kind: MediaKind | undefined,
 	query: string,
+	status: WatchStatus | undefined,
 ): readonly LibraryEntry[] => {
 	const needle = query.trim().toLowerCase();
 	return entries.filter(
 		(entry) =>
+			(status === undefined || entry.status === status) &&
 			(kind === undefined || entry.mediaKind === kind) &&
 			titleMatches(entry.title, needle),
 	);
 };
+
+const isFilteredEmpty = (
+	displayed: readonly LibraryEntry[],
+	entries: readonly LibraryEntry[],
+	kind: MediaKind | undefined,
+	query: string,
+	status: WatchStatus | undefined,
+): boolean =>
+	displayed.length === 0 &&
+	(entries.length > 0 ||
+		status !== undefined ||
+		kind !== undefined ||
+		query.trim().length > 0);
 
 const formatStatus = (status: WatchStatus) => status.replace("_", " ");
 
@@ -244,11 +259,9 @@ function LibraryPage({
 	status,
 }: LibraryPageProps) {
 	const displayed = useMemo(
-		() => visibleEntries(entries, kind, query),
-		[entries, kind, query],
+		() => visibleEntries(entries, kind, query, status),
+		[entries, kind, query, status],
 	);
-	const filteredEmpty =
-		displayed.length === 0 && (entries.length > 0 || status !== undefined);
 	const onClearFilter = useCallback(() => {
 		onKindChange(undefined);
 		onQueryChange("");
@@ -276,7 +289,7 @@ function LibraryPage({
 			</section>
 			<LibraryBody
 				entries={displayed}
-				filteredEmpty={filteredEmpty}
+				filteredEmpty={isFilteredEmpty(displayed, entries, kind, query, status)}
 				onClearFilter={onClearFilter}
 			/>
 		</main>

@@ -7,7 +7,7 @@ import { watchStatuses } from "@/db/schema";
 import { BetterAuthHeader } from "@/integrations/better-auth/header-user";
 import type { LibraryEntry } from "@/orpc/schema";
 
-import { formatWatchedHours, mediaKinds, summarise } from "./summarise";
+import { formatHoursWatchedValue, mediaKinds, summarise } from "./summarise";
 import type { LibraryStats } from "./summarise";
 
 const BRAND = "mdbmap";
@@ -21,6 +21,8 @@ const SEARCH_NAV = "Search";
 const SEARCH_PATH = "/search";
 const LIBRARY_NAV = "Library";
 const LIBRARY_PATH = "/library";
+const HISTORY_NAV = "History";
+const HISTORY_PATH = "/history";
 const UNRATED = "—";
 const OUT_OF_TEN = "/10";
 const RATED = "rated";
@@ -64,6 +66,14 @@ function HeaderNavLink({
 	);
 }
 
+function HistoryNavLink() {
+	return (
+		<a href={HISTORY_PATH}>
+			<span className={navClass}>{HISTORY_NAV}</span>
+		</a>
+	);
+}
+
 function StatsHeader() {
 	return (
 		<header className="flex items-center justify-between px-8 py-3.5">
@@ -71,6 +81,7 @@ function StatsHeader() {
 				<HeaderNavLink label={BRAND} to="/" />
 				<HeaderNavLink label={SEARCH_NAV} to={SEARCH_PATH} />
 				<HeaderNavLink label={LIBRARY_NAV} to={LIBRARY_PATH} />
+				<HistoryNavLink />
 			</nav>
 			<div className="flex items-center gap-4">
 				<BetterAuthHeader />
@@ -156,7 +167,10 @@ function SnapshotRows({ stats }: { stats: LibraryStats }) {
 			/>
 			<CountRow
 				label="hours watched"
-				value={formatWatchedHours(stats.watchedMinutes)}
+				value={formatHoursWatchedValue(
+					stats.watchedMinutes,
+					stats.omittedRuntime,
+				)}
 			/>
 			<CountRow label="rewatch" value={formatRewatch(stats.rewatchCount)} />
 		</>

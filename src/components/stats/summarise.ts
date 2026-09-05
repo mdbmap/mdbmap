@@ -9,6 +9,7 @@ type KindCounts = Record<MediaKind, number>;
 interface LibraryStats {
 	kindCounts: KindCounts;
 	meanRating: number | undefined;
+	omittedRuntime: boolean;
 	ratedCount: number;
 	rewatchCount: number;
 	statusCounts: StatusCounts;
@@ -72,6 +73,16 @@ const formatWatchedHours = (minutes: number): string => {
 	return `${hours}h ${remaining}m`;
 };
 
+const OMITTED_RUNTIME_NOTE = "some titles omitted";
+
+const formatHoursWatchedValue = (minutes: number, omitted: boolean): string => {
+	const formatted = formatWatchedHours(minutes);
+	if (!omitted) {
+		return formatted;
+	}
+	return `${formatted} · ${OMITTED_RUNTIME_NOTE}`;
+};
+
 function summarise(entries: readonly LibraryEntry[]): LibraryStats {
 	const kindCounts = emptyKindCounts();
 	const statusCounts = emptyStatusCounts();
@@ -81,6 +92,7 @@ function summarise(entries: readonly LibraryEntry[]): LibraryStats {
 	let totalInstalments = 0;
 	let watchedInstalments = 0;
 	let watchedMinutes = 0;
+	let omittedRuntime = false;
 
 	for (const entry of entries) {
 		kindCounts[entry.mediaKind] += 1;
@@ -94,6 +106,8 @@ function summarise(entries: readonly LibraryEntry[]): LibraryStats {
 		watchedInstalments += entry.watchedInstalments;
 		if (entry.runtimeMinutes !== undefined) {
 			watchedMinutes += entry.watchedInstalments * entry.runtimeMinutes;
+		} else if (entry.watchedInstalments > 0) {
+			omittedRuntime = true;
 		}
 	}
 
@@ -101,6 +115,7 @@ function summarise(entries: readonly LibraryEntry[]): LibraryStats {
 		kindCounts,
 		meanRating:
 			ratedCount === 0 ? undefined : roundMean(ratingTotal, ratedCount),
+		omittedRuntime,
 		ratedCount,
 		rewatchCount,
 		statusCounts,
@@ -111,5 +126,5 @@ function summarise(entries: readonly LibraryEntry[]): LibraryStats {
 	};
 }
 
-export { formatWatchedHours, mediaKinds, summarise };
+export { formatHoursWatchedValue, formatWatchedHours, mediaKinds, summarise };
 export type { KindCounts, LibraryStats, StatusCounts };
