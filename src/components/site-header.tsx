@@ -9,11 +9,13 @@ const BRAND = "mdbmap";
 const SEARCH_NAV = "Search";
 const LIBRARY_NAV = "Library";
 const CALENDAR_NAV = "Calendar";
+const HISTORY_NAV = "History";
 const STATS_NAV = "Stats";
 const HOME_PATH = "/";
 const SEARCH_PATH = "/search";
 const LIBRARY_PATH = "/library";
 const CALENDAR_PATH = "/calendar";
+const HISTORY_PATH = "/history";
 const STATS_PATH = "/stats";
 
 const header = tv({
@@ -42,9 +44,16 @@ const navItem = tv({
 	},
 });
 
-type HeaderCurrent = "calendar" | "home" | "library" | "search" | "stats";
+type HeaderCurrent =
+	| "calendar"
+	| "history"
+	| "home"
+	| "library"
+	| "search"
+	| "stats";
 type HeaderTo =
 	| typeof CALENDAR_PATH
+	| typeof HISTORY_PATH
 	| typeof LIBRARY_PATH
 	| typeof SEARCH_PATH
 	| typeof STATS_PATH;
@@ -90,6 +99,11 @@ function LibraryNav({ current }: { current: HeaderCurrent | undefined }) {
 				active={current === "calendar"}
 				label={CALENDAR_NAV}
 				to={CALENDAR_PATH}
+			/>
+			<HeaderLink
+				active={current === "history"}
+				label={HISTORY_NAV}
+				to={HISTORY_PATH}
 			/>
 			<HeaderLink
 				active={current === "stats"}
