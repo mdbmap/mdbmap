@@ -8,17 +8,20 @@ import { HistoryPage } from "./history-page";
 
 vi.mock("@tanstack/react-router", () => ({
 	Link: ({
+		"aria-current": ariaCurrent,
 		children,
 		params,
 		to,
 		"data-cta": dataCta,
 	}: {
+		"aria-current"?: "page";
 		children: ReactNode;
 		"data-cta"?: boolean | string;
 		params?: { continuityId: number | string };
 		to: string;
 	}) => (
 		<a
+			aria-current={ariaCurrent}
 			data-cta={dataCta === undefined ? undefined : ""}
 			href={to.replace("$continuityId", String(params?.continuityId ?? ""))}
 		>

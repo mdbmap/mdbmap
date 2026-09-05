@@ -320,6 +320,6 @@ describe("history.list", () => {
 
 		await expect(
 			clientFor(db, "user-1").history.list({ cursor: "not-a-cursor" }),
-		).rejects.toThrow(/cursor/iu);
+		).rejects.toMatchObject({ code: "BAD_REQUEST" });
 	});
 });
