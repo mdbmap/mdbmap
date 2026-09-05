@@ -32,6 +32,7 @@ const entry = (overrides: Partial<LibraryEntry> = {}): LibraryEntry => ({
 	continuityId: "continuity:12",
 	coverRef: undefined,
 	finishedAt: undefined,
+	mediaKind: "anime",
 	personalRating: undefined,
 	rewatchCount: 0,
 	startedAt: undefined,
@@ -42,11 +43,15 @@ const entry = (overrides: Partial<LibraryEntry> = {}): LibraryEntry => ({
 	...overrides,
 });
 
+const noRuntimeEntries: LibraryEntry[] = [entry()];
+
 const entries: LibraryEntry[] = [
-	entry({ personalRating: 8, rewatchCount: 2 }),
+	entry({ personalRating: 8, rewatchCount: 2, runtimeMinutes: 24 }),
 	entry({
 		continuityId: "continuity:34",
+		mediaKind: "film",
 		personalRating: 9,
+		runtimeMinutes: 12,
 		status: "completed",
 		title: "Made in Abyss",
 		totalInstalments: 13,
@@ -54,6 +59,7 @@ const entries: LibraryEntry[] = [
 	}),
 	entry({
 		continuityId: "continuity:56",
+		mediaKind: "tv",
 		status: "on_hold",
 		title: "Frieren",
 		totalInstalments: 28,
@@ -82,11 +88,19 @@ describe("StatsPage snapshot", () => {
 		expect(html).toContain(">0<");
 	});
 
-	it("shows mean rating, rated count, instalments and rewatch", () => {
+	it("shows mean rating, rated count, instalments, hours and rewatch", () => {
 		expect(html).toContain("8.5/10 · 2 rated");
 		expect(html).toContain("42 / 78");
+		expect(html).toContain("hours watched");
+		expect(html).toContain("12h 36m");
 		expect(html).toContain("rewatch");
 		expect(html).toContain("×2");
+	});
+
+	it("lists work counts by media kind", () => {
+		expect(html).toContain("Anime");
+		expect(html).toContain("Film");
+		expect(html).toContain("TV");
 	});
 });
 
@@ -100,6 +114,16 @@ describe("StatsPage empty state", () => {
 		expect(html).toContain('href="/search"');
 		expect(html).toContain("data-cta");
 		expect(html).not.toContain("personal rating");
+		expect(html).not.toContain("hours watched");
 		expect(html).not.toContain("<form");
+	});
+});
+
+describe("StatsPage hours watched", () => {
+	it("shows 0m when no runtime is known", () => {
+		const html = renderToStaticMarkup(<StatsPage entries={noRuntimeEntries} />);
+		expect(html).toContain("hours watched");
+		expect(html).toContain("0m");
+		expect(html).not.toContain("12h 36m");
 	});
 });

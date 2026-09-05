@@ -6,10 +6,12 @@ import { SiteHeader } from "@/components/site-header";
 import { Label } from "@/components/ui/label";
 import { imageUrl, posterHue } from "@/components/work/metadata/placeholders";
 import type { WatchStatus } from "@/db/schema";
+import type { MediaKind } from "@/engine";
 import { workPathId } from "@/engine/continuity/keys";
 import type { LibraryEntry, LibrarySort } from "@/orpc/schema";
 
 import { LibraryControls } from "./library-controls";
+import { LibraryFind } from "./library-find";
 
 const TITLE = "Library";
 const TAGLINE = "Everything you track, filtered and sorted your way.";
@@ -23,7 +25,7 @@ const UNRATED = "—";
 const OUT_OF_TEN = "/10";
 const FILTER_EMPTY_HEADING = "Nothing in this view.";
 const FILTER_EMPTY_BODY =
-	"No tracked works match this status. Clear the filter to see everything again.";
+	"No tracked works match these filters. Clear them to see everything again.";
 const CLEAR_FILTER = "Show all";
 
 const row = tv({
@@ -36,6 +38,29 @@ const cover = tv({
 
 const trackedCount = (total: number) =>
 	`${total} ${total === 1 ? "work" : "works"}`;
+
+const titleMatches = (title: string | undefined, needle: string): boolean => {
+	if (needle.length === 0) {
+		return true;
+	}
+	if (title === undefined || title.length === 0) {
+		return false;
+	}
+	return title.toLowerCase().includes(needle);
+};
+
+const visibleEntries = (
+	entries: readonly LibraryEntry[],
+	kind: MediaKind | undefined,
+	query: string,
+): readonly LibraryEntry[] => {
+	const needle = query.trim().toLowerCase();
+	return entries.filter(
+		(entry) =>
+			(kind === undefined || entry.mediaKind === kind) &&
+			titleMatches(entry.title, needle),
+	);
+};
 
 const formatStatus = (status: WatchStatus) => status.replace("_", " ");
 
@@ -197,30 +222,51 @@ function LibraryBody({
 
 interface LibraryPageProps {
 	entries: readonly LibraryEntry[];
+	kind: MediaKind | undefined;
+	onKindChange: (kind: MediaKind | undefined) => void;
+	onQueryChange: (query: string) => void;
 	onSortChange: (sort: LibrarySort) => void;
 	onStatusChange: (status: WatchStatus | undefined) => void;
+	query: string;
 	sort: LibrarySort;
 	status: WatchStatus | undefined;
 }
 
 function LibraryPage({
 	entries,
+	kind,
+	onKindChange,
+	onQueryChange,
 	onSortChange,
 	onStatusChange,
+	query,
 	sort,
 	status,
 }: LibraryPageProps) {
-	const filteredEmpty = entries.length === 0 && status !== undefined;
+	const displayed = useMemo(
+		() => visibleEntries(entries, kind, query),
+		[entries, kind, query],
+	);
+	const filteredEmpty =
+		displayed.length === 0 && (entries.length > 0 || status !== undefined);
 	const onClearFilter = useCallback(() => {
+		onKindChange(undefined);
+		onQueryChange("");
 		onStatusChange(undefined);
-	}, [onStatusChange]);
+	}, [onKindChange, onQueryChange, onStatusChange]);
 	return (
 		<main className="mx-auto min-h-screen max-w-[1200px] pb-24">
 			<SiteHeader current="library" />
 			<section className="px-8 pt-6 pb-7">
-				<Label>{trackedCount(entries.length)}</Label>
+				<Label>{trackedCount(displayed.length)}</Label>
 				<h1 className="text-ink/95 mt-1 font-serif text-4xl italic">{TITLE}</h1>
 				<p className="text-ink/60 mt-2 font-mono text-xs">{TAGLINE}</p>
+				<LibraryFind
+					kind={kind}
+					onKindChange={onKindChange}
+					onQueryChange={onQueryChange}
+					query={query}
+				/>
 				<LibraryControls
 					onSortChange={onSortChange}
 					onStatusChange={onStatusChange}
@@ -229,7 +275,7 @@ function LibraryPage({
 				/>
 			</section>
 			<LibraryBody
-				entries={entries}
+				entries={displayed}
 				filteredEmpty={filteredEmpty}
 				onClearFilter={onClearFilter}
 			/>

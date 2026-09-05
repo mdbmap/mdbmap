@@ -7,7 +7,7 @@ import { watchStatuses } from "@/db/schema";
 import { BetterAuthHeader } from "@/integrations/better-auth/header-user";
 import type { LibraryEntry } from "@/orpc/schema";
 
-import { summarise } from "./summarise";
+import { formatWatchedHours, mediaKinds, summarise } from "./summarise";
 import type { LibraryStats } from "./summarise";
 
 const BRAND = "mdbmap";
@@ -38,6 +38,12 @@ const formatInstalments = (watched: number, total: number) =>
 	`${watched} / ${total}`;
 
 const formatRewatch = (count: number) => `×${count}`;
+
+const kindLabels: Record<(typeof mediaKinds)[number], string> = {
+	anime: "Anime",
+	film: "Film",
+	tv: "TV",
+};
 
 const navClass =
 	"text-ink/50 hover:text-accent font-mono text-xs tracking-[0.1em] uppercase";
@@ -117,6 +123,20 @@ function StatusRows({ stats }: { stats: LibraryStats }) {
 	);
 }
 
+function KindRows({ stats }: { stats: LibraryStats }) {
+	return (
+		<>
+			{mediaKinds.map((kind) => (
+				<CountRow
+					key={kind}
+					label={kindLabels[kind]}
+					value={String(stats.kindCounts[kind])}
+				/>
+			))}
+		</>
+	);
+}
+
 function SnapshotRows({ stats }: { stats: LibraryStats }) {
 	const rating =
 		stats.meanRating === undefined
@@ -125,6 +145,7 @@ function SnapshotRows({ stats }: { stats: LibraryStats }) {
 	return (
 		<>
 			<StatusRows stats={stats} />
+			<KindRows stats={stats} />
 			<CountRow label="personal rating" value={rating} />
 			<CountRow
 				label={INSTALMENTS}
@@ -132,6 +153,10 @@ function SnapshotRows({ stats }: { stats: LibraryStats }) {
 					stats.watchedInstalments,
 					stats.totalInstalments,
 				)}
+			/>
+			<CountRow
+				label="hours watched"
+				value={formatWatchedHours(stats.watchedMinutes)}
 			/>
 			<CountRow label="rewatch" value={formatRewatch(stats.rewatchCount)} />
 		</>

@@ -123,6 +123,7 @@ const entry = (overrides: Partial<LibraryEntry> = {}): LibraryEntry => ({
 	continuityId: "continuity:12",
 	coverRef: undefined,
 	finishedAt: undefined,
+	mediaKind: "anime",
 	nextUp: {
 		number: 3,
 		partLabel: "Cour 2",

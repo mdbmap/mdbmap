@@ -3,6 +3,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
 
 import type { WatchStatus } from "@/db/schema";
+import type { MediaKind } from "@/engine";
 import type { LibraryEntry, LibrarySort } from "@/orpc/schema";
 
 import { LibraryPage } from "./library-page";
@@ -43,6 +44,8 @@ vi.mock("@/lib/auth-client", () => ({
 
 const onSortChange = vi.fn<(sort: LibrarySort) => void>();
 const onStatusChange = vi.fn<(status: WatchStatus | undefined) => void>();
+const onKindChange = vi.fn<(kind: MediaKind | undefined) => void>();
+const onQueryChange = vi.fn<(query: string) => void>();
 
 const NO_ENTRIES: LibraryEntry[] = [];
 
@@ -50,6 +53,7 @@ const entry = (overrides: Partial<LibraryEntry> = {}): LibraryEntry => ({
 	continuityId: "continuity:12",
 	coverRef: undefined,
 	finishedAt: undefined,
+	mediaKind: "anime",
 	personalRating: undefined,
 	rewatchCount: 0,
 	startedAt: undefined,
@@ -82,6 +86,7 @@ const entries: LibraryEntry[] = [
 	entry({
 		continuityId: "continuity:56",
 		finishedAt: "2020-01-17",
+		mediaKind: "film",
 		startedAt: "2020-01-17",
 		title: undefined,
 		totalInstalments: 1,
@@ -92,12 +97,17 @@ const entries: LibraryEntry[] = [
 const renderPage = (
 	pageEntries: readonly LibraryEntry[],
 	status?: LibraryEntry["status"],
+	find?: { kind?: MediaKind; query?: string },
 ) =>
 	renderToStaticMarkup(
 		<LibraryPage
 			entries={pageEntries}
+			kind={find?.kind}
+			onKindChange={onKindChange}
+			onQueryChange={onQueryChange}
 			onSortChange={onSortChange}
 			onStatusChange={onStatusChange}
+			query={find?.query ?? ""}
 			sort="activity"
 			status={status}
 		/>,
@@ -133,10 +143,14 @@ describe("LibraryPage rows", () => {
 		expect(html).toContain("finished 2020-01-17");
 	});
 
-	it("counts the tracked works and exposes status and sort controls", () => {
+	it("counts the tracked works and exposes status, sort and find controls", () => {
 		expect(html).toContain("3 works");
 		expect(html).toContain("Watching");
 		expect(html).toContain("Recent activity");
+		expect(html).toContain("Title…");
+		expect(html).toContain("Anime");
+		expect(html).toContain("Film");
+		expect(html).toContain("TV");
 	});
 
 	it("links the brand home and search in the site header", () => {
@@ -163,5 +177,39 @@ describe("LibraryPage empty states", () => {
 		expect(html).toContain("Nothing in this view.");
 		expect(html).toContain("Show all");
 		expect(html).not.toContain("Search catalogues");
+	});
+});
+
+describe("LibraryPage findability", () => {
+	it("hides titles that do not match the query", () => {
+		const html = renderPage(entries, undefined, { query: "abyss" });
+		expect(html).toContain("Made in Abyss");
+		expect(html).toContain("1 work");
+		expect(html).not.toContain("Spy × Family");
+		expect(html).not.toContain("Title unavailable");
+	});
+
+	it("matches titles case-insensitively and skips untitled works", () => {
+		const html = renderPage(entries, undefined, { query: "FAMILY" });
+		expect(html).toContain("Spy × Family");
+		expect(html).not.toContain("Made in Abyss");
+		expect(html).not.toContain("Title unavailable");
+	});
+
+	it("filters by media kind", () => {
+		const html = renderPage(entries, undefined, { kind: "film" });
+		expect(html).toContain("Title unavailable");
+		expect(html).toContain("1 work");
+		expect(html).not.toContain("Spy × Family");
+		expect(html).not.toContain("Made in Abyss");
+	});
+
+	it("explains when title or kind filters match nothing", () => {
+		const html = renderPage(entries, undefined, { query: "no-such-title" });
+		expect(html).toContain("Nothing in this view.");
+		expect(html).toContain("0 works");
+		expect(html).toContain("Show all");
+		expect(html).not.toContain("Nothing tracked yet.");
+		expect(html).not.toContain("Spy × Family");
 	});
 });

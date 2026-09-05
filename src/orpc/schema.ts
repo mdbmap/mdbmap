@@ -377,9 +377,11 @@ interface LibraryEntry {
 	continuityId: string;
 	coverRef: string | undefined;
 	finishedAt: string | undefined;
+	mediaKind: MediaKind;
 	nextUp?: NextUp | undefined;
 	personalRating: number | undefined;
 	rewatchCount: number;
+	runtimeMinutes?: number | undefined;
 	startedAt: string | undefined;
 	status: WatchStatus;
 	title: string | undefined;
