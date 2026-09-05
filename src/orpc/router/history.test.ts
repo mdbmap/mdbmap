@@ -4,7 +4,7 @@ import { describe, expect, it } from "vitest";
 import { continuityAliases } from "@/db/engine-schema";
 import { episodeProgress, user, watchStatus } from "@/db/schema";
 import { freshDb } from "@/db/test-helpers";
-import type { ResolveResult } from "@/engine";
+import type { EngineRead, ResolveResult } from "@/engine";
 import { createEngine } from "@/engine";
 import { parseContinuityKey } from "@/engine/continuity/keys";
 import {
@@ -68,10 +68,12 @@ const clientFor = (
 	db: TestDb,
 	userId: string | undefined,
 	providers: Providers = providersUsing(titledProvider),
+	engine?: EngineRead,
 ) =>
 	createRouterClient(router, {
 		context: {
 			db,
+			...(engine === undefined ? {} : { engine }),
 			providers,
 			resolveSession: () => (userId === undefined ? undefined : { id: userId }),
 		} satisfies ORPCContext,
@@ -315,7 +317,7 @@ describe("history.list", () => {
 		);
 	});
 
-	it("treats an undecodable cursor as the first page", async () => {
+	it("rejects an undecodable cursor", async () => {
 		const db = await seededViewer();
 		const { continuityId } = await seedSpyXFamily(db);
 		await track(db, continuityId);
@@ -323,8 +325,91 @@ describe("history.list", () => {
 		await markWatched(db, first, new Date("2026-04-08T12:00:00.000Z"));
 		const client = clientFor(db, "user-1");
 
-		expect(await client.history.list({ cursor: "not-a-cursor" })).toEqual(
-			await client.history.list({}),
-		);
+		await expect(
+			client.history.list({ cursor: "not-a-cursor" }),
+		).rejects.toMatchObject({ code: "BAD_REQUEST" });
 	});
+
+	it("does not let skipped locators consume the page limit", async () => {
+		const db = await seededViewer();
+		const { continuityId } = await seedSpyXFamily(db);
+		await track(db, continuityId);
+		const { first, second } = await threeLocators(db, continuityId);
+		await markWatched(db, "ghost:skip", new Date("2026-04-12T12:00:00.000Z"));
+		await markWatched(db, first, new Date("2026-04-11T12:00:00.000Z"));
+		await markWatched(db, second, new Date("2026-04-10T12:00:00.000Z"));
+		const inner = createEngine(db);
+		const engine: EngineRead = {
+			resolveContinuity: async (requested) => {
+				const resolved = await inner.resolveContinuity(requested);
+				return {
+					...resolved,
+					segments: [
+						...resolved.segments,
+						{
+							instalments: ["ghost:skip"],
+							kind: "episodic",
+							members: {},
+						},
+					],
+				};
+			},
+		};
+		const client = clientFor(
+			db,
+			"user-1",
+			providersUsing(titledProvider),
+			engine,
+		);
+
+		const firstPage = await client.history.list({ limit: 1 });
+		expect(firstPage.entries.map((entry) => entry.instalmentTitle)).toEqual([
+			"Episode 1",
+		]);
+		const cursor = firstPage.nextCursor;
+		if (cursor === undefined) {
+			throw new Error("expected a history cursor");
+		}
+
+		const secondPage = await client.history.list({ cursor, limit: 1 });
+		expect(secondPage.entries.map((entry) => entry.instalmentTitle)).toEqual([
+			"Episode 2",
+		]);
+		expect(secondPage.nextCursor).toBeUndefined();
+	});
+
+	it("loads progress for libraries whose instalment set exceeds D1 bind limits", async () => {
+		const db = await seededViewer();
+		const seeded = await Promise.all(
+			Array.from({ length: 101 }, async (_slot, index) =>
+				seedTmdbContinuity(db, "movie", String(90_000 + index)),
+			),
+		);
+		await Promise.all(
+			seeded.map(async ({ continuityId }, index) => {
+				await track(db, continuityId);
+				const [locator] = await locatorsFor(db, continuityId);
+				if (locator === undefined) {
+					throw new Error("expected a film locator");
+				}
+				await markWatched(
+					db,
+					locator,
+					new Date(`2026-01-01T00:00:${String(index % 60).padStart(2, "0")}Z`),
+				);
+			}),
+		);
+		const client = clientFor(db, "user-1");
+
+		const firstPage = await client.history.list({ limit: 100 });
+		expect(firstPage.entries).toHaveLength(100);
+		const cursor = firstPage.nextCursor;
+		if (cursor === undefined) {
+			throw new Error("expected a history cursor");
+		}
+
+		const secondPage = await client.history.list({ cursor, limit: 100 });
+		expect(secondPage.entries).toHaveLength(1);
+		expect(secondPage.nextCursor).toBeUndefined();
+	}, 15_000);
 });

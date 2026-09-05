@@ -1,3 +1,4 @@
+import { ORPCError } from "@orpc/server";
 import { and, eq, inArray } from "drizzle-orm";
 
 import { episodeProgress, watchStatus } from "@/db/schema";
@@ -22,6 +23,8 @@ const UNTITLED = "Title unavailable";
 const DEFAULT_LIMIT = 50;
 const LOCATOR_CHUNK = 50;
 const META_BATCH = 8;
+const MAX_CURSOR_LENGTH = 80;
+const PROGRESS_ID = /^[1-9]\d*$/u;
 
 type WatchStatusRow = typeof watchStatus.$inferSelect;
 
@@ -60,19 +63,41 @@ const encodeCursor = (payload: HistoryListCursorPayload): HistoryListCursor =>
 const decodeCursor = (
 	cursor: HistoryListCursor,
 ): HistoryListCursorPayload | undefined => {
+	if (cursor.length > MAX_CURSOR_LENGTH) {
+		return undefined;
+	}
 	const separator = cursor.indexOf(":");
 	if (separator < 1) {
 		return undefined;
 	}
-	const progressId = Number(cursor.slice(0, separator));
+	const idToken = cursor.slice(0, separator);
+	if (!PROGRESS_ID.test(idToken)) {
+		return undefined;
+	}
+	const progressId = Number(idToken);
 	const watchedAt = cursor.slice(separator + 1);
-	if (!Number.isSafeInteger(progressId) || progressId < 1) {
+	if (!Number.isSafeInteger(progressId)) {
 		return undefined;
 	}
 	if (Number.isNaN(Date.parse(watchedAt))) {
 		return undefined;
 	}
 	return { progressId, watchedAt };
+};
+
+const parsedCursor = (
+	cursor: HistoryListCursor | undefined,
+): HistoryListCursorPayload | undefined => {
+	if (cursor === undefined) {
+		return undefined;
+	}
+	const decoded = decodeCursor(cursor);
+	if (decoded === undefined) {
+		throw new ORPCError("BAD_REQUEST", {
+			message: "History cursor is invalid.",
+		});
+	}
+	return decoded;
 };
 
 const resolveTracked = async (
@@ -283,46 +308,78 @@ const presentationsFor = async (
 	return new Map(fetched);
 };
 
-const toEntries = (
-	page: readonly ProgressRow[],
+const entryFor = (
+	row: ProgressRow,
 	owners: ReadonlyMap<string, TrackedWork>,
 	presentations: ReadonlyMap<string, WorkPresentation>,
-): HistoryEntry[] => {
-	const entries: HistoryEntry[] = [];
-	for (const row of page) {
-		const work = owners.get(row.locator);
-		if (work === undefined) {
-			continue;
-		}
-		const presentation = presentations.get(work.resolved.continuityId);
-		if (presentation === undefined) {
-			continue;
-		}
-		const ref = instalmentRef(presentation.segments, row.locator);
-		if (ref === undefined) {
-			continue;
-		}
-		entries.push({
-			continuityId: work.resolved.continuityId,
-			coverRef: presentation.coverRef,
-			instalmentTitle: ref.instalmentTitle,
-			mediaKind: presentation.mediaKind,
-			number: ref.number,
-			partLabel: ref.partLabel,
-			watchedAt: row.watchedAt.toISOString(),
-			workTitle: presentation.workTitle,
-		});
+): HistoryEntry | undefined => {
+	const work = owners.get(row.locator);
+	if (work === undefined) {
+		return undefined;
 	}
-	return entries;
+	const presentation = presentations.get(work.resolved.continuityId);
+	if (presentation === undefined) {
+		return undefined;
+	}
+	const ref = instalmentRef(presentation.segments, row.locator);
+	if (ref === undefined) {
+		return undefined;
+	}
+	return {
+		continuityId: work.resolved.continuityId,
+		coverRef: presentation.coverRef,
+		instalmentTitle: ref.instalmentTitle,
+		mediaKind: presentation.mediaKind,
+		number: ref.number,
+		partLabel: ref.partLabel,
+		watchedAt: row.watchedAt.toISOString(),
+		workTitle: presentation.workTitle,
+	};
 };
 
-const emptyResult = (): HistoryListResult => ({ entries: [] });
+const cursorOf = (row: ProgressRow): HistoryListCursor =>
+	encodeCursor({
+		progressId: row.id,
+		watchedAt: row.watchedAt.toISOString(),
+	});
+
+const paginate = async (
+	db: Db,
+	providers: Providers,
+	owners: ReadonlyMap<string, TrackedWork>,
+	afterCursor: readonly ProgressRow[],
+	limit: number,
+): Promise<HistoryListResult> => {
+	const presentations = await presentationsFor(
+		db,
+		providers,
+		uniqueWorks(afterCursor, owners),
+	);
+	const entries: HistoryEntry[] = [];
+	let lastEmitted: ProgressRow | undefined;
+	let index = 0;
+	for (; index < afterCursor.length && entries.length < limit; index += 1) {
+		const row = afterCursor[index];
+		if (row === undefined) {
+			break;
+		}
+		const entry = entryFor(row, owners, presentations);
+		if (entry === undefined) {
+			continue;
+		}
+		entries.push(entry);
+		lastEmitted = row;
+	}
+	if (lastEmitted === undefined || index >= afterCursor.length) {
+		return { entries };
+	}
+	return { entries, nextCursor: cursorOf(lastEmitted) };
+};
 
 const list = authed
 	.input(HistoryListInput)
 	.handler(async ({ context, input }): Promise<HistoryListResult> => {
-		const cursor =
-			input.cursor === undefined ? undefined : decodeCursor(input.cursor);
+		const cursor = parsedCursor(input.cursor);
 		const limit = input.limit ?? DEFAULT_LIMIT;
 		const userId = context.user.id;
 		const rows = await context.db
@@ -338,27 +395,7 @@ const list = authed
 			cursor === undefined
 				? ranked
 				: ranked.filter((row) => isOlderThanCursor(row, cursor));
-		const page = afterCursor.slice(0, limit);
-		if (page.length === 0) {
-			return emptyResult();
-		}
-		const presentations = await presentationsFor(
-			context.db,
-			context.providers,
-			uniqueWorks(page, owners),
-		);
-		const entries = toEntries(page, owners, presentations);
-		const last = page.at(-1);
-		if (afterCursor.length > limit && last !== undefined) {
-			return {
-				entries,
-				nextCursor: encodeCursor({
-					progressId: last.id,
-					watchedAt: last.watchedAt.toISOString(),
-				}),
-			};
-		}
-		return { entries };
+		return paginate(context.db, context.providers, owners, afterCursor, limit);
 	});
 
 const history = { list };

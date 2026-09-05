@@ -6,15 +6,16 @@ import { SiteHeader } from "@/components/site-header";
 import { Label } from "@/components/ui/label";
 import { imageUrl, posterHue } from "@/components/work/metadata/placeholders";
 import { workPathId } from "@/engine/continuity/keys";
-import type { HistoryEntry } from "@/orpc/schema";
+import type { HistoryEntry, HistoryListCursor } from "@/orpc/schema";
 
 const TITLE = "History";
 const TAGLINE = "Recently watched instalments, newest first.";
 const EMPTY_HEADING = "Nothing watched yet.";
 const EMPTY_BODY =
-	"Open a work and tick an episode. It shows up here the moment you do.";
+	"Tick an episode on a work you track. Newest watches are listed here.";
 const EMPTY_CTA_LIBRARY = "Library";
 const EMPTY_CTA_SEARCH = "Search catalogues";
+const LOAD_MORE = "Load more";
 const LIBRARY_PATH = "/library";
 const SEARCH_PATH = "/search";
 const UNTITLED = "Title unavailable";
@@ -138,7 +139,39 @@ function HistoryList({ entries }: { entries: readonly HistoryEntry[] }) {
 	);
 }
 
-function HistoryPage({ entries }: { entries: readonly HistoryEntry[] }) {
+function LoadMore({
+	loadingMore,
+	onLoadMore,
+}: {
+	loadingMore: boolean;
+	onLoadMore: () => void;
+}) {
+	return (
+		<p className="px-8 py-6">
+			<button
+				className="text-accent font-mono text-xs tracking-[0.1em] uppercase"
+				disabled={loadingMore}
+				onClick={onLoadMore}
+				type="button"
+			>
+				{LOAD_MORE}
+			</button>
+		</p>
+	);
+}
+
+function HistoryPage({
+	entries,
+	loadingMore = false,
+	nextCursor,
+	onLoadMore,
+}: {
+	entries: readonly HistoryEntry[];
+	loadingMore?: boolean;
+	nextCursor: HistoryListCursor | undefined;
+	onLoadMore: (() => void) | undefined;
+}) {
+	const empty = entries.length === 0 && nextCursor === undefined;
 	return (
 		<main className="mx-auto min-h-screen max-w-[1200px] pb-24">
 			<SiteHeader current="history" />
@@ -147,10 +180,10 @@ function HistoryPage({ entries }: { entries: readonly HistoryEntry[] }) {
 				<h1 className="text-ink/95 mt-1 font-serif text-4xl italic">{TITLE}</h1>
 				<p className="text-ink/60 mt-2 font-mono text-xs">{TAGLINE}</p>
 			</section>
-			{entries.length === 0 ? (
-				<EmptyHistory />
-			) : (
-				<HistoryList entries={entries} />
+			{empty ? <EmptyHistory /> : undefined}
+			{entries.length === 0 ? undefined : <HistoryList entries={entries} />}
+			{nextCursor === undefined || onLoadMore === undefined ? undefined : (
+				<LoadMore loadingMore={loadingMore} onLoadMore={onLoadMore} />
 			)}
 		</main>
 	);

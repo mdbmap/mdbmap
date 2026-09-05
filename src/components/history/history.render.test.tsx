@@ -46,6 +46,11 @@ vi.mock("@/lib/auth-client", () => ({
 }));
 
 const NO_ENTRIES: HistoryEntry[] = [];
+const NEXT_CURSOR = "2:2026-04-08T12:00:00.000Z";
+
+const noop = () => {
+	/* empty */
+};
 
 const entries: HistoryEntry[] = [
 	{
@@ -80,8 +85,28 @@ const entries: HistoryEntry[] = [
 	},
 ];
 
+const pagedEntries: HistoryEntry[] = [
+	...entries,
+	{
+		continuityId: "continuity:56",
+		coverRef: undefined,
+		instalmentTitle: "Earlier",
+		mediaKind: "tv",
+		number: 1,
+		partLabel: "Season 1",
+		watchedAt: "2026-04-08T12:00:00.000Z",
+		workTitle: "Older work",
+	},
+];
+
 describe("HistoryPage rows", () => {
-	const html = renderToStaticMarkup(<HistoryPage entries={entries} />);
+	const html = renderToStaticMarkup(
+		<HistoryPage
+			entries={entries}
+			nextCursor={undefined}
+			onLoadMore={undefined}
+		/>,
+	);
 
 	it("groups instalments by UTC day and links each work", () => {
 		expect(html).toContain("History");
@@ -96,6 +121,7 @@ describe("HistoryPage rows", () => {
 		expect(html).toContain('href="/work/34"');
 		expect(html).toContain("https://img.test/spy.jpg");
 		expect(html).toContain("poster-");
+		expect(html).not.toContain("Load more");
 	});
 
 	it("marks History as the current signed-in nav item", () => {
@@ -108,7 +134,13 @@ describe("HistoryPage rows", () => {
 });
 
 describe("HistoryPage empty state", () => {
-	const html = renderToStaticMarkup(<HistoryPage entries={NO_ENTRIES} />);
+	const html = renderToStaticMarkup(
+		<HistoryPage
+			entries={NO_ENTRIES}
+			nextCursor={undefined}
+			onLoadMore={undefined}
+		/>,
+	);
 
 	it("guides a viewer with nothing watched to library and search", () => {
 		expect(html).toContain("Nothing watched yet.");
@@ -118,5 +150,38 @@ describe("HistoryPage empty state", () => {
 		expect(html).toContain('href="/search"');
 		expect(html).toContain("data-cta");
 		expect(html).not.toContain("/work/");
+		expect(html).not.toContain("Load more");
+	});
+});
+
+describe("HistoryPage load more", () => {
+	const html = renderToStaticMarkup(
+		<HistoryPage
+			entries={pagedEntries}
+			nextCursor={NEXT_CURSOR}
+			onLoadMore={noop}
+		/>,
+	);
+
+	it("keeps a load more control while a next page exists", () => {
+		expect(html).toContain("Load more");
+		expect(html).toContain("2026-04-10");
+		expect(html).toContain("2026-04-09");
+		expect(html).toContain("2026-04-08");
+		expect(html).toContain("Spy × Family");
+		expect(html).toContain("Older work");
+		expect(html).toContain("Season 1 · 01 · Earlier");
+	});
+
+	it("does not treat an empty first page as the whole diary when more exists", () => {
+		const emptyHtml = renderToStaticMarkup(
+			<HistoryPage
+				entries={NO_ENTRIES}
+				nextCursor={NEXT_CURSOR}
+				onLoadMore={noop}
+			/>,
+		);
+		expect(emptyHtml).toContain("Load more");
+		expect(emptyHtml).not.toContain("Nothing watched yet.");
 	});
 });
