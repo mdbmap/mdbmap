@@ -412,4 +412,40 @@ describe("history.list", () => {
 		expect(secondPage.entries).toHaveLength(1);
 		expect(secondPage.nextCursor).toBeUndefined();
 	}, 15_000);
+
+	it("fetches metadata only for works needed to fill the page", async () => {
+		const db = await seededViewer();
+		const seeded = await Promise.all(
+			Array.from({ length: 12 }, async (_slot, index) =>
+				seedTmdbContinuity(db, "movie", String(80_000 + index)),
+			),
+		);
+		await Promise.all(
+			seeded.map(async ({ continuityId }, index) => {
+				await track(db, continuityId);
+				const [locator] = await locatorsFor(db, continuityId);
+				if (locator === undefined) {
+					throw new Error("expected a film locator");
+				}
+				await markWatched(
+					db,
+					locator,
+					new Date(`2026-02-01T00:00:${String(index % 60).padStart(2, "0")}Z`),
+				);
+			}),
+		);
+		const fetched: string[] = [];
+		const counting: MetadataProvider = {
+			fetchWork: async (resolved) => {
+				fetched.push(resolved.continuityId);
+				await Promise.resolve();
+				return metadataFor(resolved);
+			},
+		};
+		const client = clientFor(db, "user-1", providersUsing(counting));
+
+		const page = await client.history.list({ limit: 1 });
+		expect(page.entries).toHaveLength(1);
+		expect(fetched).toHaveLength(1);
+	});
 });

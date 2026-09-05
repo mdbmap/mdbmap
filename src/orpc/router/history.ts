@@ -263,26 +263,6 @@ const instalmentRef = (
 	return undefined;
 };
 
-const uniqueWorks = (
-	page: readonly ProgressRow[],
-	owners: ReadonlyMap<string, TrackedWork>,
-): TrackedWork[] => {
-	const works: TrackedWork[] = [];
-	const seen = new Set<string>();
-	for (const row of page) {
-		const work = owners.get(row.locator);
-		if (work === undefined) {
-			continue;
-		}
-		if (seen.has(work.resolved.continuityId)) {
-			continue;
-		}
-		seen.add(work.resolved.continuityId);
-		works.push(work);
-	}
-	return works;
-};
-
 const presentationsFor = async (
 	db: Db,
 	providers: Providers,
@@ -343,6 +323,38 @@ const cursorOf = (row: ProgressRow): HistoryListCursor =>
 		watchedAt: row.watchedAt.toISOString(),
 	});
 
+const nextUnfetchedWorks = (
+	fromIndex: number,
+	afterCursor: readonly ProgressRow[],
+	owners: ReadonlyMap<string, TrackedWork>,
+	presentations: ReadonlyMap<string, WorkPresentation>,
+	batchSize: number,
+): TrackedWork[] => {
+	const works: TrackedWork[] = [];
+	const seen = new Set<string>();
+	for (
+		let index = fromIndex;
+		index < afterCursor.length && works.length < batchSize;
+		index += 1
+	) {
+		const row = afterCursor[index];
+		if (row === undefined) {
+			continue;
+		}
+		const work = owners.get(row.locator);
+		if (work === undefined) {
+			continue;
+		}
+		const continuityId = work.resolved.continuityId;
+		if (presentations.has(continuityId) || seen.has(continuityId)) {
+			continue;
+		}
+		seen.add(continuityId);
+		works.push(work);
+	}
+	return works;
+};
+
 const paginate = async (
 	db: Db,
 	providers: Providers,
@@ -350,25 +362,42 @@ const paginate = async (
 	afterCursor: readonly ProgressRow[],
 	limit: number,
 ): Promise<HistoryListResult> => {
-	const presentations = await presentationsFor(
-		db,
-		providers,
-		uniqueWorks(afterCursor, owners),
-	);
+	const presentations = new Map<string, WorkPresentation>();
 	const entries: HistoryEntry[] = [];
 	let lastEmitted: ProgressRow | undefined;
 	let index = 0;
-	for (; index < afterCursor.length && entries.length < limit; index += 1) {
+	while (index < afterCursor.length && entries.length < limit) {
 		const row = afterCursor[index];
 		if (row === undefined) {
 			break;
 		}
-		const entry = entryFor(row, owners, presentations);
-		if (entry === undefined) {
-			continue;
+		const work = owners.get(row.locator);
+		if (
+			work !== undefined &&
+			!presentations.has(work.resolved.continuityId)
+		) {
+			const remaining = limit - entries.length;
+			const fetched = await presentationsFor(
+				db,
+				providers,
+				nextUnfetchedWorks(
+					index,
+					afterCursor,
+					owners,
+					presentations,
+					Math.min(META_BATCH, Math.max(remaining, 1)),
+				),
+			);
+			for (const [continuityId, presentation] of fetched) {
+				presentations.set(continuityId, presentation);
+			}
 		}
-		entries.push(entry);
-		lastEmitted = row;
+		const entry = entryFor(row, owners, presentations);
+		if (entry !== undefined) {
+			entries.push(entry);
+			lastEmitted = row;
+		}
+		index += 1;
 	}
 	if (lastEmitted === undefined || index >= afterCursor.length) {
 		return { entries };
