@@ -7,7 +7,7 @@ import { watchStatuses } from "@/db/schema";
 import { BetterAuthHeader } from "@/integrations/better-auth/header-user";
 import type { LibraryEntry } from "@/orpc/schema";
 
-import { summarise } from "./summarise";
+import { formatHoursWatchedValue, mediaKinds, summarise } from "./summarise";
 import type { LibraryStats } from "./summarise";
 
 const BRAND = "mdbmap";
@@ -21,6 +21,8 @@ const SEARCH_NAV = "Search";
 const SEARCH_PATH = "/search";
 const LIBRARY_NAV = "Library";
 const LIBRARY_PATH = "/library";
+const HISTORY_NAV = "History";
+const HISTORY_PATH = "/history";
 const UNRATED = "—";
 const OUT_OF_TEN = "/10";
 const RATED = "rated";
@@ -39,6 +41,12 @@ const formatInstalments = (watched: number, total: number) =>
 
 const formatRewatch = (count: number) => `×${count}`;
 
+const kindLabels: Record<(typeof mediaKinds)[number], string> = {
+	anime: "Anime",
+	film: "Film",
+	tv: "TV",
+};
+
 const navClass =
 	"text-ink/50 hover:text-accent font-mono text-xs tracking-[0.1em] uppercase";
 const brandClass =
@@ -49,7 +57,7 @@ function HeaderNavLink({
 	to,
 }: {
 	label: string;
-	to: "/" | typeof LIBRARY_PATH | typeof SEARCH_PATH;
+	to: "/" | typeof HISTORY_PATH | typeof LIBRARY_PATH | typeof SEARCH_PATH;
 }) {
 	return (
 		<Link to={to}>
@@ -65,6 +73,7 @@ function StatsHeader() {
 				<HeaderNavLink label={BRAND} to="/" />
 				<HeaderNavLink label={SEARCH_NAV} to={SEARCH_PATH} />
 				<HeaderNavLink label={LIBRARY_NAV} to={LIBRARY_PATH} />
+				<HeaderNavLink label={HISTORY_NAV} to={HISTORY_PATH} />
 			</nav>
 			<div className="flex items-center gap-4">
 				<BetterAuthHeader />
@@ -117,6 +126,20 @@ function StatusRows({ stats }: { stats: LibraryStats }) {
 	);
 }
 
+function KindRows({ stats }: { stats: LibraryStats }) {
+	return (
+		<>
+			{mediaKinds.map((kind) => (
+				<CountRow
+					key={kind}
+					label={kindLabels[kind]}
+					value={String(stats.kindCounts[kind])}
+				/>
+			))}
+		</>
+	);
+}
+
 function SnapshotRows({ stats }: { stats: LibraryStats }) {
 	const rating =
 		stats.meanRating === undefined
@@ -125,12 +148,20 @@ function SnapshotRows({ stats }: { stats: LibraryStats }) {
 	return (
 		<>
 			<StatusRows stats={stats} />
+			<KindRows stats={stats} />
 			<CountRow label="personal rating" value={rating} />
 			<CountRow
 				label={INSTALMENTS}
 				value={formatInstalments(
 					stats.watchedInstalments,
 					stats.totalInstalments,
+				)}
+			/>
+			<CountRow
+				label="hours watched"
+				value={formatHoursWatchedValue(
+					stats.watchedMinutes,
+					stats.omittedRuntime,
 				)}
 			/>
 			<CountRow label="rewatch" value={formatRewatch(stats.rewatchCount)} />

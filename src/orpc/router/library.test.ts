@@ -169,6 +169,7 @@ describe("library.list", () => {
 				continuityId,
 				coverRef: `https://img.test/${continuityId}.jpg`,
 				finishedAt: undefined,
+				mediaKind: "anime",
 				nextUp: {
 					number: 4,
 					partLabel: "Part 1",
@@ -212,6 +213,7 @@ describe("library.list", () => {
 			expect.objectContaining({
 				continuityId,
 				finishedAt: "2026-04-09",
+				mediaKind: "film",
 				startedAt: "2026-04-09",
 				status: "completed",
 				watchedInstalments: 1,
@@ -255,6 +257,8 @@ describe("library.list", () => {
 		expect(entries).toHaveLength(1);
 		expect(entries[0]?.continuityId).toBe(continuityId);
 		expect(entries[0]?.coverRef).toBeUndefined();
+		expect(entries[0]?.mediaKind).toBe("anime");
+		expect(entries[0]?.runtimeMinutes).toBeUndefined();
 		expect(entries[0]?.title).toBeUndefined();
 	});
 
@@ -459,5 +463,26 @@ describe("library.list", () => {
 		expect(byTitle.map((row) => row.title)).toEqual(expectedTitles);
 		const byRating = await client.library.list({ sort: "rating" });
 		expect(byRating.map((row) => row.personalRating)).toEqual([9, 4]);
+	});
+
+	it("includes runtime minutes from work metadata", async () => {
+		const db = await seededViewer();
+		const { continuityId } = await seedSpyXFamily(db);
+		await track(db, continuityId, new Date("2026-01-01T00:00:00Z"));
+		const timedProvider: MetadataProvider = {
+			fetchWork: async (resolved) => {
+				await Promise.resolve();
+				return { ...metadataFor(resolved), runtimeMinutes: 24 };
+			},
+		};
+
+		const entries = await clientFor(
+			db,
+			"user-1",
+			providersUsing(timedProvider),
+		).library.list({});
+
+		expect(entries[0]?.mediaKind).toBe("anime");
+		expect(entries[0]?.runtimeMinutes).toBe(24);
 	});
 });

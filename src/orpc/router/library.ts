@@ -251,9 +251,13 @@ const toEntry = async (
 		continuityId: tracked.resolved.continuityId,
 		coverRef: metadata?.coverRef,
 		finishedAt: span.finishedAt,
+		mediaKind: tracked.resolved.mediaKind,
 		...(upcoming === undefined ? {} : { nextUp: upcoming }),
 		personalRating: ratingFor(ratings, aliases, tracked),
 		rewatchCount: tracked.row.rewatchCount,
+		...(metadata?.runtimeMinutes === undefined
+			? {}
+			: { runtimeMinutes: metadata.runtimeMinutes }),
 		startedAt: span.startedAt,
 		status: tracked.row.status,
 		title: metadata?.title,

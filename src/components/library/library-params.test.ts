@@ -24,6 +24,52 @@ describe("parseLibrarySearch", () => {
 			{ sort: "rating", status: "completed" },
 		);
 	});
+
+	it("keeps a title query and media kind", () => {
+		expect(parseLibrarySearch({ kind: "anime", q: "spy" })).toEqual({
+			kind: "anime",
+			q: "spy",
+		});
+		expect(
+			parseLibrarySearch({
+				kind: "tv",
+				q: "  abyss  ",
+				sort: "title",
+				status: "watching",
+			}),
+		).toEqual({
+			kind: "tv",
+			q: "  abyss  ",
+			sort: "title",
+			status: "watching",
+		});
+	});
+
+	it("omits empty query and unknown kind", () => {
+		expect(parseLibrarySearch({ kind: "book", q: "   " })).toEqual({});
+		expect(parseLibrarySearch({ kind: 1, q: true })).toEqual({});
+	});
+
+	it("roundtrips a parsed search object", () => {
+		const parsed = parseLibrarySearch({
+			kind: "film",
+			q: "Matrix",
+			sort: "rating",
+			status: "completed",
+		});
+		expect(parseLibrarySearch(parsed)).toEqual(parsed);
+	});
+});
+
+describe("parseLibrarySearch title query", () => {
+	it("round-trips a multi-word query including interior spaces", () => {
+		expect(parseLibrarySearch({ q: "made in abyss" })).toEqual({
+			q: "made in abyss",
+		});
+		expect(parseLibrarySearch({ q: "made in abyss " })).toEqual({
+			q: "made in abyss ",
+		});
+	});
 });
 
 describe("libraryListInput", () => {
@@ -33,5 +79,15 @@ describe("libraryListInput", () => {
 			sort: "title",
 			status: "on_hold",
 		});
+	});
+
+	it("does not send title or kind filters to library.list", () => {
+		expect(
+			libraryListInput({
+				kind: "anime",
+				q: "spy",
+				status: "watching",
+			}),
+		).toEqual({ status: "watching" });
 	});
 });

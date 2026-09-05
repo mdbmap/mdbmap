@@ -138,6 +138,7 @@ const entry: LibraryEntry = {
 	continuityId: "c1",
 	coverRef: undefined,
 	finishedAt: undefined,
+	mediaKind: "anime",
 	personalRating: 8,
 	rewatchCount: 0,
 	startedAt: undefined,
