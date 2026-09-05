@@ -20,7 +20,7 @@ const malStatusToWatchStatus = (status: string): WatchStatus | undefined => {
 			return "rewatching";
 		}
 		case "plan_to_watch": {
-			return undefined;
+			return "plan_to_watch";
 		}
 		default: {
 			return undefined;

@@ -48,6 +48,7 @@ type MappedWatchStatus =
 	| "current"
 	| "dropped"
 	| "on_hold"
+	| "planning"
 	| "repeating";
 
 interface StatusWrite {

@@ -37,7 +37,7 @@ const cover = tv({
 const trackedCount = (total: number) =>
 	`${total} ${total === 1 ? "work" : "works"}`;
 
-const formatStatus = (status: WatchStatus) => status.replace("_", " ");
+const formatStatus = (status: WatchStatus) => status.replaceAll("_", " ");
 
 const metaLine = (entry: LibraryEntry) =>
 	[

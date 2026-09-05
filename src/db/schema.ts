@@ -20,6 +20,7 @@ const watchStatuses = [
 	"completed",
 	"dropped",
 	"rewatching",
+	"plan_to_watch",
 ] as const;
 type WatchStatus = (typeof watchStatuses)[number];
 

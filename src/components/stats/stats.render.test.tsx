@@ -78,6 +78,7 @@ describe("StatsPage snapshot", () => {
 		expect(html).toContain("completed");
 		expect(html).toContain("dropped");
 		expect(html).toContain("rewatching");
+		expect(html).toContain("plan to watch");
 		expect(html).toContain(">1<");
 		expect(html).toContain(">0<");
 	});

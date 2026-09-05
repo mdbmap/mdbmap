@@ -165,7 +165,7 @@ describe("matchMalEntries", () => {
 				entry: entry("104", { score: 0, status: "plan_to_watch" }),
 				proposedProgress: 4,
 				proposedScore: undefined,
-				proposedStatus: undefined,
+				proposedStatus: "plan_to_watch",
 			},
 			{
 				continuityId: continuityKey(continuityA.id),

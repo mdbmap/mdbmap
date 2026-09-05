@@ -9,6 +9,7 @@ describe("sync-push scale", () => {
 		expect(mapWatchStatus("completed")).toBe("completed");
 		expect(mapWatchStatus("dropped")).toBe("dropped");
 		expect(mapWatchStatus("rewatching")).toBe("repeating");
+		expect(mapWatchStatus("plan_to_watch")).toBe("planning");
 	});
 
 	it("scales AniList scores to 0–100 and leaves others on 1–10", () => {

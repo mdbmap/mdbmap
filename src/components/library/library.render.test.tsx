@@ -136,6 +136,7 @@ describe("LibraryPage rows", () => {
 	it("counts the tracked works and exposes status and sort controls", () => {
 		expect(html).toContain("3 works");
 		expect(html).toContain("Watching");
+		expect(html).toContain("Plan to watch");
 		expect(html).toContain("Recent activity");
 	});
 

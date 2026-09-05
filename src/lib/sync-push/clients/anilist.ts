@@ -28,6 +28,9 @@ const anilistStatusOf = (status: MappedWatchStatus): string => {
 		case "on_hold": {
 			return "PAUSED";
 		}
+		case "planning": {
+			return "PLANNING";
+		}
 		case "repeating": {
 			return "REPEATING";
 		}

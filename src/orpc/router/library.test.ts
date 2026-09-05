@@ -8,6 +8,7 @@ import {
 	user,
 	watchStatus,
 } from "@/db/schema";
+import type { WatchStatus } from "@/db/schema";
 import { freshDb } from "@/db/test-helpers";
 import type { ResolveResult } from "@/engine";
 import { createEngine } from "@/engine";
@@ -96,7 +97,7 @@ const track = async (
 	updatedAt: Date,
 	options: {
 		rewatchCount?: number;
-		status?: "completed" | "dropped" | "watching";
+		status?: WatchStatus;
 	} = {},
 ) => {
 	await db
@@ -407,6 +408,7 @@ describe("library.list", () => {
 		expect(completed).toHaveLength(1);
 		expect(completed[0]?.status).toBe("completed");
 		expect(await client.library.list({ status: "dropped" })).toEqual([]);
+		expect(await client.library.list({ status: "plan_to_watch" })).toEqual([]);
 	});
 
 	it("sorts by title and personal rating", async () => {
