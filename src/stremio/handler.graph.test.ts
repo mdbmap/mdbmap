@@ -186,6 +186,49 @@ describe("stremio meta from the mapping graph", () => {
 			meta: { videos: [{ id: "tt0903747:1:1" }] },
 		});
 	});
+
+	it("fills display metadata from the graph continuity id", async () => {
+		const group = await seedGroup(db);
+		const source = await seedTitle(db, group.id, "tmdb", "movie:603");
+		const target = await seedTitle(db, group.id, "imdb", "tt0133093");
+		await linkTitles(db, source.id, target.id, "t1-structure");
+		const continuityId = await seedContinuity(db, source.id);
+		let seen: number | undefined;
+		const response = await handleStremioRequest(
+			new Request("https://mdbmap.test/stremio/meta/movie/tmdb:603.json"),
+			{
+				...depsFor(db),
+				display: (requestedId) => {
+					seen = requestedId;
+					return {
+						backdropRef: undefined,
+						cast: [],
+						coverRef: "tmdb:/matrix.jpg",
+						genres: ["Science Fiction"],
+						ifYouLiked: [],
+						nativeTitle: undefined,
+						productionStatus: undefined,
+						runtimeMinutes: 136,
+						segments: [],
+						span: "1999",
+						staff: [],
+						studios: [],
+						synopsis: "A computer hacker learns the truth.",
+						title: "The Matrix",
+					};
+				},
+			},
+		);
+		expect(seen).toBe(continuityId);
+		expect(response.status).toBe(200);
+		await expect(response.json()).resolves.toMatchObject({
+			meta: {
+				name: "The Matrix",
+				poster: "https://image.tmdb.org/t/p/w500/matrix.jpg",
+				videos: [{ id: "tt0133093" }],
+			},
+		});
+	});
 });
 
 describe("stremio catalog from the mapping graph", () => {

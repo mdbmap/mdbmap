@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 
 import type { MappingOutcome } from "@/engine/gateway";
 import type { MappingResponse } from "@/engine/serializer.ts";
-import type { CatalogueSearchHit } from "@/orpc/providers";
+import type { CatalogueSearchHit, WorkMetadata } from "@/orpc/providers";
 
 import { CATALOG_PAGE_SIZE } from "./catalog.ts";
 import { handleStremioRequest, stremioOptionsResponse } from "./handler.ts";
@@ -81,7 +81,30 @@ const ok = (body: MappingResponse): MappingOutcome => ({
 const depsOf = (
 	resolve: AddonDeps["resolve"] = () => ok(movieBody),
 	search: AddonDeps["search"] = () => [],
-): AddonDeps => ({ resolve, search });
+	display?: AddonDeps["display"],
+): AddonDeps => ({
+	resolve,
+	search,
+	...(display === undefined ? {} : { display }),
+});
+
+const workMeta = (overrides: Partial<WorkMetadata> = {}): WorkMetadata => ({
+	backdropRef: undefined,
+	cast: [],
+	coverRef: undefined,
+	genres: [],
+	ifYouLiked: [],
+	nativeTitle: undefined,
+	productionStatus: undefined,
+	runtimeMinutes: undefined,
+	segments: [],
+	span: "",
+	staff: [],
+	studios: [],
+	synopsis: "",
+	title: "Untitled",
+	...overrides,
+});
 
 const filmHits = (count: number): CatalogueSearchHit[] => {
 	const hits: CatalogueSearchHit[] = [];
@@ -343,5 +366,78 @@ describe("stremio meta video ids", () => {
 			depsOf(() => ({ kind: "unknown" })),
 		);
 		expect(response.status).toBe(404);
+	});
+});
+
+describe("stremio meta display metadata", () => {
+	it("overlays work metadata onto IMDb video ids", async () => {
+		let seen: number | undefined;
+		const response = await get(
+			"/stremio/meta/movie/tmdb:603.json",
+			depsOf(
+				() => ok({ ...movieBody, continuityId: 42 }),
+				() => [],
+				(continuityId) => {
+					seen = continuityId;
+					return workMeta({
+						backdropRef: "tmdb:/back.jpg",
+						coverRef: "tmdb:/matrix.jpg",
+						genres: ["Science Fiction", "Action"],
+						runtimeMinutes: 136,
+						span: "1999",
+						synopsis: "A computer hacker learns the truth.",
+						title: "The Matrix",
+					});
+				},
+			),
+		);
+		expect(seen).toBe(42);
+		await expect(response.json()).resolves.toMatchObject({
+			meta: {
+				description: "A computer hacker learns the truth.",
+				name: "The Matrix",
+				poster: "https://image.tmdb.org/t/p/w500/matrix.jpg",
+				videos: [{ id: "tt0133093", title: "The Matrix" }],
+			},
+		});
+	});
+
+	it("does not fetch display when the mapping has no continuity", async () => {
+		let called = 0;
+		const response = await get(
+			"/stremio/meta/movie/tmdb:603.json",
+			depsOf(
+				() => ok(movieBody),
+				() => [],
+				() => {
+					called += 1;
+					return workMeta({ title: "The Matrix" });
+				},
+			),
+		);
+		expect(called).toBe(0);
+		await expect(response.json()).resolves.toMatchObject({
+			meta: { name: "tt0133093", videos: [{ id: "tt0133093" }] },
+		});
+	});
+
+	it("keeps IMDb videos when display throws", async () => {
+		const response = await get(
+			"/stremio/meta/movie/tmdb:603.json",
+			depsOf(
+				() => ok({ ...movieBody, continuityId: 42 }),
+				() => [],
+				() => {
+					throw new Error("tmdb down");
+				},
+			),
+		);
+		expect(response.status).toBe(200);
+		await expect(response.json()).resolves.toMatchObject({
+			meta: {
+				name: "tt0133093",
+				videos: [{ id: "tt0133093" }],
+			},
+		});
 	});
 });

@@ -1,10 +1,10 @@
-import type { ContentType, MetaItemPreview } from "stremio-types";
+import type { ContentType, MetaItem, MetaItemPreview } from "stremio-types";
 import type { Promisable } from "type-fest";
 
 import type { MediaKind } from "@/engine";
 import type { MappingOutcome } from "@/engine/gateway";
 import type { Profile } from "@/engine/identity.ts";
-import type { CatalogueSearchHit } from "@/orpc/providers";
+import type { CatalogueSearchHit, WorkMetadata } from "@/orpc/providers";
 
 import {
 	catalogPreviews,
@@ -13,10 +13,13 @@ import {
 	searchQueryOf,
 } from "./catalog.ts";
 import { addonManifest } from "./manifest.ts";
-import { metaFromOutcome, profileFor } from "./meta.ts";
+import { applyDisplay, metaFromOutcome, profileFor } from "./meta.ts";
 import { parseAddonPath } from "./protocol.ts";
 
 interface AddonDeps {
+	readonly display?: (
+		continuityId: number,
+	) => Promisable<WorkMetadata | undefined>;
 	readonly resolve: (
 		profile: Profile,
 		rawId: string,
@@ -57,6 +60,43 @@ const stremioOptionsResponse = (): Response =>
 
 const cacheForOutcome = (outcome: MappingOutcome): number =>
 	outcome.kind === "ok" ? CACHE_HOUR : CACHE_NONE;
+
+const continuityIdOf = (outcome: MappingOutcome): number | undefined => {
+	switch (outcome.kind) {
+		case "conflict":
+		case "ok":
+		case "pending": {
+			return outcome.body.continuityId;
+		}
+		case "malformed":
+		case "unknown": {
+			return undefined;
+		}
+	}
+};
+
+const displayedMeta = async (
+	meta: MetaItem,
+	outcome: MappingOutcome,
+	display: AddonDeps["display"],
+): Promise<MetaItem> => {
+	if (display === undefined) {
+		return meta;
+	}
+	const continuityId = continuityIdOf(outcome);
+	if (continuityId === undefined) {
+		return meta;
+	}
+	try {
+		const work = await display(continuityId);
+		if (work === undefined) {
+			return meta;
+		}
+		return applyDisplay(meta, work);
+	} catch {
+		return meta;
+	}
+};
 
 const catalogMetas = async (
 	deps: AddonDeps,
@@ -114,10 +154,11 @@ const handleStremioRequest = async (
 		return notFound();
 	}
 	const outcome = await deps.resolve(profile, parsed.id);
-	const meta = metaFromOutcome(outcome, parsed.type, parsed.id);
-	if (meta === undefined) {
+	const mapped = metaFromOutcome(outcome, parsed.type, parsed.id);
+	if (mapped === undefined) {
 		return notFound();
 	}
+	const meta = await displayedMeta(mapped, outcome, deps.display);
 	const cacheMaxAge = cacheForOutcome(outcome);
 	return jsonResponse({ cacheMaxAge, meta }, 200, cacheMaxAge);
 };

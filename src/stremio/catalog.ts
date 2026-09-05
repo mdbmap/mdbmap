@@ -9,11 +9,9 @@ import type { Profile, TitleIdentity } from "@/engine/identity.ts";
 import type { CatalogueSearchHit } from "@/orpc/providers";
 import type { CatalogueTitle } from "@/orpc/schema";
 
+import { posterUrl } from "./images.ts";
 import { CATALOG_IDS } from "./manifest.ts";
 import { imdbTitleIdFromMapping } from "./videos.ts";
-
-const TMDB_IMAGE_BASE = "https://image.tmdb.org/t/p/w500";
-const TMDB_REF_PREFIX = "tmdb:";
 
 const titleIdentityOf = (catalogue: CatalogueTitle): TitleIdentity => {
 	switch (catalogue.service) {
@@ -40,20 +38,6 @@ const titleIdentityOf = (catalogue: CatalogueTitle): TitleIdentity => {
 			return { id: catalogue.id, service: "tvdb" };
 		}
 	}
-};
-
-const posterUrl = (coverRef: string | undefined): string | undefined => {
-	if (coverRef === undefined || coverRef === "") {
-		return undefined;
-	}
-	if (coverRef.startsWith("https://") || coverRef.startsWith("http://")) {
-		return coverRef;
-	}
-	if (!coverRef.startsWith(TMDB_REF_PREFIX)) {
-		return undefined;
-	}
-	const path = coverRef.slice(TMDB_REF_PREFIX.length);
-	return `${TMDB_IMAGE_BASE}${path.startsWith("/") ? path : `/${path}`}`;
 };
 
 const previewOf = (
