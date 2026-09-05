@@ -52,9 +52,4 @@ const reviewProposal = async (
 };
 
 export { reviewProposal };
-export type {
-	EscalatedReview,
-	EscalationReason,
-	ReviewJudge,
-	ReviewOutcome,
-};
+export type { EscalatedReview, EscalationReason, ReviewJudge, ReviewOutcome };

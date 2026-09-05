@@ -41,12 +41,15 @@ const work: WorkView = {
 		backdropRef: "anidb:16947/backdrop",
 		coverRef: "anidb:16947/cover",
 		genres: ["Comedy", "Action"],
+		lastUpdatedAt: "2026-09-04T12:00:00.000Z",
 		nativeTitle: "SPY×FAMILY",
 		productionStatus: "Ended",
 		runtimeMinutes: 24,
 		span: "2022–2023",
 		synopsis: "A spy builds a fake family for a mission.",
+		tagline: undefined,
 		title: "Spy × Family",
+		userRefreshAvailableAt: undefined,
 	},
 	ifYouLiked: [],
 	mediaKind: "anime",
@@ -111,6 +114,8 @@ describe("WorkPage shell", () => {
 		expect(html).toContain("Comedy · Action");
 		expect(html).toContain("24 min");
 		expect(html).toContain("Ended");
+		expect(html).toContain("Refresh");
+		expect(html).toContain("Updated");
 	});
 
 	it("omits empty genres, runtime, and production status from the meta line", () => {

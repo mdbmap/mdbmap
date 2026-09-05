@@ -1,10 +1,8 @@
-import type { Db } from "@/db";
-import {
-	DEFAULT_RESEARCH_TIMING,
-	researchPolicy,
-} from "@/db/schema";
-import type { ResearchTiming } from "@/db/schema";
 import { eq } from "drizzle-orm";
+
+import type { Db } from "@/db";
+import { DEFAULT_RESEARCH_TIMING, researchPolicy } from "@/db/schema";
+import type { ResearchTiming } from "@/db/schema";
 
 const RESEARCH_POLICY_ID = "default";
 const DEFAULT_TIMING: ResearchTiming = DEFAULT_RESEARCH_TIMING;
@@ -33,4 +31,9 @@ const setResearchTiming = async (
 	return timing;
 };
 
-export { DEFAULT_TIMING, RESEARCH_POLICY_ID, getResearchTiming, setResearchTiming };
+export {
+	DEFAULT_TIMING,
+	RESEARCH_POLICY_ID,
+	getResearchTiming,
+	setResearchTiming,
+};

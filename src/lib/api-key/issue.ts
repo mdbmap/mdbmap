@@ -35,7 +35,10 @@ interface IssuedApiKey {
 // Mints a key, persisting only its hash. `secret` on the result is the sole
 // place the plaintext ever exists past this call — callers must show it to the
 // caller now and never log or re-display it.
-const issueApiKey = async (db: Db, input: IssueApiKeyInput): Promise<IssuedApiKey> => {
+const issueApiKey = async (
+	db: Db,
+	input: IssueApiKeyInput,
+): Promise<IssuedApiKey> => {
 	const secret = generateSecret();
 	const keyHash = await hashApiKeySecret(secret);
 	const plan = input.plan ?? "free";

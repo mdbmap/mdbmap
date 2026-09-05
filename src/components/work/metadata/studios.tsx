@@ -8,8 +8,8 @@ const HEADING = "Studios";
 function StudioChip({ hue, name }: { hue: string; name: string }) {
 	return (
 		<div className="flex items-center gap-2.5">
-			<div className={`size-10 shrink-0 border border-line ${hue}`} />
-			<span className="text-[13px] font-medium text-ink/85">{name}</span>
+			<div className={`border-line size-10 shrink-0 border ${hue}`} />
+			<span className="text-ink/85 text-[13px] font-medium">{name}</span>
 		</div>
 	);
 }

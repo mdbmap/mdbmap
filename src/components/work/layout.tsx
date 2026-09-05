@@ -3,6 +3,7 @@ import type { WorkView } from "@/orpc/schema";
 
 import { Episodes } from "./episodes";
 import { Metadata } from "./metadata";
+import { MetadataFreshness } from "./metadata-freshness";
 import { CommunityBlock, PartPanel, YouBlock } from "./sidebar";
 
 function Synopsis({ text }: { text: string }) {
@@ -30,9 +31,24 @@ function MainColumn({
 	selectedProposalId,
 	work,
 }: WorkLayoutProps) {
+	const { tagline } = work.header;
 	return (
 		<div className="md:border-line flex min-w-0 flex-col gap-6 px-8 pt-6 md:border-r">
+			{tagline === undefined || tagline === "" ? (
+				false
+			) : (
+				<p className="text-ink/55 max-w-[70ch] font-serif text-[15px] italic">
+					{tagline}
+				</p>
+			)}
 			<Synopsis text={work.header.synopsis} />
+			<MetadataFreshness
+				continuityId={work.continuityId}
+				lastUpdatedAt={work.header.lastUpdatedAt}
+				order={order}
+				proposalId={selectedProposalId}
+				userRefreshAvailableAt={work.header.userRefreshAvailableAt}
+			/>
 			<Episodes
 				communityOrders={work.communityOrders}
 				continuityId={work.continuityId}

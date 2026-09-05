@@ -31,9 +31,9 @@ describe("editDistance", () => {
 describe("tokenOverlap", () => {
 	it("is the Jaccard ratio of the two token sets", () => {
 		expect(tokenOverlap(["pups", "save"], ["pups", "save"])).toBe(1);
-		expect(tokenOverlap(["beach", "episode"], ["beach", "day", "episode"])).toBeCloseTo(
-			2 / 3,
-		);
+		expect(
+			tokenOverlap(["beach", "episode"], ["beach", "day", "episode"]),
+		).toBeCloseTo(2 / 3);
 		expect(tokenOverlap(["recap"], ["finale"])).toBe(0);
 	});
 });

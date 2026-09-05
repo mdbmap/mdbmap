@@ -24,8 +24,10 @@ import {
 import {
 	account,
 	apiKey,
+	catalogueMetadata,
 	episodeProgress,
 	llmProvider,
+	metadataRefreshLease,
 	personalRating,
 	researchPolicy,
 	session,
@@ -43,6 +45,7 @@ const schema = {
 	account,
 	apiKey,
 	atomicWriteGates,
+	catalogueMetadata,
 	contentUnits,
 	continuities,
 	continuityAliases,
@@ -50,6 +53,7 @@ const schema = {
 	episodeProgress,
 	instalmentAssertions,
 	llmProvider,
+	metadataRefreshLease,
 	pendingGroupCandidates,
 	personalRating,
 	presentationOrderItems,
@@ -78,8 +82,8 @@ const createDb = (database: D1Database) => drizzle(database, { schema });
 type Db = ReturnType<typeof createDb>;
 
 // Resolved per request so the Workers-only `cloudflare:workers` import is never
-// evaluated under Node, mirroring `resolveMetadataKv`. The runtime db is D1
-// (async); tests bind to a local D1 through `cloudflare:test`.
+// evaluated under Node. The runtime db is D1 (async); tests bind to a local D1
+// through `cloudflare:test`.
 const resolveDb = async () => {
 	const { env } = await import("cloudflare:workers");
 	return createDb(env.DB);

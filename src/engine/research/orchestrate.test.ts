@@ -13,17 +13,18 @@ import {
 	titleGroups,
 } from "@/db/engine-schema";
 import { freshDb } from "@/db/test-helpers";
-import type { CatalogueTitle, SimklClient, SimklEntry } from "@/engine/discovery";
+import type {
+	CatalogueTitle,
+	SimklClient,
+	SimklEntry,
+} from "@/engine/discovery";
 import { storeProvider } from "@/lib/provider-config";
 import { randomMasterKey } from "@/lib/provider-config/test-support.ts";
 
 import { isOfficialOperatorUrl } from "./domains.ts";
 import { runResearchPass } from "./orchestrate.ts";
 import type { ResearchAgent, ResearchContinuity } from "./orchestrate.ts";
-import {
-	createMemoryTimingStore,
-	shouldRunResearch,
-} from "./timing.ts";
+import { createMemoryTimingStore, shouldRunResearch } from "./timing.ts";
 import type { ResearchCatalogueClient, ResearchToolset } from "./tools.ts";
 
 type TestDb = Awaited<ReturnType<typeof freshDb>>;
@@ -287,48 +288,47 @@ const weakInstalmentAgent: ResearchAgent = async ({ tools }) => {
 	};
 };
 
-const multiUnitWeakInstalment = (
-	unitAId: string,
-	unitBId: string,
-): ResearchAgent => async ({ tools }) => {
-	const fetched = await requireAvailable(tools, "tmdb", "42");
-	const spokeId = fetched.persisted.spokes[0]?.instalmentId;
-	if (spokeId === undefined) {
-		throw new Error("expected a spoke");
-	}
-	const scraped = await tools.scrapeOfficial({
-		operator: "tmdb",
-		url: "https://www.themoviedb.org/tv/42",
-	});
-	const evidence = [
-		{
-			kind: "scrape" as const,
-			official: true as const,
+const multiUnitWeakInstalment =
+	(unitAId: string, unitBId: string): ResearchAgent =>
+	async ({ tools }) => {
+		const fetched = await requireAvailable(tools, "tmdb", "42");
+		const spokeId = fetched.persisted.spokes[0]?.instalmentId;
+		if (spokeId === undefined) {
+			throw new Error("expected a spoke");
+		}
+		const scraped = await tools.scrapeOfficial({
 			operator: "tmdb",
-			stance: "corroborates" as const,
-			url: scraped.url,
-		},
-	];
-	return {
-		proposals: [
+			url: "https://www.themoviedb.org/tv/42",
+		});
+		const evidence = [
 			{
-				claim: "weak instalment unit a",
-				evidence,
-				instalmentId: spokeId,
-				kind: "instalment",
-				unitId: unitAId,
+				kind: "scrape" as const,
+				official: true as const,
+				operator: "tmdb",
+				stance: "corroborates" as const,
+				url: scraped.url,
 			},
-			{
-				claim: "weak instalment unit b",
-				evidence,
-				instalmentId: spokeId,
-				kind: "instalment",
-				unitId: unitBId,
-			},
-		],
-		residue: [],
+		];
+		return {
+			proposals: [
+				{
+					claim: "weak instalment unit a",
+					evidence,
+					instalmentId: spokeId,
+					kind: "instalment",
+					unitId: unitAId,
+				},
+				{
+					claim: "weak instalment unit b",
+					evidence,
+					instalmentId: spokeId,
+					kind: "instalment",
+					unitId: unitBId,
+				},
+			],
+			residue: [],
+		};
 	};
-};
 
 const silentSkipAgent: ResearchAgent = async ({ tools }) => {
 	const left = await requireAvailable(tools, "tmdb", "1");
@@ -475,7 +475,8 @@ const competingRelationAgent: ResearchAgent = async ({ tools }) => {
 	};
 };
 
-const idempotentInstalmentAgent = (unitId: string): ResearchAgent =>
+const idempotentInstalmentAgent =
+	(unitId: string): ResearchAgent =>
 	async ({ tools }) => {
 		const fetched = await requireAvailable(tools, "tmdb", "42");
 		const spokeId = fetched.persisted.spokes[0]?.instalmentId;

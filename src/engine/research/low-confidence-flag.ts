@@ -1,9 +1,6 @@
 import { ascendingPair } from "@/db";
 import type { Db } from "@/db";
-import type {
-	CandidateEvidence,
-	CandidateSubject,
-} from "@/db/engine-schema";
+import type { CandidateEvidence, CandidateSubject } from "@/db/engine-schema";
 import {
 	candidateSubjectKey,
 	pendingGroupCandidates,

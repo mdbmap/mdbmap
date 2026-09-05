@@ -3,10 +3,7 @@ import type { Promisable } from "type-fest";
 import type { Db } from "@/db";
 import { researchTimings } from "@/db/schema";
 import type { ResearchTiming as TimingValue } from "@/db/schema";
-import {
-	getResearchTiming,
-	setResearchTiming,
-} from "@/lib/research-policy";
+import { getResearchTiming, setResearchTiming } from "@/lib/research-policy";
 
 type ResearchPhase = Exclude<TimingValue, "off">;
 

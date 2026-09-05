@@ -27,10 +27,7 @@ const catalogueRequestUrl = (service: string): string => {
 	return `https://${host}`;
 };
 
-const isOfficialOperatorUrl = (
-	url: string,
-	operator?: string,
-): boolean => {
+const isOfficialOperatorUrl = (url: string, operator?: string): boolean => {
 	const hostname = hostOf(url);
 	if (hostname === undefined) {
 		return false;

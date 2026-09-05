@@ -6,7 +6,10 @@ import {
 	serviceInstalments,
 	serviceTitles,
 } from "@/db/engine-schema";
-import type { CandidateEvidence, PendingCandidateKind } from "@/db/engine-schema";
+import type {
+	CandidateEvidence,
+	PendingCandidateKind,
+} from "@/db/engine-schema";
 import { survivorGroupId } from "@/engine/gateway";
 import type { GatewayDb } from "@/engine/gateway";
 
@@ -60,7 +63,10 @@ interface GroupScope {
 	readonly unitIds: ReadonlySet<string>;
 }
 
-const groupScope = async (db: GatewayDb, groupId: number): Promise<GroupScope> => {
+const groupScope = async (
+	db: GatewayDb,
+	groupId: number,
+): Promise<GroupScope> => {
 	const survivor = await survivorGroupId(db, groupId);
 	const titleRows = await db
 		.select({ id: serviceTitles.id })

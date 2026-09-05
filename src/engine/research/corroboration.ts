@@ -80,9 +80,7 @@ const corroborate = (
 			operator: item.operator.trim().toLowerCase(),
 		}))
 		.filter(({ operator }) => operator.length > 0);
-	const operators = new Set(
-		corroborating.map(({ operator }) => operator),
-	);
+	const operators = new Set(corroborating.map(({ operator }) => operator));
 	const hasValidatedApi = corroborating.some(
 		({ item }) => item.kind === "api" && item.validated,
 	);

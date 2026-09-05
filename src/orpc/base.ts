@@ -18,7 +18,9 @@ const resolveViaBetterAuth: ResolveSession = async (headers) => {
 			return;
 		}
 		const role = result.user.role ?? undefined;
-		return role === undefined ? { id: result.user.id } : { id: result.user.id, role };
+		return role === undefined
+			? { id: result.user.id }
+			: { id: result.user.id, role };
 	} catch {
 		// An unavailable auth resolver degrades to unauthenticated rather than
 		// throwing, so a render is never blocked by the session lookup.
@@ -56,7 +58,8 @@ const ADMIN_ROLE = "admin";
 // Better-Auth stores roles as a comma-separated string; the moderation surface
 // admits any user carrying the `admin` role.
 const hasAdminRole = (role: string | undefined): boolean =>
-	role !== undefined && role.split(",").some((entry) => entry.trim() === ADMIN_ROLE);
+	role !== undefined &&
+	role.split(",").some((entry) => entry.trim() === ADMIN_ROLE);
 
 const admin = authed.use(({ context, next }) => {
 	if (!hasAdminRole(context.user.role)) {

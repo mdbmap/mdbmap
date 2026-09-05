@@ -178,9 +178,9 @@ describe("provider config store", () => {
 		await expect(
 			getProviderConfig(db, masterKey, crypto.randomUUID()),
 		).rejects.toBeInstanceOf(ProviderNotFoundError);
-		await expect(removeProvider(db, crypto.randomUUID())).rejects.toBeInstanceOf(
-			ProviderNotFoundError,
-		);
+		await expect(
+			removeProvider(db, crypto.randomUUID()),
+		).rejects.toBeInstanceOf(ProviderNotFoundError);
 	});
 
 	it("lists providers without returning api keys", async () => {

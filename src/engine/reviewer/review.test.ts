@@ -18,7 +18,10 @@ const proposal: ReviewProposal = {
 	kind: "title",
 };
 
-const staticJudge = (raw: unknown): ReviewJudge => () => raw;
+const staticJudge =
+	(raw: unknown): ReviewJudge =>
+	() =>
+		raw;
 
 describe("reviewProposal", () => {
 	it("promotes on a supporting verdict", async () => {
@@ -47,7 +50,10 @@ describe("reviewProposal", () => {
 	it("escalates on an unable-to-tell verdict", async () => {
 		const outcome = await reviewProposal(
 			proposal,
-			staticJudge({ rationale: "not enough evidence", verdict: "unable-to-tell" }),
+			staticJudge({
+				rationale: "not enough evidence",
+				verdict: "unable-to-tell",
+			}),
 		);
 		expect(outcome).toEqual({
 			kind: "escalated",

@@ -9,7 +9,11 @@ describe("provider-config envelope encryption", () => {
 		const plaintext = JSON.stringify({ apiKey: "sk-secret", model: "gpt-5" });
 		const additionalData = crypto.randomUUID();
 
-		const envelope = await encryptEnvelope(plaintext, masterKey, additionalData);
+		const envelope = await encryptEnvelope(
+			plaintext,
+			masterKey,
+			additionalData,
+		);
 
 		await expect(
 			decryptEnvelope(envelope, masterKey, additionalData),
@@ -90,6 +94,8 @@ describe("provider-config envelope encryption", () => {
 				masterKey,
 				additionalData,
 			),
-		).rejects.toThrow("provider-config: encrypted config failed authentication");
+		).rejects.toThrow(
+			"provider-config: encrypted config failed authentication",
+		);
 	});
 });

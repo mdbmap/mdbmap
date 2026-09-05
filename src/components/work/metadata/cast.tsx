@@ -6,12 +6,24 @@ import { imageUrl, posterHue } from "./placeholders";
 
 const HEADING = "Cast";
 
-function Avatar({ alt, hue, src }: { alt: string; hue: string; src: string | undefined }) {
+function Avatar({
+	alt,
+	hue,
+	src,
+}: {
+	alt: string;
+	hue: string;
+	src: string | undefined;
+}) {
 	if (src === undefined) {
 		return <div className={`aspect-square rounded-full ${hue}`} />;
 	}
 	return (
-		<img alt={alt} className="aspect-square rounded-full object-cover" src={src} />
+		<img
+			alt={alt}
+			className="aspect-square rounded-full object-cover"
+			src={src}
+		/>
 	);
 }
 
@@ -19,10 +31,12 @@ function CastCard({ credit, hue }: { credit: Credit; hue: string }) {
 	return (
 		<div>
 			<Avatar alt={credit.role} hue={hue} src={imageUrl(credit.ref)} />
-			<div className="mt-2 text-[12.5px] leading-snug font-medium text-ink">
+			<div className="text-ink mt-2 text-[12.5px] leading-snug font-medium">
 				{credit.role}
 			</div>
-			<div className="mt-0.5 font-mono text-[10.5px] text-ink/45">{credit.name}</div>
+			<div className="text-ink/45 mt-0.5 font-mono text-[10.5px]">
+				{credit.name}
+			</div>
 		</div>
 	);
 }

@@ -11,7 +11,7 @@ import {
 } from "@/lib/design/theme";
 
 const toggle = tv({
-	base: "inline-flex cursor-pointer items-center gap-2 border-none bg-transparent font-mono text-xs text-ink/50",
+	base: "text-ink/50 inline-flex cursor-pointer items-center gap-2 border-none bg-transparent font-mono text-xs",
 });
 
 export function ThemeToggle() {

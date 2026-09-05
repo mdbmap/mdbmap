@@ -1,5 +1,4 @@
-import { z } from "zod";
-
+import { resolveDb } from "@/db";
 import type { ResolveResult } from "@/engine";
 import { env } from "@/env";
 import type { Credit, Similar } from "@/orpc/schema";
@@ -7,7 +6,18 @@ import type { Credit, Similar } from "@/orpc/schema";
 import { offlineSample } from "./anidb-offline-sample.ts";
 import { childrenNamed, firstChild, parseXml } from "./anidb-xml.ts";
 import type { XmlNode } from "./anidb-xml.ts";
-import type { MetadataKv } from "./metadata-tmdb.ts";
+import {
+	assemble,
+	coreSnapshotSchema,
+	volatileSnapshotSchema,
+} from "./metadata-document.ts";
+import type { Snapshots } from "./metadata-document.ts";
+import type { MetadataFetchOptions } from "./metadata-freshness.ts";
+import { freshnessClassOf } from "./metadata-freshness.ts";
+import { lastUpdatedIso, resolveCatalogueDocument } from "./metadata-load.ts";
+import type { LocalizedTitle } from "./metadata-locale.ts";
+import { createD1MetadataStore } from "./metadata-store.ts";
+import type { MetadataStore } from "./metadata-store.ts";
 import { createRateLimiter } from "./rate-limit.ts";
 import type { RateLimiter } from "./rate-limit.ts";
 import type {
@@ -17,24 +27,16 @@ import type {
 	WorkMetadata,
 } from "./types.ts";
 
-// Real AniDB provider (#6). AniDB splits an anime into one entry per cour, so the
-// engine hands one anidb id per segment; each is fetched (through the flood
-// gate), the first supplies the work header and every entry supplies its own
-// episodes. Results snapshot to KV split by volatility, and a snapshot hit
-// performs zero upstream subrequests and never touches the rate limiter.
-
-const SNAPSHOT_VERSION = 3;
+const SNAPSHOT_VERSION = 4;
 const DEFAULT_BASE_URL = "http://api.anidb.net:9001/httpapi";
-const DEFAULT_CORE_TTL_SECONDS = 604_800;
-const DEFAULT_VOLATILE_TTL_SECONDS = 21_600;
 const ANIDB_FLOOD_INTERVAL_MS = 2000;
 const MAX_CAST = 30;
+const MAX_GENRES = 8;
 const MAX_SIMILAR = 12;
 const REGULAR_EPISODE_TYPE = "1";
 const YEAR_LENGTH = 4;
+const DEFAULT_LOCALE = "en";
 
-// AniDB creator `type` -> the staff role we display. "Animation Work" is handled
-// separately as a studio; every other type is dropped.
 const STAFF_ROLES = new Map<string, string>([
 	["Direction", "Director"],
 	["Original Work", "Original Creator"],
@@ -49,69 +51,12 @@ const emptyNode: XmlNode = { attrs: {}, children: [], tag: "", text: "" };
 interface AnidbProviderDeps {
 	client: string | undefined;
 	clientVer: string | undefined;
-	resolveKv: () => MetadataKv | Promise<MetadataKv>;
+	resolveStore: () => MetadataStore | Promise<MetadataStore>;
 	baseUrl?: string;
-	coreTtlSeconds?: number;
 	fetchFn?: typeof fetch;
 	rateLimiter?: RateLimiter;
 	version?: number;
-	volatileTtlSeconds?: number;
 }
-
-const creditSchema = z.object({
-	name: z.string(),
-	ref: z.string().optional(),
-	role: z.string(),
-});
-
-const similarSchema = z.object({
-	continuityId: z.string(),
-	coverRef: z.string().optional(),
-	title: z.string(),
-});
-
-const episodeSchema = z.object({
-	airDate: z.string().optional(),
-	number: z.number(),
-	title: z.string(),
-});
-
-const coreSegmentSchema = z.object({
-	label: z.string(),
-	year: z.number().optional(),
-});
-
-const volatileSegmentSchema = z.object({
-	airedFrom: z.string().optional(),
-	airedTo: z.string().optional(),
-	episodes: z.array(episodeSchema),
-});
-
-const coreSnapshotSchema = z.object({
-	backdropRef: z.string().optional(),
-	cast: z.array(creditSchema),
-	coverRef: z.string().optional(),
-	genres: z.array(z.string()),
-	ifYouLiked: z.array(similarSchema),
-	nativeTitle: z.string().optional(),
-	productionStatus: z.string().optional(),
-	runtimeMinutes: z.number().optional(),
-	segments: z.array(coreSegmentSchema),
-	staff: z.array(creditSchema),
-	studios: z.array(z.string()),
-	synopsis: z.string(),
-	title: z.string(),
-	version: z.number(),
-});
-
-const volatileSnapshotSchema = z.object({
-	segments: z.array(volatileSegmentSchema),
-	span: z.string(),
-	version: z.number(),
-});
-
-type CoreSnapshot = z.infer<typeof coreSnapshotSchema>;
-type VolatileSnapshot = z.infer<typeof volatileSnapshotSchema>;
 
 interface AnimeEntry {
 	airedFrom: string | undefined;
@@ -119,6 +64,7 @@ interface AnimeEntry {
 	cast: Credit[];
 	coverRef: string | undefined;
 	episodes: EpisodeMetadata[];
+	genres: string[];
 	ifYouLiked: Similar[];
 	nativeTitle: string | undefined;
 	productionStatus: string | undefined;
@@ -127,12 +73,8 @@ interface AnimeEntry {
 	studios: string[];
 	synopsis: string;
 	title: string;
+	titles: LocalizedTitle[];
 	year: number | undefined;
-}
-
-interface Snapshots {
-	core: CoreSnapshot;
-	volatile: VolatileSnapshot;
 }
 
 const imageRef = (path: string): string | undefined =>
@@ -199,25 +141,26 @@ const segmentIds = (resolved: ResolveResult): string[] => {
 	return ids;
 };
 
-const keyFor = (
-	kind: "core" | "volatile",
-	version: number,
-	primaryId: string,
-) => `anidb:v${version}:${kind}:${primaryId}`;
+const xmlTitles = (node: XmlNode, tag = "title"): LocalizedTitle[] =>
+	childrenNamed(node, tag)
+		.filter((title) => title.text !== "")
+		.map((title) => ({
+			locale: title.attrs["xml:lang"] ?? "und",
+			text: title.text,
+			type: title.attrs["type"],
+		}));
 
 const titleByType = (
-	titles: readonly XmlNode[],
+	titles: readonly LocalizedTitle[],
 	type: string,
-): string | undefined =>
-	titles.find((title) => title.attrs["type"] === type)?.text;
+): string | undefined => titles.find((title) => title.type === type)?.text;
 
 const titleByLang = (
-	titles: readonly XmlNode[],
+	titles: readonly LocalizedTitle[],
 	lang: string,
-): string | undefined =>
-	titles.find((title) => title.attrs["xml:lang"] === lang)?.text;
+): string | undefined => titles.find((title) => title.locale === lang)?.text;
 
-const displayTitle = (titles: readonly XmlNode[]): string =>
+const displayTitle = (titles: readonly LocalizedTitle[]): string =>
 	titleByType(titles, "main") ??
 	titleByLang(titles, "en") ??
 	titles[0]?.text ??
@@ -286,10 +229,40 @@ const normaliseSimilar = (anime: XmlNode): Similar[] =>
 			title: entry.text,
 		}));
 
-const episodeTitle = (episode: XmlNode): string => {
-	const titles = childrenNamed(episode, "title");
-	return titleByLang(titles, "en") ?? titles[0]?.text ?? "";
+const normaliseGenres = (anime: XmlNode): string[] => {
+	const genres: string[] = [];
+	const seen = new Set<string>();
+	const add = (name: string) => {
+		const trimmed = name.trim();
+		if (trimmed === "" || seen.has(trimmed) || genres.length >= MAX_GENRES) {
+			return;
+		}
+		seen.add(trimmed);
+		genres.push(trimmed);
+	};
+	for (const tag of childrenNamed(
+		firstChild(anime, "tags") ?? emptyNode,
+		"tag",
+	)) {
+		if (tag.attrs["infobox"] !== "true" || tag.attrs["weight"] === "0") {
+			continue;
+		}
+		add(firstChild(tag, "name")?.text ?? tag.text);
+	}
+	for (const category of childrenNamed(
+		firstChild(anime, "categories") ?? emptyNode,
+		"category",
+	)) {
+		if (category.attrs["infobox"] !== "true") {
+			continue;
+		}
+		add(firstChild(category, "name")?.text ?? category.text);
+	}
+	return genres;
 };
+
+const episodeTitleList = (episode: XmlNode): LocalizedTitle[] =>
+	xmlTitles(episode);
 
 const normaliseEpisodes = (anime: XmlNode): EpisodeMetadata[] => {
 	const episodes: EpisodeMetadata[] = [];
@@ -305,39 +278,62 @@ const normaliseEpisodes = (anime: XmlNode): EpisodeMetadata[] => {
 		if (Number.isNaN(number)) {
 			continue;
 		}
+		const titles = episodeTitleList(episode);
 		episodes.push({
 			airDate: emptyToUndefined(firstChild(episode, "airdate")?.text ?? ""),
 			number,
-			title: episodeTitle(episode) || `Episode ${number}`,
+			title:
+				titleByLang(titles, "en") ?? titles[0]?.text ?? `Episode ${number}`,
+			titles,
 		});
 	}
 	return episodes.toSorted((left, right) => left.number - right.number);
 };
 
-const parseAnime = (xml: string): AnimeEntry => {
-	const anime = parseXml(xml);
-	const titles = childrenNamed(
-		firstChild(anime, "titles") ?? emptyNode,
-		"title",
+const productionLabel = (
+	airedFrom: string | undefined,
+	airedTo: string | undefined,
+	now: Date,
+): string => {
+	const freshnessClass = freshnessClassOf(
+		{ airedFrom, airedTo, productionStatus: undefined },
+		now,
 	);
+	if (freshnessClass === "upcoming") {
+		return "Upcoming";
+	}
+	if (freshnessClass === "continuing") {
+		return "Airing";
+	}
+	return "Finished";
+};
+
+const parseAnime = (xml: string, now: Date): AnimeEntry => {
+	const anime = parseXml(xml);
+	const titles = xmlTitles(firstChild(anime, "titles") ?? emptyNode);
 	const title = displayTitle(titles);
 	const nativeTitle = titleByLang(titles, "ja");
 	const startDate = firstChild(anime, "startdate")?.text ?? "";
+	const endDate = firstChild(anime, "enddate")?.text ?? "";
 	const { staff, studios } = partitionCreators(anime);
+	const airedFrom = emptyToUndefined(startDate);
+	const airedTo = emptyToUndefined(endDate);
 	return {
-		airedFrom: emptyToUndefined(startDate),
-		airedTo: emptyToUndefined(firstChild(anime, "enddate")?.text ?? ""),
+		airedFrom,
+		airedTo,
 		cast: normaliseCast(anime),
 		coverRef: imageRef(firstChild(anime, "picture")?.text ?? ""),
 		episodes: normaliseEpisodes(anime),
+		genres: normaliseGenres(anime),
 		ifYouLiked: normaliseSimilar(anime),
 		nativeTitle: nativeTitle === title ? undefined : nativeTitle,
-		productionStatus: undefined,
+		productionStatus: productionLabel(airedFrom, airedTo, now),
 		runtimeMinutes: runtimeMinutesOf(anime),
 		staff,
 		studios,
 		synopsis: firstChild(anime, "description")?.text ?? "",
 		title,
+		titles,
 		year: startDate === "" ? undefined : yearOf(startDate),
 	};
 };
@@ -352,118 +348,59 @@ const spanOf = (entries: readonly AnimeEntry[]): string => {
 	return to === undefined || to === from ? `${from}` : `${from}–${to}`;
 };
 
-const buildSnapshots = (
-	version: number,
-	entries: readonly AnimeEntry[],
-): Snapshots => {
-	const [head] = entries;
+const buildSnapshots = (version: number, entry: AnimeEntry): Snapshots => {
+	const localized = entry.titles
+		.filter((title) => title.text !== "")
+		.map((title) => ({
+			locale: title.locale === "x-jat" ? "en" : title.locale,
+			synopsis: entry.synopsis,
+			title: title.text,
+		}));
 	const core = coreSnapshotSchema.parse({
 		backdropRef: undefined,
-		cast: head?.cast ?? [],
-		coverRef: head?.coverRef,
-		genres: [],
-		ifYouLiked: head?.ifYouLiked ?? [],
-		nativeTitle: head?.nativeTitle,
-		productionStatus: head?.productionStatus,
-		runtimeMinutes: head?.runtimeMinutes,
-		segments: entries.map((entry) => ({
-			label: entry.title,
-			year: entry.year,
-		})),
-		staff: head?.staff ?? [],
-		studios: head?.studios ?? [],
-		synopsis: head?.synopsis ?? "",
-		title: head?.title ?? "Untitled work",
+		cast: entry.cast,
+		coverRef: entry.coverRef,
+		genres: entry.genres,
+		ifYouLiked: entry.ifYouLiked,
+		localized,
+		nativeTitle: entry.nativeTitle,
+		productionStatus: entry.productionStatus,
+		runtimeMinutes: entry.runtimeMinutes,
+		segments: [
+			{
+				label: entry.title,
+				labelTitles: entry.titles,
+				year: entry.year,
+			},
+		],
+		staff: entry.staff,
+		studios: entry.studios,
+		synopsis: entry.synopsis,
+		title: entry.title,
+		titles: entry.titles,
 		version,
 	});
 	const volatile = volatileSnapshotSchema.parse({
-		segments: entries.map((entry) => ({
-			airedFrom: entry.airedFrom,
-			airedTo: entry.airedTo,
-			episodes: entry.episodes,
-		})),
-		span: spanOf(entries),
+		segments: [
+			{
+				airedFrom: entry.airedFrom,
+				airedTo: entry.airedTo,
+				episodes: entry.episodes,
+			},
+		],
+		span: spanOf([entry]),
 		version,
 	});
 	return { core, volatile };
 };
 
-const toCredit = (credit: CoreSnapshot["cast"][number]): Credit => ({
-	name: credit.name,
-	ref: credit.ref,
-	role: credit.role,
+const emptySegment = (): SegmentMetadata => ({
+	airedFrom: undefined,
+	airedTo: undefined,
+	episodes: [],
+	label: undefined,
+	year: undefined,
 });
-
-const toEpisode = (
-	episode: VolatileSnapshot["segments"][number]["episodes"][number],
-): EpisodeMetadata => ({
-	airDate: episode.airDate,
-	number: episode.number,
-	title: episode.title,
-});
-
-const assemble = (
-	core: CoreSnapshot,
-	volatile: VolatileSnapshot,
-): WorkMetadata => {
-	const segments: SegmentMetadata[] = core.segments.map(
-		(coreSegment, index) => {
-			const volatileSegment = volatile.segments[index];
-			return {
-				airedFrom: volatileSegment?.airedFrom,
-				airedTo: volatileSegment?.airedTo,
-				episodes: (volatileSegment?.episodes ?? []).map((episode) =>
-					toEpisode(episode),
-				),
-				label: coreSegment.label,
-				year: coreSegment.year,
-			};
-		},
-	);
-	return {
-		backdropRef: core.backdropRef,
-		cast: core.cast.map((credit) => toCredit(credit)),
-		coverRef: core.coverRef,
-		genres: [...core.genres],
-		ifYouLiked: core.ifYouLiked.map((similar) => ({
-			continuityId: similar.continuityId,
-			coverRef: similar.coverRef,
-			title: similar.title,
-		})),
-		nativeTitle: core.nativeTitle,
-		productionStatus: core.productionStatus,
-		runtimeMinutes: core.runtimeMinutes,
-		segments,
-		span: volatile.span,
-		staff: core.staff.map((credit) => toCredit(credit)),
-		studios: [...core.studios],
-		synopsis: core.synopsis,
-		title: core.title,
-	};
-};
-
-const readSnapshot = async <Schema extends z.ZodType<{ version: number }>>(
-	kv: MetadataKv,
-	key: string,
-	schema: Schema,
-	version: number,
-): Promise<z.infer<Schema> | undefined> => {
-	const text = await kv.get(key);
-	if (text === undefined) {
-		return undefined;
-	}
-	let raw: unknown;
-	try {
-		raw = JSON.parse(text);
-	} catch {
-		return undefined;
-	}
-	const result = schema.safeParse(raw);
-	if (!result.success || result.data.version !== version) {
-		return undefined;
-	}
-	return result.data;
-};
 
 interface HttpContext {
 	baseUrl: string;
@@ -476,6 +413,7 @@ interface HttpContext {
 const fetchAnime = async (
 	http: HttpContext,
 	aid: string,
+	now: Date,
 ): Promise<AnimeEntry> => {
 	if (http.client === undefined || http.clientVer === undefined) {
 		throw new Error(
@@ -496,20 +434,18 @@ const fetchAnime = async (
 		}
 		return response.text();
 	});
-	return parseAnime(xml);
+	return parseAnime(xml, now);
 };
 
 const createAnidbProvider = (deps: AnidbProviderDeps): MetadataProvider => {
 	const {
 		client,
 		clientVer,
-		resolveKv,
+		resolveStore,
 		baseUrl = DEFAULT_BASE_URL,
-		coreTtlSeconds = DEFAULT_CORE_TTL_SECONDS,
 		fetchFn = fetch,
 		rateLimiter = createRateLimiter({ intervalMs: ANIDB_FLOOD_INTERVAL_MS }),
 		version = SNAPSHOT_VERSION,
-		volatileTtlSeconds = DEFAULT_VOLATILE_TTL_SECONDS,
 	} = deps;
 	const http: HttpContext = {
 		baseUrl,
@@ -519,7 +455,10 @@ const createAnidbProvider = (deps: AnidbProviderDeps): MetadataProvider => {
 		rateLimiter,
 	};
 
-	const fetchWork = async (resolved: ResolveResult): Promise<WorkMetadata> => {
+	const fetchWork = async (
+		resolved: ResolveResult,
+		options: MetadataFetchOptions = {},
+	): Promise<WorkMetadata> => {
 		const ids = segmentIds(resolved);
 		const [primaryId] = ids;
 		if (primaryId === undefined) {
@@ -528,58 +467,78 @@ const createAnidbProvider = (deps: AnidbProviderDeps): MetadataProvider => {
 		if (client === undefined || clientVer === undefined) {
 			return offlineSample(resolved);
 		}
-		const kv = await resolveKv();
-		const coreKey = keyFor("core", version, primaryId);
-		const volatileKey = keyFor("volatile", version, primaryId);
-
-		const core = await readSnapshot(kv, coreKey, coreSnapshotSchema, version);
-		const volatile = await readSnapshot(
-			kv,
-			volatileKey,
-			volatileSnapshotSchema,
-			version,
+		const locale = options.locale ?? DEFAULT_LOCALE;
+		const now = options.now ?? new Date();
+		const store = await resolveStore();
+		const documents = await Promise.all(
+			ids.map(async (id) =>
+				resolveCatalogueDocument({
+					entryKey: id,
+					fetchSnapshots: async () => {
+						const entry = await fetchAnime(http, id, now);
+						return buildSnapshots(version, entry);
+					},
+					now,
+					options,
+					provider: "anidb",
+					store,
+					version,
+				}),
+			),
 		);
-		if (core !== undefined && volatile !== undefined) {
-			return assemble(core, volatile);
+		const [identityDocument] = documents;
+		if (identityDocument === undefined) {
+			throw new Error("anidb: metadata snapshot run is missing");
 		}
-
-		const entries = await Promise.all(
-			ids.map(async (id) => {
-				const entry = await fetchAnime(http, id);
-				return entry;
-			}),
+		const identity = assemble(
+			identityDocument.snapshots.core,
+			identityDocument.snapshots.volatile,
+			locale,
 		);
-		const fetched = buildSnapshots(version, entries);
-		await kv.put(coreKey, JSON.stringify(fetched.core), {
-			expirationTtl: coreTtlSeconds,
+		const byId = new Map(ids.map((id, index) => [id, documents[index]]));
+		const aligned: SegmentMetadata[] = resolved.segments.map((segment) => {
+			const id = segment.members.anidb;
+			if (id === undefined) {
+				return emptySegment();
+			}
+			const document = byId.get(id);
+			if (document === undefined) {
+				return emptySegment();
+			}
+			const [part] = assemble(
+				document.snapshots.core,
+				document.snapshots.volatile,
+				locale,
+			).segments;
+			return part ?? emptySegment();
 		});
-		await kv.put(volatileKey, JSON.stringify(fetched.volatile), {
-			expirationTtl: volatileTtlSeconds,
-		});
-		return assemble(fetched.core, fetched.volatile);
+		const years = aligned
+			.map((segment) => segment.year)
+			.filter((year): year is number => year !== undefined);
+		const [from] = years;
+		const to = years.at(-1);
+		let { span } = identity;
+		if (from !== undefined) {
+			span = to === undefined || to === from ? `${from}` : `${from}–${to}`;
+		}
+		return {
+			...identity,
+			lastUpdatedAt: lastUpdatedIso(documents),
+			segments: aligned,
+			span,
+		};
 	};
 
 	return { fetchWork };
 };
 
-const resolveMetadataKv = async (): Promise<MetadataKv> => {
-	const { env: workerEnv } = await import("cloudflare:workers");
-	const namespace = workerEnv.METADATA_KV;
-	return {
-		get: async (key) => (await namespace.get(key)) ?? undefined,
-		put: async (key, value, options) => {
-			await namespace.put(key, value, options);
-		},
-	};
-};
+const resolveMetadataStore = async (): Promise<MetadataStore> =>
+	createD1MetadataStore(await resolveDb());
 
-// Registered under the name metadata.ts imports (that file is left untouched).
-// The real provider fetches live AniDB when credentials are set and falls back
-// to bundled sample metadata otherwise.
 const anidbStubProvider = createAnidbProvider({
 	client: env.ANIDB_CLIENT,
 	clientVer: env.ANIDB_CLIENT_VER,
-	resolveKv: resolveMetadataKv,
+	resolveStore: resolveMetadataStore,
 });
 
 export { anidbStubProvider, createAnidbProvider };

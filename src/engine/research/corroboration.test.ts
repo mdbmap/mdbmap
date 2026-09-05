@@ -35,10 +35,7 @@ describe("corroborate", () => {
 
 	it("returns low and flags evidence from a single operator", () => {
 		expect(
-			corroborate([
-				api("tvdb"),
-				api("tvdb", { validated: false }),
-			]),
+			corroborate([api("tvdb"), api("tvdb", { validated: false })]),
 		).toStrictEqual({
 			confidence: "low",
 			reviewFlag: "low-confidence-flag",

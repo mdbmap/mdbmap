@@ -7,8 +7,10 @@ const HEADING = "Staff";
 function StaffCard({ credit }: { credit: Credit }) {
 	return (
 		<div>
-			<div className="text-[13px] font-medium text-ink/90">{credit.name}</div>
-			<div className="mt-0.5 font-mono text-[10.5px] text-ink/45">{credit.role}</div>
+			<div className="text-ink/90 text-[13px] font-medium">{credit.name}</div>
+			<div className="text-ink/45 mt-0.5 font-mono text-[10.5px]">
+				{credit.role}
+			</div>
 		</div>
 	);
 }

@@ -4,9 +4,7 @@ import { researchCatalogueSchema } from "./catalogue.ts";
 import type { ResearchCatalogueRecord } from "./catalogue.ts";
 
 interface CatalogueFetchClient {
-	readonly fetchCatalogue?: (
-		serviceId: string,
-	) => Promisable<unknown>;
+	readonly fetchCatalogue?: (serviceId: string) => Promisable<unknown>;
 	readonly fetchTitle: (serviceId: string) => Promisable<unknown>;
 }
 

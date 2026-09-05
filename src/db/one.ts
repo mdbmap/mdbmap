@@ -12,7 +12,6 @@ const one = <Row>(
 const ascendingPair = (
 	left: number,
 	right: number,
-): readonly [number, number] =>
-	left < right ? [left, right] : [right, left];
+): readonly [number, number] => (left < right ? [left, right] : [right, left]);
 
 export { ascendingPair, one };

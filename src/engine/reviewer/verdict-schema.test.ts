@@ -14,7 +14,9 @@ describe("parseVerdict", () => {
 	});
 
 	it("rejects an unrecognised verdict value", () => {
-		expect(parseVerdict({ rationale: "because", verdict: "confirmed" })).toEqual({
+		expect(
+			parseVerdict({ rationale: "because", verdict: "confirmed" }),
+		).toEqual({
 			kind: "malformed",
 		});
 	});
@@ -26,9 +28,9 @@ describe("parseVerdict", () => {
 	});
 
 	it("rejects an empty rationale", () => {
-		expect(
-			parseVerdict({ rationale: "", verdict: "supporting" }),
-		).toEqual({ kind: "malformed" });
+		expect(parseVerdict({ rationale: "", verdict: "supporting" })).toEqual({
+			kind: "malformed",
+		});
 	});
 
 	it("rejects a bare string instead of an object", () => {

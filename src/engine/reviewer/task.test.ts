@@ -4,9 +4,9 @@ import { beforeEach, describe, expect, it } from "vitest";
 import { titleAssertions } from "@/db/engine-schema";
 import { freshDb } from "@/db/test-helpers";
 
+import type { EscalationReason } from "./review.ts";
 import { reviewResearchProposal } from "./task.ts";
 import type { ReviewTaskDeps } from "./task.ts";
-import type { EscalationReason } from "./review.ts";
 import { ascendingPair, one, seedTitle } from "./test-fixtures.ts";
 import type { TestDb as Db } from "./test-fixtures.ts";
 import type { ReviewProposal } from "./types.ts";
@@ -81,7 +81,11 @@ describe("reviewResearchProposal", () => {
 		const escalations: Escalation[] = [];
 		const result = await reviewResearchProposal(
 			proposal,
-			deps(db, { rationale: "both sides agree", verdict: "supporting" }, escalations),
+			deps(
+				db,
+				{ rationale: "both sides agree", verdict: "supporting" },
+				escalations,
+			),
 		);
 		expect(result).toEqual({ kind: "promoted" });
 		expect(await readSource(db, proposal.assertionId)).toBe("llm-verified");
@@ -93,7 +97,11 @@ describe("reviewResearchProposal", () => {
 		const escalations: Escalation[] = [];
 		const result = await reviewResearchProposal(
 			proposal,
-			deps(db, { rationale: "counts disagree", verdict: "disputing" }, escalations),
+			deps(
+				db,
+				{ rationale: "counts disagree", verdict: "disputing" },
+				escalations,
+			),
 		);
 		expect(result).toEqual({
 			kind: "escalated",
@@ -160,7 +168,11 @@ describe("reviewResearchProposal", () => {
 		const escalations: Escalation[] = [];
 		const result = await reviewResearchProposal(
 			proposal,
-			deps(db, { rationale: "both sides agree", verdict: "supporting" }, escalations),
+			deps(
+				db,
+				{ rationale: "both sides agree", verdict: "supporting" },
+				escalations,
+			),
 		);
 		expect(result).toEqual({ kind: "stale" });
 		expect(await readSource(db, proposal.assertionId)).toBe("manual");
@@ -174,7 +186,11 @@ describe("reviewResearchProposal", () => {
 		const escalations: Escalation[] = [];
 		const result = await reviewResearchProposal(
 			proposal,
-			deps(db, { rationale: "both sides agree", verdict: "supporting" }, escalations),
+			deps(
+				db,
+				{ rationale: "both sides agree", verdict: "supporting" },
+				escalations,
+			),
 		);
 		expect(result).toEqual({
 			kind: "escalated",

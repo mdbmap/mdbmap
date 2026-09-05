@@ -1,9 +1,9 @@
 /// <reference types="@cloudflare/vitest-pool-workers/types" />
 
-import { env } from "cloudflare:workers";
 import { applyD1Migrations } from "cloudflare:test";
-import { beforeAll } from "vitest";
 import type { D1Migration } from "cloudflare:test";
+import { env } from "cloudflare:workers";
+import { beforeAll } from "vitest";
 
 declare global {
 	interface __BaseEnv_Env {

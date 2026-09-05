@@ -14,7 +14,10 @@ interface VerifiedApiKey {
 // A read-only lookup by hash — no write on the verify path, per ADR-0006 (the
 // exact per-request D1 write the hand-roll avoids). A wrong secret or a
 // revoked key both resolve to `undefined`, indistinguishably to the caller.
-const verifyApiKey = async (db: Db, secret: string): Promise<VerifiedApiKey | undefined> => {
+const verifyApiKey = async (
+	db: Db,
+	secret: string,
+): Promise<VerifiedApiKey | undefined> => {
 	const keyHash = await hashApiKeySecret(secret);
 	const rows = await db
 		.select({ id: apiKey.id, plan: apiKey.plan })

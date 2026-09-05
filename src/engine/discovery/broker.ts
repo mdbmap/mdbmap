@@ -1,6 +1,10 @@
 import type { SimklClient, SimklEntry, SimklService } from "./simkl.ts";
 import { simklServices } from "./simkl.ts";
-import type { ContinuityChain, ContinuityConflict, WalkResult } from "./walk.ts";
+import type {
+	ContinuityChain,
+	ContinuityConflict,
+	WalkResult,
+} from "./walk.ts";
 import { walkContinuity } from "./walk.ts";
 
 // The discovery broker (ADR-0002). On a cache miss it tries SIMKL first for any

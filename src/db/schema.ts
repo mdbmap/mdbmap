@@ -1,6 +1,7 @@
 import { sql } from "drizzle-orm";
 import {
 	check,
+	index,
 	integer,
 	sqliteTable,
 	text,
@@ -26,6 +27,12 @@ type WatchStatus = (typeof watchStatuses)[number];
 
 const rateableUnitKinds = ["work", "part", "episode", "movie"] as const;
 type RateableUnitKind = (typeof rateableUnitKinds)[number];
+
+const metadataProviders = ["anidb", "tmdb"] as const;
+type MetadataProviderName = (typeof metadataProviders)[number];
+
+const freshnessClasses = ["completed", "continuing", "upcoming"] as const;
+type FreshnessClass = (typeof freshnessClasses)[number];
 
 // The gate (#56) picks its binding from this column; new plans just add a value.
 const apiKeyPlans = ["free", "pro"] as const;
@@ -300,13 +307,54 @@ const stripeWebhookEvent = sqliteTable("stripe_webhook_event", {
 	type: text().notNull(),
 });
 
+// ADR-0010: durable TMDB/AniDB display snapshots. One row per catalogue title.
+const catalogueMetadata = sqliteTable(
+	"catalogue_metadata",
+	{
+		coreFetchedAt: integer("core_fetched_at", { mode: "timestamp" }).notNull(),
+		coreJson: text("core_json").notNull(),
+		entryKey: text("entry_key").notNull(),
+		freshnessClass: text("freshness_class", {
+			enum: freshnessClasses,
+		}).notNull(),
+		id: integer({ mode: "number" }).primaryKey({ autoIncrement: true }),
+		provider: text({ enum: metadataProviders }).notNull(),
+		snapshotVersion: integer("snapshot_version").notNull(),
+		userRefreshedAt: integer("user_refreshed_at", { mode: "timestamp" }),
+		volatileFetchedAt: integer("volatile_fetched_at", {
+			mode: "timestamp",
+		}).notNull(),
+		volatileJson: text("volatile_json").notNull(),
+	},
+	(table) => [
+		uniqueIndex("catalogue_metadata_provider_entry_idx").on(
+			table.provider,
+			table.entryKey,
+		),
+		index("catalogue_metadata_freshness_idx").on(
+			table.freshnessClass,
+			table.volatileFetchedAt,
+		),
+	],
+);
+
+// ADR-0010: one user-refresh lease per continuity, not per viewer.
+const metadataRefreshLease = sqliteTable("metadata_refresh_lease", {
+	continuityKey: text("continuity_key").primaryKey().$type<ContinuityKey>(),
+	requestedAt: integer("requested_at", { mode: "timestamp" }).notNull(),
+});
+
 export {
 	account,
 	apiKey,
 	apiKeyPlans,
+	catalogueMetadata,
 	episodeProgress,
+	freshnessClasses,
 	llmProvider,
 	llmProviderKinds,
+	metadataProviders,
+	metadataRefreshLease,
 	personalRating,
 	rateableUnitKinds,
 	researchPolicy,
@@ -328,8 +376,10 @@ export {
 export type {
 	ApiKeyPlan,
 	ContinuityKey,
+	FreshnessClass,
 	InstalmentLocator,
 	LlmProviderKind,
+	MetadataProviderName,
 	RateableUnitKey,
 	RateableUnitKind,
 	ResearchTiming,

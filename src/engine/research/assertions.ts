@@ -167,10 +167,7 @@ const listResearchAssertions = async (
 			serviceInstalments,
 			eq(instalmentAssertions.instalmentId, serviceInstalments.id),
 		)
-		.innerJoin(
-			serviceTitles,
-			eq(serviceInstalments.titleId, serviceTitles.id),
-		)
+		.innerJoin(serviceTitles, eq(serviceInstalments.titleId, serviceTitles.id))
 		.where(
 			and(
 				eq(instalmentAssertions.source, RESEARCH),
@@ -192,9 +189,11 @@ const listResearchAssertions = async (
 		}),
 	);
 
-	return [...titleResearch, ...relationResearch, ...instalmentResearch].toSorted(
-		(left, right) => left.id - right.id,
-	);
+	return [
+		...titleResearch,
+		...relationResearch,
+		...instalmentResearch,
+	].toSorted((left, right) => left.id - right.id);
 };
 
 export { listResearchAssertions, RESEARCH };

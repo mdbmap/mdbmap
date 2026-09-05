@@ -47,22 +47,39 @@ function resolveSelectedIndex(
 }
 
 interface WorkGetSelection {
+	locale?: string | undefined;
 	order?: PresentationOrderSlug | undefined;
 	proposalId?: number | undefined;
 }
+
+const DEFAULT_VIEWER_LOCALE = "en";
+
+const viewerLocale = (explicit?: string): string => {
+	if (explicit !== undefined && explicit.trim() !== "") {
+		return explicit.trim();
+	}
+	if (typeof document !== "undefined") {
+		const lang = document.documentElement.lang.trim();
+		if (lang !== "") {
+			return lang;
+		}
+	}
+	return DEFAULT_VIEWER_LOCALE;
+};
 
 const workGetInput = (
 	continuityId: string,
 	selection?: PresentationOrderSlug | WorkGetSelection,
 ) => {
 	if (selection === undefined) {
-		return { continuityId };
+		return { continuityId, locale: viewerLocale() };
 	}
 	if (typeof selection === "string") {
-		return { continuityId, order: selection };
+		return { continuityId, locale: viewerLocale(), order: selection };
 	}
 	return {
 		continuityId,
+		locale: viewerLocale(selection.locale),
 		...(selection.order === undefined ? {} : { order: selection.order }),
 		...(selection.proposalId === undefined
 			? {}
@@ -90,6 +107,7 @@ export {
 	resolveSelectedIndex,
 	usePartSelectionStore,
 	useSelectedPart,
+	viewerLocale,
 	workGetInput,
 };
 export type { WorkGetSelection };
