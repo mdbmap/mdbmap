@@ -1,30 +1,34 @@
 import type { ResolveResult } from "@/engine";
 import { metadataProviderFor } from "@/engine";
 
+import type { MetadataFetchOptions } from "./metadata-freshness.ts";
 import type { Providers, WorkMetadata } from "./types.ts";
 
 const fetchDisplayMetadata = async (
 	providers: Providers,
 	resolved: ResolveResult,
+	options: MetadataFetchOptions = {},
 ): Promise<WorkMetadata> => {
 	const kindProvider =
 		providers.metadata[metadataProviderFor(resolved.mediaKind)];
 	if (resolved.mediaKind !== "anime") {
-		return kindProvider.fetchWork(resolved);
+		return kindProvider.fetchWork(resolved, options);
 	}
-	const animeGenres = async (): Promise<string[]> => {
-		try {
-			const tmdb = await providers.metadata.tmdb.fetchWork(resolved);
-			return [...tmdb.genres];
-		} catch {
-			return [];
-		}
-	};
-	const [meta, genres] = await Promise.all([
-		kindProvider.fetchWork(resolved),
-		animeGenres(),
-	]);
-	return { ...meta, genres };
+	const meta = await kindProvider.fetchWork(resolved, options);
+	if (meta.genres.length > 0) {
+		return meta;
+	}
+	try {
+		const tmdb = await providers.metadata.tmdb.fetchWork(resolved, {
+			force: false,
+			refreshIfDue: false,
+			...(options.locale === undefined ? {} : { locale: options.locale }),
+			...(options.now === undefined ? {} : { now: options.now }),
+		});
+		return { ...meta, genres: [...tmdb.genres] };
+	} catch {
+		return meta;
+	}
 };
 
 export { fetchDisplayMetadata };

@@ -97,13 +97,7 @@ const buildUpdateConfig = (form: ProviderFormState) => {
 	};
 };
 
-function Field({
-	children,
-	label,
-}: {
-	children: ReactNode;
-	label: string;
-}) {
+function Field({ children, label }: { children: ReactNode; label: string }) {
 	return (
 		<label className="flex flex-col gap-1 text-xs text-neutral-600 dark:text-neutral-400">
 			{label}
@@ -206,7 +200,11 @@ function ProviderFormFields({
 			</Field>
 			{form.kind === "openai-compatible" ? (
 				<Field label={LABEL.baseUrl}>
-					<input className={inputClass} onChange={onBaseUrl} value={form.baseUrl} />
+					<input
+						className={inputClass}
+						onChange={onBaseUrl}
+						value={form.baseUrl}
+					/>
 				</Field>
 			) : undefined}
 			<Field label={LABEL.apiKey}>
@@ -244,7 +242,9 @@ function ProviderForm({
 		setForm((current) => ({ ...current, label: event.target.value }));
 	}, []);
 	const onKind = useCallback((event: ChangeEvent<HTMLSelectElement>) => {
-		const next = llmProviderKinds.find((option) => option === event.target.value);
+		const next = llmProviderKinds.find(
+			(option) => option === event.target.value,
+		);
 		if (next !== undefined) {
 			setForm((current) => ({ ...current, kind: next }));
 		}
@@ -271,7 +271,10 @@ function ProviderForm({
 			if (needsFreshKey) {
 				return;
 			}
-			if (form.kind === "openai-compatible" && form.baseUrl.trim().length === 0) {
+			if (
+				form.kind === "openai-compatible" &&
+				form.baseUrl.trim().length === 0
+			) {
 				return;
 			}
 			onSubmit(form);
@@ -280,7 +283,10 @@ function ProviderForm({
 	);
 
 	return (
-		<form className="flex flex-col gap-3 border border-neutral-300 p-4 dark:border-neutral-700" onSubmit={submit}>
+		<form
+			className="flex flex-col gap-3 border border-neutral-300 p-4 dark:border-neutral-700"
+			onSubmit={submit}
+		>
 			<div className="flex flex-wrap items-end gap-2">
 				<ProviderFormFields
 					editing={editing}
@@ -293,7 +299,9 @@ function ProviderForm({
 					onModel={onModel}
 				/>
 			</div>
-			<p className="text-xs text-neutral-500 dark:text-neutral-400">{KEY_HINT}</p>
+			<p className="text-xs text-neutral-500 dark:text-neutral-400">
+				{KEY_HINT}
+			</p>
 			{needsFreshKey ? (
 				<p className="text-xs text-neutral-600 dark:text-neutral-400">
 					{KEY_KIND_CHANGE}
@@ -367,7 +375,12 @@ function ProviderList({
 	return (
 		<div className="flex flex-col gap-2">
 			{rows.map((row) => (
-				<ProviderCard key={row.id} onEdit={onEdit} onRemove={onRemove} row={row} />
+				<ProviderCard
+					key={row.id}
+					onEdit={onEdit}
+					onRemove={onRemove}
+					row={row}
+				/>
 			))}
 		</div>
 	);
@@ -412,17 +425,29 @@ export function ProvidersPanel() {
 		orpc.providers.setTiming.mutationOptions({ onSuccess: invalidate }),
 	);
 
-	const { error: createError, isPending: creating, mutate: createMutate } =
-		createMutation;
-	const { error: updateError, isPending: updating, mutate: updateMutate } =
-		updateMutation;
+	const {
+		error: createError,
+		isPending: creating,
+		mutate: createMutate,
+	} = createMutation;
+	const {
+		error: updateError,
+		isPending: updating,
+		mutate: updateMutate,
+	} = updateMutation;
 	const { error: removeError, mutate: removeMutate } = removeMutation;
-	const { error: timingError, isPending: timingPending, mutate: timingMutate } =
-		timingMutation;
+	const {
+		error: timingError,
+		isPending: timingPending,
+		mutate: timingMutate,
+	} = timingMutation;
 
 	const onCreate = useCallback(
 		(form: ProviderFormState) => {
-			createMutate({ config: buildCreateConfig(form), label: form.label.trim() });
+			createMutate({
+				config: buildCreateConfig(form),
+				label: form.label.trim(),
+			});
 		},
 		[createMutate],
 	);
@@ -519,10 +544,16 @@ export function ProvidersPanel() {
 				</p>
 			)}
 			{listQuery.data?.length === 0 ? (
-				<p className="text-sm text-neutral-600 dark:text-neutral-400">{EMPTY}</p>
+				<p className="text-sm text-neutral-600 dark:text-neutral-400">
+					{EMPTY}
+				</p>
 			) : undefined}
 			{listQuery.data === undefined ? undefined : (
-				<ProviderList onEdit={onEdit} onRemove={onRemove} rows={listQuery.data} />
+				<ProviderList
+					onEdit={onEdit}
+					onRemove={onRemove}
+					rows={listQuery.data}
+				/>
 			)}
 		</main>
 	);

@@ -1,9 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import {
-	parseResearchCatalogue,
-	toCatalogueTitle,
-} from "./catalogue.ts";
+import { parseResearchCatalogue, toCatalogueTitle } from "./catalogue.ts";
 
 describe("research catalogue validators", () => {
 	it("parses the same title fields the discovery CatalogueClient exposes", () => {

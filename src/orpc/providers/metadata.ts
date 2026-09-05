@@ -1,26 +1,18 @@
+import { resolveDb } from "@/db";
 import { env } from "@/env";
 
 import { anidbStubProvider } from "./metadata-anidb.ts";
-import type { MetadataKv } from "./metadata-tmdb.ts";
+import { createD1MetadataStore } from "./metadata-store.ts";
+import type { MetadataStore } from "./metadata-store.ts";
 import { createTmdbProvider } from "./metadata-tmdb.ts";
 import type { MetadataProvider, MetadataRegistry } from "./types.ts";
 
-// Resolved lazily so the Workers-only `cloudflare:workers` import is never
-// evaluated under Node (tests inject their own KV-backed provider instead).
-const resolveMetadataKv = async (): Promise<MetadataKv> => {
-	const { env: workerEnv } = await import("cloudflare:workers");
-	const namespace = workerEnv.METADATA_KV;
-	return {
-		get: async (key) => (await namespace.get(key)) ?? undefined,
-		put: async (key, value, options) => {
-			await namespace.put(key, value, options);
-		},
-	};
-};
+const resolveMetadataStore = async (): Promise<MetadataStore> =>
+	createD1MetadataStore(await resolveDb());
 
 const tmdbProvider = createTmdbProvider({
 	apiKey: env.TMDB_API_KEY,
-	resolveKv: resolveMetadataKv,
+	resolveStore: resolveMetadataStore,
 });
 
 const metadataRegistry: MetadataRegistry = {

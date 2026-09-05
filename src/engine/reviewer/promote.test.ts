@@ -94,7 +94,11 @@ describe("promoteAssertion", () => {
 		const id = await seedTitleAssertion(db, "llm-research");
 		expect(await promoteAssertion(db, "title", id)).toBe("promoted");
 		const row = one(
-			await db.select().from(titleAssertions).where(eq(titleAssertions.id, id)).all(),
+			await db
+				.select()
+				.from(titleAssertions)
+				.where(eq(titleAssertions.id, id))
+				.all(),
 		);
 		expect(row.source).toBe("llm-verified");
 	});
@@ -129,7 +133,11 @@ describe("promoteAssertion", () => {
 		const id = await seedTitleAssertion(db, "manual");
 		expect(await promoteAssertion(db, "title", id)).toBe("already-moved");
 		const row = one(
-			await db.select().from(titleAssertions).where(eq(titleAssertions.id, id)).all(),
+			await db
+				.select()
+				.from(titleAssertions)
+				.where(eq(titleAssertions.id, id))
+				.all(),
 		);
 		expect(row.source).toBe("manual");
 	});

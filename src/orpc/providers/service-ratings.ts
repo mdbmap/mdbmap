@@ -1,10 +1,10 @@
 import { z } from "zod";
 
-import { env } from "@/env";
 import type { MemberTitles } from "@/engine";
+import { env } from "@/env";
 import type { RateableUnit, ServiceRating } from "@/orpc/schema";
 
-import type { MetadataKv } from "./metadata-tmdb.ts";
+import type { MetadataKv } from "./metadata-kv.ts";
 import { createRateLimiter } from "./rate-limit.ts";
 import {
 	DEFAULT_ANILIST_URL,
@@ -123,7 +123,10 @@ const fetchWithTimeout =
 	async (input, init) =>
 		fetchFn(input, {
 			...init,
-			signal: mergeAbortSignals(AbortSignal.timeout(ms), init?.signal ?? undefined),
+			signal: mergeAbortSignals(
+				AbortSignal.timeout(ms),
+				init?.signal ?? undefined,
+			),
 		});
 
 const loadCachedOrFetch = async (
@@ -144,12 +147,7 @@ const loadCachedOrFetch = async (
 	} catch {
 		return [];
 	}
-	await writeSnapshot(
-		kv,
-		key,
-		{ ratings: [...ratings], version },
-		ttlSeconds,
-	);
+	await writeSnapshot(kv, key, { ratings: [...ratings], version }, ttlSeconds);
 	return ratings;
 };
 

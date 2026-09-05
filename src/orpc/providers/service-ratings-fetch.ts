@@ -16,7 +16,13 @@ const DEFAULT_ANILIST_URL = "https://graphql.anilist.co";
 const DEFAULT_JIKAN_URL = "https://api.jikan.moe/v4";
 const ANIDB_FLOOD_INTERVAL_MS = 2000;
 
-type RatedService = "anidb" | "anilist" | "imdb" | "mal" | "metacritic" | "tmdb";
+type RatedService =
+	| "anidb"
+	| "anilist"
+	| "imdb"
+	| "mal"
+	| "metacritic"
+	| "tmdb";
 
 const scaleFor: Record<RatedService, number> = {
 	anidb: 10,

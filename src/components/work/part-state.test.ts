@@ -55,12 +55,14 @@ describe("workGetInput", () => {
 	it("omits order when the viewer has not chosen one", () => {
 		expect(workGetInput("continuity:x")).toEqual({
 			continuityId: "continuity:x",
+			locale: "en",
 		});
 	});
 
 	it("includes the selected presentation order", () => {
 		expect(workGetInput("continuity:x", "watch")).toEqual({
 			continuityId: "continuity:x",
+			locale: "en",
 			order: "watch",
 		});
 	});
@@ -68,6 +70,7 @@ describe("workGetInput", () => {
 	it("includes a community proposal id", () => {
 		expect(workGetInput("continuity:x", { proposalId: 7 })).toEqual({
 			continuityId: "continuity:x",
+			locale: "en",
 			proposalId: 7,
 		});
 	});

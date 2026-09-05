@@ -3,7 +3,7 @@ import { describe, expect, it, vi } from "vitest";
 import type { MemberTitles } from "@/engine";
 import type { RateableUnit } from "@/orpc/schema";
 
-import type { MetadataKv } from "./metadata-tmdb.ts";
+import type { MetadataKv } from "./metadata-kv.ts";
 import { createRateLimiter } from "./rate-limit.ts";
 import { createServiceRatingsProvider } from "./service-ratings.ts";
 
@@ -172,14 +172,16 @@ describe("service ratings list", () => {
 	});
 
 	it("skips services with no member id or no published score", async () => {
-		const fetchFn = vi.fn(async (input: RequestInfo | URL): Promise<Response> => {
-			await Promise.resolve();
-			const url = urlOf(input);
-			if (url.includes("api.jikan.moe")) {
-				return Response.json({ data: {} });
-			}
-			return Response.json({ error: "not found" }, { status: 404 });
-		});
+		const fetchFn = vi.fn(
+			async (input: RequestInfo | URL): Promise<Response> => {
+				await Promise.resolve();
+				const url = urlOf(input);
+				if (url.includes("api.jikan.moe")) {
+					return Response.json({ data: {} });
+				}
+				return Response.json({ error: "not found" }, { status: 404 });
+			},
+		);
 		const { kv } = makeKv();
 		expect(
 			await makeProvider(fetchFn, kv).ratingsFor(part, {
@@ -241,13 +243,15 @@ describe("service ratings list", () => {
 	});
 
 	it("keeps other services when one upstream rejects", async () => {
-		const fetchFn = vi.fn(async (input: RequestInfo | URL): Promise<Response> => {
-			await Promise.resolve();
-			if (urlOf(input).includes("api.jikan.moe")) {
-				throw new Error("mal down");
-			}
-			return makeFetch()(input);
-		});
+		const fetchFn = vi.fn(
+			async (input: RequestInfo | URL): Promise<Response> => {
+				await Promise.resolve();
+				if (urlOf(input).includes("api.jikan.moe")) {
+					throw new Error("mal down");
+				}
+				return makeFetch()(input);
+			},
+		);
 		const { kv } = makeKv();
 		const ratings = await makeProvider(fetchFn, kv).ratingsFor(part, members);
 		expect(ratings.map((rating) => rating.service)).toEqual([
@@ -260,13 +264,15 @@ describe("service ratings list", () => {
 	});
 
 	it("does not cache a rejected fetch", async () => {
-		const fetchFn = vi.fn(async (input: RequestInfo | URL): Promise<Response> => {
-			await Promise.resolve();
-			if (urlOf(input).includes("api.jikan.moe")) {
-				return Response.json({ error: "unavailable" }, { status: 503 });
-			}
-			return Response.json({ error: "not found" }, { status: 404 });
-		});
+		const fetchFn = vi.fn(
+			async (input: RequestInfo | URL): Promise<Response> => {
+				await Promise.resolve();
+				if (urlOf(input).includes("api.jikan.moe")) {
+					return Response.json({ error: "unavailable" }, { status: 503 });
+				}
+				return Response.json({ error: "not found" }, { status: 404 });
+			},
+		);
 		const { kv, puts } = makeKv();
 		const provider = makeProvider(fetchFn, kv);
 		expect(await provider.ratingsFor(part, { mal: "50265" })).toEqual([]);
@@ -306,7 +312,13 @@ describe("service ratings list", () => {
 			mal: "50265",
 		});
 		expect(ratings).toEqual([
-			{ kind: "user", scale: 10, score: 8.55, service: "mal", votes: 1_182_000 },
+			{
+				kind: "user",
+				scale: 10,
+				score: 8.55,
+				service: "mal",
+				votes: 1_182_000,
+			},
 		]);
 	});
 

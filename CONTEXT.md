@@ -127,3 +127,15 @@ _Avoid_: Opinion, score
 **Watch status**:
 A user's state for a tracked work: watching, plan to watch, on hold, completed, dropped or rewatching, with a rewatch count. It is held once per continuity at the work level; sync fans it out to the correct per-entry record on each target service through the instalment mappings.
 _Avoid_: Per-season status, list state
+
+**Catalogue metadata**:
+The durable snapshot of one TMDB or AniDB title's display fields, including every stored locale. Losing it is recoverable by refetch, but the record is kept so completed titles are not recrawled on a timer.
+_Avoid_: Metadata cache, KV snapshot
+
+**Freshness class**:
+The update cadence of one catalogue metadata record: continuing, upcoming, or completed. Continuing titles are recrawled often; completed titles rarely.
+_Avoid_: TTL, cache expiry, stale time
+
+**User refresh**:
+A viewer-requested recrawl of a work's catalogue metadata. It is admitted at most once per twenty-four hours per continuity, not per viewer.
+_Avoid_: Cache bust, force sync, per-user refresh

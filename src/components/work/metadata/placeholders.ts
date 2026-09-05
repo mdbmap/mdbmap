@@ -9,7 +9,8 @@ const posterClass = [
 	"poster-20",
 ] as const;
 
-const posterHue = (index: number) => posterClass[index % posterClass.length] ?? posterClass[0];
+const posterHue = (index: number) =>
+	posterClass[index % posterClass.length] ?? posterClass[0];
 
 // Snapshot refs (e.g. `anidb:c-anya`) become resolvable URLs in #5/#6; until then
 // only absolute http refs are displayable, everything else falls back to the ruled

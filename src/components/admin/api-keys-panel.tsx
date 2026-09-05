@@ -28,7 +28,13 @@ const LABEL = {
 	revoke: "Revoke",
 } as const;
 
-function SecretBanner({ onDismiss, secret }: { onDismiss: () => void; secret: string }) {
+function SecretBanner({
+	onDismiss,
+	secret,
+}: {
+	onDismiss: () => void;
+	secret: string;
+}) {
 	return (
 		<div className="flex flex-col gap-2 border border-amber-400 bg-amber-50 p-4 text-sm dark:border-amber-700 dark:bg-amber-950">
 			<p className="text-amber-900 dark:text-amber-100">{SECRET_NOTICE}</p>
@@ -87,7 +93,9 @@ function MintForm({ onMint, pending }: MintFormProps) {
 		setLabel(event.target.value);
 	}, []);
 	const onPlanChange = useCallback((event: ChangeEvent<HTMLSelectElement>) => {
-		const next = ApiKeyPlanSchema.options.find((option) => option === event.target.value);
+		const next = ApiKeyPlanSchema.options.find(
+			(option) => option === event.target.value,
+		);
 		if (next !== undefined) {
 			setPlan(next);
 		}
@@ -118,7 +126,8 @@ function ApiKeyCard({
 	const revoke = useCallback(() => {
 		onRevoke(id);
 	}, [id, onRevoke]);
-	const status = keyRow.revokedAt === null ? STATUS_LABEL.active : STATUS_LABEL.revoked;
+	const status =
+		keyRow.revokedAt === null ? STATUS_LABEL.active : STATUS_LABEL.revoked;
 
 	return (
 		<article className="flex items-center justify-between gap-4 border border-neutral-300 p-4 dark:border-neutral-700">
@@ -159,7 +168,9 @@ export function ApiKeysPanel() {
 	const queryClient = useQueryClient();
 	const listKey = orpc.apiKeys.list.queryKey();
 	const query = useQuery(orpc.apiKeys.list.queryOptions());
-	const [mintedSecret, setMintedSecret] = useState<string | undefined>(undefined);
+	const [mintedSecret, setMintedSecret] = useState<string | undefined>(
+		undefined,
+	);
 
 	const invalidateList = useCallback(async () => {
 		await queryClient.invalidateQueries({ queryKey: listKey });
@@ -204,7 +215,9 @@ export function ApiKeysPanel() {
 				{TITLE}
 			</h1>
 			{query.isError ? (
-				<p className="text-sm text-neutral-600 dark:text-neutral-400">{DENIED}</p>
+				<p className="text-sm text-neutral-600 dark:text-neutral-400">
+					{DENIED}
+				</p>
 			) : (
 				<MintForm onMint={onMint} pending={minting} />
 			)}
@@ -212,7 +225,9 @@ export function ApiKeysPanel() {
 				<SecretBanner onDismiss={onDismissSecret} secret={mintedSecret} />
 			)}
 			{query.data?.length === 0 ? (
-				<p className="text-sm text-neutral-600 dark:text-neutral-400">{EMPTY}</p>
+				<p className="text-sm text-neutral-600 dark:text-neutral-400">
+					{EMPTY}
+				</p>
 			) : undefined}
 			{query.data === undefined ? undefined : (
 				<ApiKeyList onRevoke={onRevoke} rows={query.data} />

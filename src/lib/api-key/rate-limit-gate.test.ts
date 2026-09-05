@@ -152,9 +152,7 @@ describe("withPublicApiGate", () => {
 			rateLimits: { free: overLimit, pro },
 		});
 		expect(denied.status).toBe(429);
-		expect(denied.headers.get("retry-after")).toBe(
-			String(RETRY_AFTER_SECONDS),
-		);
+		expect(denied.headers.get("retry-after")).toBe(String(RETRY_AFTER_SECONDS));
 		expect(await denied.json()).toEqual({
 			error: "Too Many Requests",
 			retryAfter: RETRY_AFTER_SECONDS,

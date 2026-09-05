@@ -141,6 +141,13 @@
 			"when": 1788550000000,
 			"tag": "0020_work_notes",
 			"breakpoints": true
+		},
+		{
+			"idx": 20,
+			"version": "6",
+			"when": 1788630000000,
+			"tag": "0021_catalogue_metadata",
+			"breakpoints": true
 		}
 	]
 }

@@ -28,7 +28,9 @@ const decodeEntities = (input: string): string =>
 			return String.fromCodePoint(Number.parseInt(body.slice(2), HEX_RADIX));
 		}
 		if (body.startsWith("#")) {
-			return String.fromCodePoint(Number.parseInt(body.slice(1), DECIMAL_RADIX));
+			return String.fromCodePoint(
+				Number.parseInt(body.slice(1), DECIMAL_RADIX),
+			);
 		}
 		return ENTITIES.get(body) ?? match;
 	});

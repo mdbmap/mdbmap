@@ -27,6 +27,11 @@ import type { Db } from "@/orpc/context";
 import { instalmentsOf } from "@/orpc/instalments";
 import { fetchDisplayMetadata } from "@/orpc/providers";
 import type { Providers, WorkMetadata } from "@/orpc/providers";
+import {
+	USER_REFRESH_COOLDOWN_MS,
+	userRefreshRetryAt,
+} from "@/orpc/providers/metadata-freshness";
+import { createD1RefreshLeaseStore } from "@/orpc/providers/metadata-lease";
 import type {
 	CommunityOrderRef,
 	EpisodeView,
@@ -34,14 +39,32 @@ import type {
 	PartView,
 	ProposalSegmentRef,
 	RateableUnit,
+	RefreshMetadataResult,
 	ViewerTracking,
 	WorkBlock,
 	WorkView,
 } from "@/orpc/schema";
-import { WorkGetInput } from "@/orpc/schema";
+import { RefreshMetadataInput, WorkGetInput } from "@/orpc/schema";
 import { resolveSimilar } from "@/orpc/similar";
 
 import { open } from "./work-open";
+
+const scheduleMetadataRefresh = (task: Promise<void>): void => {
+	const run = async (): Promise<void> => {
+		try {
+			const { scheduleWithWaitUntil } =
+				await import("@/engine/ingest/schedule.workers");
+			scheduleWithWaitUntil(task);
+		} catch {
+			try {
+				await task;
+			} catch {
+				return;
+			}
+		}
+	};
+	void run();
+};
 
 interface ViewerState {
 	note: string | undefined;
@@ -383,7 +406,11 @@ const get = pub
 		const requestedId = input.continuityId;
 		const resolved = await resolveMappedWork(context.engine, requestedId);
 		const { continuityId } = resolved;
-		const meta = await fetchDisplayMetadata(context.providers, resolved);
+		const meta = await fetchDisplayMetadata(context.providers, resolved, {
+			locale: input.locale,
+			refreshIfDue: true,
+			schedule: scheduleMetadataRefresh,
+		});
 
 		const parsedCanonical = parseContinuityKey(continuityId);
 		const aliasKeys = [
@@ -500,12 +527,18 @@ const get = pub
 				backdropRef: meta.backdropRef,
 				coverRef: meta.coverRef,
 				genres: [...meta.genres],
+				lastUpdatedAt: meta.lastUpdatedAt,
 				nativeTitle: meta.nativeTitle,
 				productionStatus: meta.productionStatus,
 				runtimeMinutes: meta.runtimeMinutes,
 				span: meta.span,
 				synopsis: meta.synopsis,
+				tagline: meta.tagline,
 				title: meta.title,
+				userRefreshAvailableAt: userRefreshRetryAt(
+					await createD1RefreshLeaseStore(context.db).get(continuityId),
+					new Date(),
+				)?.toISOString(),
 			},
 			ifYouLiked: [...ifYouLiked],
 			mediaKind: resolved.mediaKind,
@@ -517,6 +550,35 @@ const get = pub
 		};
 	});
 
-const work = { get, open };
+const refreshMetadata = pub
+	.input(RefreshMetadataInput)
+	.handler(async ({ context, input }): Promise<RefreshMetadataResult> => {
+		const now = new Date();
+		const resolved = await resolveMappedWork(
+			context.engine,
+			input.continuityId,
+		);
+		const lease = createD1RefreshLeaseStore(context.db);
+		const claimed = await lease.claim(resolved.continuityId, now);
+		if (!claimed.ok) {
+			throw new ORPCError("TOO_MANY_REQUESTS", {
+				data: { retryAt: claimed.retryAt.toISOString() },
+				message: "This entry was updated in the last 24 hours.",
+			});
+		}
+		const meta = await fetchDisplayMetadata(context.providers, resolved, {
+			force: true,
+			locale: input.locale,
+			now,
+		});
+		return {
+			lastUpdatedAt: meta.lastUpdatedAt,
+			userRefreshAvailableAt: new Date(
+				now.getTime() + USER_REFRESH_COOLDOWN_MS,
+			).toISOString(),
+		};
+	});
+
+const work = { get, open, refreshMetadata };
 
 export { work };

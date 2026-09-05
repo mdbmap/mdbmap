@@ -32,6 +32,8 @@ const wipeOrder = [
 	"personal_rating",
 	"watch_status",
 	"work_note",
+	"catalogue_metadata",
+	"metadata_refresh_lease",
 	"stripe_webhook_event",
 	"sync_account_link",
 	"sync_entitlement",

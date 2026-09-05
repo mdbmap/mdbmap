@@ -39,10 +39,12 @@ const mapProviderError = (error: unknown): never => {
 	throw error;
 };
 
-const list = admin.handler(async ({ context }): Promise<readonly ProviderRow[]> => {
-	const masterKey = masterKeyOf(context.providerConfigMasterKey);
-	return listProviders(context.db, masterKey);
-});
+const list = admin.handler(
+	async ({ context }): Promise<readonly ProviderRow[]> => {
+		const masterKey = masterKeyOf(context.providerConfigMasterKey);
+		return listProviders(context.db, masterKey);
+	},
+);
 
 const create = admin
 	.input(CreateProviderInput)

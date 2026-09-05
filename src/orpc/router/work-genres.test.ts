@@ -64,6 +64,33 @@ describe("work.get anime genres", () => {
 		expect(view.header.runtimeMinutes).toBe(24);
 	});
 
+	it("keeps anidb genres when they are present even if tmdb fails", async () => {
+		const db = await freshDb();
+		const { continuityId } = await seedSpyXFamily(db);
+		const providers: Providers = {
+			...defaultProviders,
+			metadata: {
+				anidb: {
+					fetchWork: async () => {
+						const metadata = await Promise.resolve({
+							...metadataFor([]),
+							genres: ["Comedy"],
+							runtimeMinutes: 24,
+						});
+						return metadata;
+					},
+				},
+				tmdb: {
+					fetchWork: () => {
+						throw new Error("tmdb down");
+					},
+				},
+			},
+		};
+		const view = await clientFor(db, providers).work.get({ continuityId });
+		expect(view.header.genres).toEqual(["Comedy"]);
+	});
+
 	it("drops header genres when tmdb fails", async () => {
 		const db = await freshDb();
 		const { continuityId } = await seedSpyXFamily(db);

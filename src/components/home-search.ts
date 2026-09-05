@@ -5,10 +5,7 @@ interface HomeSearch {
 const parseHomeSearch = (search: Record<string, unknown>): HomeSearch => {
 	const { signin } = search;
 	const requested =
-		signin === "1" ||
-		signin === "true" ||
-		signin === 1 ||
-		signin === true;
+		signin === "1" || signin === "true" || signin === 1 || signin === true;
 	return requested ? { signin: true } : {};
 };
 

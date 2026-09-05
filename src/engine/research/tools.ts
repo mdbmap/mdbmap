@@ -14,9 +14,7 @@ import { persistCatalogueSpokes } from "./persist.ts";
 import type { PersistedTitle, ServiceRef } from "./persist.ts";
 
 type ResearchCatalogueClient = CatalogueClient & {
-	readonly fetchCatalogue?: (
-		serviceId: string,
-	) => Promisable<unknown>;
+	readonly fetchCatalogue?: (serviceId: string) => Promisable<unknown>;
 	readonly requestUrl?: (serviceId: string) => string;
 };
 
@@ -129,12 +127,7 @@ const buildResearchTools = (input: BuildToolsetInput): ResearchToolset => {
 					validated: false,
 				};
 			}
-			const persisted = await persistCatalogueSpokes(
-				db,
-				groupId,
-				ref,
-				record,
-			);
+			const persisted = await persistCatalogueSpokes(db, groupId, ref, record);
 			return {
 				kind: "api",
 				operator: service,

@@ -50,11 +50,21 @@ const useModerationActions = (): Actions => {
 		await queryClient.invalidateQueries({ queryKey: listKey });
 	}, [queryClient, listKey]);
 
-	const acceptMutation = useMutation(orpc.moderation.accept.mutationOptions({ onSuccess }));
-	const rejectMutation = useMutation(orpc.moderation.reject.mutationOptions({ onSuccess }));
-	const settleMutation = useMutation(orpc.moderation.settle.mutationOptions({ onSuccess }));
-	const clearMutation = useMutation(orpc.moderation.clearFlag.mutationOptions({ onSuccess }));
-	const keepMutation = useMutation(orpc.moderation.keepFlag.mutationOptions({ onSuccess }));
+	const acceptMutation = useMutation(
+		orpc.moderation.accept.mutationOptions({ onSuccess }),
+	);
+	const rejectMutation = useMutation(
+		orpc.moderation.reject.mutationOptions({ onSuccess }),
+	);
+	const settleMutation = useMutation(
+		orpc.moderation.settle.mutationOptions({ onSuccess }),
+	);
+	const clearMutation = useMutation(
+		orpc.moderation.clearFlag.mutationOptions({ onSuccess }),
+	);
+	const keepMutation = useMutation(
+		orpc.moderation.keepFlag.mutationOptions({ onSuccess }),
+	);
 
 	const { mutate: acceptMutate } = acceptMutation;
 	const { mutate: rejectMutate } = rejectMutation;
@@ -167,7 +177,11 @@ function CandidateCard({
 				<span className="font-mono text-xs text-neutral-400">{`#${candidate.id}`}</span>
 			</div>
 			<pre className="overflow-x-auto bg-neutral-50 p-2 font-mono text-xs text-neutral-700 dark:bg-neutral-800 dark:text-neutral-300">
-				{JSON.stringify({ evidence: candidate.evidence, subject: candidate.subject }, undefined, 2)}
+				{JSON.stringify(
+					{ evidence: candidate.evidence, subject: candidate.subject },
+					undefined,
+					2,
+				)}
 			</pre>
 			<ActionRow actions={actions} candidate={candidate} />
 		</article>
@@ -184,13 +198,21 @@ export function ModerationQueue() {
 				{TITLE}
 			</h1>
 			{query.isError ? (
-				<p className="text-sm text-neutral-600 dark:text-neutral-400">{DENIED}</p>
+				<p className="text-sm text-neutral-600 dark:text-neutral-400">
+					{DENIED}
+				</p>
 			) : undefined}
 			{query.data?.length === 0 ? (
-				<p className="text-sm text-neutral-600 dark:text-neutral-400">{EMPTY}</p>
+				<p className="text-sm text-neutral-600 dark:text-neutral-400">
+					{EMPTY}
+				</p>
 			) : undefined}
 			{query.data?.map((candidate) => (
-				<CandidateCard actions={actions} candidate={candidate} key={candidate.id} />
+				<CandidateCard
+					actions={actions}
+					candidate={candidate}
+					key={candidate.id}
+				/>
 			))}
 		</main>
 	);

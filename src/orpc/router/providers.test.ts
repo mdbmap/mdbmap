@@ -131,7 +131,9 @@ describe("provider admin surface", () => {
 				label: "gone",
 			}),
 		).rejects.toMatchObject({ code: "NOT_FOUND" });
-		await expect(client.providers.remove({ id: missing })).rejects.toMatchObject({
+		await expect(
+			client.providers.remove({ id: missing }),
+		).rejects.toMatchObject({
 			code: "NOT_FOUND",
 		});
 	});

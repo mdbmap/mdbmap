@@ -2,10 +2,7 @@ import { and, eq } from "drizzle-orm";
 
 import { one } from "@/db";
 import type { Db } from "@/db";
-import {
-	serviceInstalments,
-	serviceTitles,
-} from "@/db/engine-schema";
+import { serviceInstalments, serviceTitles } from "@/db/engine-schema";
 
 import type { ResearchCatalogueRecord } from "./catalogue.ts";
 

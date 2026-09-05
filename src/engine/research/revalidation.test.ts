@@ -166,7 +166,9 @@ describe("sampleResearchRecheck", () => {
 				.all(),
 		);
 		expect(assertion.confidence).toBe("high");
-		expect(await db.select().from(pendingGroupCandidates).all()).toHaveLength(0);
+		expect(await db.select().from(pendingGroupCandidates).all()).toHaveLength(
+			0,
+		);
 	});
 
 	it("skips unaffordable assertions and still samples cheaper later ones", async () => {

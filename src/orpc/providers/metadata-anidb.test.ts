@@ -3,7 +3,8 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import type { ResolveResult } from "@/engine";
 
 import { createAnidbProvider } from "./metadata-anidb.ts";
-import type { MetadataKv } from "./metadata-tmdb.ts";
+import { createMemoryMetadataStore } from "./metadata-store.ts";
+import type { MetadataStore } from "./metadata-store.ts";
 import { createRateLimiter } from "./rate-limit.ts";
 
 const COUR1_ID = "16947";
@@ -104,30 +105,18 @@ const makeFetch = () =>
 		return new Response(xmlFor(urlOf(input)));
 	});
 
-const makeKv = () => {
-	const store = new Map<string, string>();
-	const puts: { key: string; ttl: number | undefined }[] = [];
-	const kv: MetadataKv = {
-		get: async (key) => {
-			await Promise.resolve();
-			return store.get(key);
-		},
-		put: async (key, value, options) => {
-			await Promise.resolve();
-			store.set(key, value);
-			puts.push({ key, ttl: options?.expirationTtl });
-		},
-	};
-	return { kv, puts, store };
-};
+const makeStore = (): MetadataStore => createMemoryMetadataStore();
 
-const makeProvider = (fetchFn: typeof fetch, kv: MetadataKv) =>
+const makeProvider = (
+	fetchFn: typeof fetch,
+	store: MetadataStore = makeStore(),
+) =>
 	createAnidbProvider({
 		client: "mdbmaptest",
 		clientVer: "1",
 		fetchFn,
 		rateLimiter: createRateLimiter({ intervalMs: 0 }),
-		resolveKv: () => kv,
+		resolveStore: () => store,
 	});
 
 afterEach(() => {
@@ -137,9 +126,8 @@ afterEach(() => {
 describe("anidb metadata provider", () => {
 	it("normalises per-cour entries into WorkMetadata aligned with the engine segments", async () => {
 		const fetchFn = makeFetch();
-		const { kv } = makeKv();
-
-		const meta = await makeProvider(fetchFn, kv).fetchWork(resolved);
+		const now = new Date("2026-09-05T00:00:00.000Z");
+		const meta = await makeProvider(fetchFn).fetchWork(resolved, { now });
 
 		expect(meta.title).toBe("Spy x Family");
 		expect(meta.nativeTitle).toBe("SPY×FAMILY");
@@ -148,9 +136,9 @@ describe("anidb metadata provider", () => {
 		expect(meta.backdropRef).toBeUndefined();
 		expect(meta.span).toBe("2022");
 		expect(meta.studios).toStrictEqual(["Wit Studio", "CloverWorks"]);
-		expect(meta.genres).toStrictEqual([]);
+		expect(meta.genres).toStrictEqual(["Comedy", "Action"]);
 		expect(meta.runtimeMinutes).toBe(24);
-		expect(meta.productionStatus).toBeUndefined();
+		expect(meta.productionStatus).toBe("Finished");
 
 		expect(meta.cast).toStrictEqual([
 			{ name: "Takuya Eguchi", ref: "anidb:creator:201", role: "Loid Forger" },
@@ -192,28 +180,18 @@ describe("anidb metadata provider", () => {
 		]);
 	});
 
-	it("snapshots core and volatile fields to KV under distinct TTLs", async () => {
+	it("persists one catalogue document per AniDB entry", async () => {
 		const fetchFn = makeFetch();
-		const { kv, puts, store } = makeKv();
+		const store = makeStore();
+		await makeProvider(fetchFn, store).fetchWork(resolved);
 
-		await makeProvider(fetchFn, kv).fetchWork(resolved);
-
-		const coreKey = `anidb:v3:core:${COUR1_ID}`;
-		const volatileKey = `anidb:v3:volatile:${COUR1_ID}`;
-		expect(store.has(coreKey)).toBe(true);
-		expect(store.has(volatileKey)).toBe(true);
-
-		const coreTtl = puts.find((entry) => entry.key === coreKey)?.ttl;
-		const volatileTtl = puts.find((entry) => entry.key === volatileKey)?.ttl;
-		expect(coreTtl).toBeDefined();
-		expect(volatileTtl).toBeDefined();
-		expect(coreTtl ?? 0).toBeGreaterThan(volatileTtl ?? 0);
+		expect(await store.get("anidb", COUR1_ID)).toBeDefined();
+		expect(await store.get("anidb", COUR2_ID)).toBeDefined();
 	});
 
 	it("serves a snapshot hit with zero upstream subrequests", async () => {
 		const fetchFn = makeFetch();
-		const { kv } = makeKv();
-		const provider = makeProvider(fetchFn, kv);
+		const provider = makeProvider(fetchFn);
 
 		const first = await provider.fetchWork(resolved);
 		expect(fetchFn.mock.calls.length).toBe(2);
@@ -233,12 +211,11 @@ describe("anidb metadata provider", () => {
 				return new Response(xmlFor(urlOf(input)));
 			},
 		);
-		const { kv } = makeKv();
 		const provider = createAnidbProvider({
 			client: "mdbmaptest",
 			clientVer: "1",
 			fetchFn,
-			resolveKv: () => kv,
+			resolveStore: () => makeStore(),
 		});
 
 		const work = provider.fetchWork(resolved);
@@ -254,5 +231,14 @@ describe("anidb metadata provider", () => {
 
 		await work;
 		expect((times[1] ?? 0) - (times[0] ?? 0)).toBeGreaterThanOrEqual(2000);
+	});
+
+	it("projects a Japanese title from stored AniDB locales", async () => {
+		const meta = await makeProvider(makeFetch()).fetchWork(resolved, {
+			locale: "ja",
+			now: new Date("2026-09-05T00:00:00.000Z"),
+		});
+		expect(meta.title).toBe("SPY×FAMILY");
+		expect(meta.segments[0]?.episodes[0]?.title).toBe("ミッション1");
 	});
 });

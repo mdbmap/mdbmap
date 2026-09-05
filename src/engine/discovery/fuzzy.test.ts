@@ -1,7 +1,11 @@
 import { eq } from "drizzle-orm";
 import { beforeEach, describe, expect, it } from "vitest";
 
-import { pendingGroupCandidates, serviceTitles, titleGroups } from "@/db/engine-schema";
+import {
+	pendingGroupCandidates,
+	serviceTitles,
+	titleGroups,
+} from "@/db/engine-schema";
 import type { GroupSource } from "@/db/engine-schema";
 import { freshDb } from "@/db/test-helpers";
 
@@ -47,16 +51,25 @@ const seedTitle = async (
 
 // A stub client that answers every search with the same fixed result set: the
 // scoring and bucketing are what the tests exercise, not the search itself.
-const clientOf = (results: readonly FuzzySearchResult[]): FuzzySearchClient => ({
+const clientOf = (
+	results: readonly FuzzySearchResult[],
+): FuzzySearchClient => ({
 	search: () => results,
 });
 
 const bebop = "Cowboy Bebop";
 
-const candidates = async (db: Db) => db.select().from(pendingGroupCandidates).all();
+const candidates = async (db: Db) =>
+	db.select().from(pendingGroupCandidates).all();
 
 const groupSource = async (db: Db, groupId: number): Promise<GroupSource> => {
-	const row = one(await db.select().from(titleGroups).where(eq(titleGroups.id, groupId)).all());
+	const row = one(
+		await db
+			.select()
+			.from(titleGroups)
+			.where(eq(titleGroups.id, groupId))
+			.all(),
+	);
 	return row.source;
 };
 
@@ -112,10 +125,18 @@ describe("fuzzy candidates", () => {
 		}
 		// Three cleared hits, member cap 2: two proposed, one over the cap; the
 		// disagreeing-year hit dropped to "also considered".
-		expect(row.evidence.proposedMembers.map((hit) => hit.serviceId)).toEqual(["tt10", "tt11"]);
+		expect(row.evidence.proposedMembers.map((hit) => hit.serviceId)).toEqual([
+			"tt10",
+			"tt11",
+		]);
 		expect(row.evidence.overCap.map((hit) => hit.serviceId)).toEqual(["tt12"]);
-		expect(row.evidence.alsoConsidered.map((hit) => hit.serviceId)).toEqual(["tt13"]);
-		expect(row.evidence.queries.map((query) => query.service)).toEqual(["tmdb", "imdb"]);
+		expect(row.evidence.alsoConsidered.map((hit) => hit.serviceId)).toEqual([
+			"tt13",
+		]);
+		expect(row.evidence.queries.map((query) => query.service)).toEqual([
+			"tmdb",
+			"imdb",
+		]);
 		// Every stored hit carries its score.
 		for (const hit of row.evidence.proposedMembers) {
 			expect(hit.score).toBeGreaterThanOrEqual(0.7);
@@ -184,7 +205,10 @@ describe("fuzzy candidates", () => {
 			.where(eq(serviceTitles.groupId, group.id))
 			.orderBy(serviceTitles.ordinal)
 			.all();
-		const ordered = orderedRows.map((row) => ({ ordinal: row.ordinal, serviceId: row.serviceId }));
+		const ordered = orderedRows.map((row) => ({
+			ordinal: row.ordinal,
+			serviceId: row.serviceId,
+		}));
 		expect(ordered).toEqual([
 			{ ordinal: 0, serviceId: "1" },
 			{ ordinal: 1, serviceId: "tt11" },
@@ -245,8 +269,13 @@ describe("fuzzy candidates", () => {
 			]),
 		};
 
-		const candidateId = openCandidate(await runFuzzyDiscovery(db, { clients: twoHits }, query));
-		expect(await rejectFuzzyCandidate(db, candidateId)).toEqual({ candidateId, kind: "rejected" });
+		const candidateId = openCandidate(
+			await runFuzzyDiscovery(db, { clients: twoHits }, query),
+		);
+		expect(await rejectFuzzyCandidate(db, candidateId)).toEqual({
+			candidateId,
+			kind: "rejected",
+		});
 
 		// The identical proposal finds the rejection and queues nothing.
 		const repeat = await runFuzzyDiscovery(db, { clients: twoHits }, query);

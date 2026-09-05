@@ -1,4 +1,9 @@
-import type { Identity, Locator, Service, TitleIdentity } from "@/engine/identity.ts";
+import type {
+	Identity,
+	Locator,
+	Service,
+	TitleIdentity,
+} from "@/engine/identity.ts";
 
 // Boundary identities carry a namespace out-of-band (ADR-0001); the flat graph
 // key folds TMDB's namespace into the stored id so movie 603 and tv 603 never
@@ -42,7 +47,9 @@ const toTitleIdentity = (member: GraphMember): TitleIdentity | undefined => {
 		return undefined;
 	}
 	const match = tmdbNamespaces.find((candidate) => candidate === namespace);
-	return match === undefined ? undefined : { id, namespace: match, service: "tmdb" };
+	return match === undefined
+		? undefined
+		: { id, namespace: match, service: "tmdb" };
 };
 
 // Canonical position locator shared by every service in the graph. Flat
@@ -67,7 +74,10 @@ const memberTitle = (member: GraphMember): Identity | undefined => {
 	return title === undefined ? undefined : { kind: "title", title };
 };
 
-const memberInstalment = (member: GraphMember, stored: string): Identity | undefined => {
+const memberInstalment = (
+	member: GraphMember,
+	stored: string,
+): Identity | undefined => {
 	const title = toTitleIdentity(member);
 	const locator = toLocator(stored);
 	return title === undefined || locator === undefined

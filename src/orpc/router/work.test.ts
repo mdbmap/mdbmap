@@ -192,6 +192,7 @@ describe("work.get presentation orders", () => {
 			WorkGetInput.parse({ continuityId: "continuity:1", order: "watch" }),
 		).toEqual({
 			continuityId: "continuity:1",
+			locale: "en",
 			order: "watch",
 		});
 	});
@@ -356,5 +357,41 @@ describe("work.get film blocks", () => {
 		expect(locatorsOf(watch.parts).toSorted()).toEqual(
 			locatorsOf(release.parts).toSorted(),
 		);
+	});
+});
+
+describe("work.refreshMetadata", () => {
+	it("admits one refresh per continuity per 24 hours", async () => {
+		const db = await freshDb();
+		const source = await seedTmdbContinuity(db, "tv", "10");
+		let fetches = 0;
+		const providers: Providers = {
+			...defaultProviders,
+			metadata: {
+				...defaultProviders.metadata,
+				tmdb: {
+					fetchWork: async () => {
+						fetches += 1;
+						const metadata = await Promise.resolve({
+							...metadataFor([]),
+							lastUpdatedAt: "2026-09-05T12:00:00.000Z",
+						});
+						return metadata;
+					},
+				},
+			},
+		};
+		const client = clientFor(db, undefined, providers);
+		const first = await client.work.refreshMetadata({
+			continuityId: source.continuityId,
+		});
+		expect(first.lastUpdatedAt).toBe("2026-09-05T12:00:00.000Z");
+		expect(fetches).toBe(1);
+		await expect(
+			client.work.refreshMetadata({ continuityId: source.continuityId }),
+		).rejects.toMatchObject({ code: "TOO_MANY_REQUESTS" });
+		expect(fetches).toBe(1);
+		const view = await client.work.get({ continuityId: source.continuityId });
+		expect(view.header.userRefreshAvailableAt).toBeDefined();
 	});
 });

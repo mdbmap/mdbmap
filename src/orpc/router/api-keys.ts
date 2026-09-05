@@ -33,7 +33,9 @@ const mint = admin
 
 const revoke = admin
 	.input(RevokeApiKeyInput)
-	.handler(async ({ context, input }): Promise<void> => revokeApiKey(context.db, input.id));
+	.handler(async ({ context, input }): Promise<void> =>
+		revokeApiKey(context.db, input.id),
+	);
 
 const apiKeys = { list, mint, revoke };
 
