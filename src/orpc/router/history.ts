@@ -1,4 +1,3 @@
-import { ORPCError } from "@orpc/server";
 import { and, eq, inArray } from "drizzle-orm";
 
 import { episodeProgress, watchStatus } from "@/db/schema";
@@ -324,11 +323,6 @@ const list = authed
 	.handler(async ({ context, input }): Promise<HistoryListResult> => {
 		const cursor =
 			input.cursor === undefined ? undefined : decodeCursor(input.cursor);
-		if (input.cursor !== undefined && cursor === undefined) {
-			throw new ORPCError("BAD_REQUEST", {
-				message: "Invalid history cursor.",
-			});
-		}
 		const limit = input.limit ?? DEFAULT_LIMIT;
 		const userId = context.user.id;
 		const rows = await context.db

@@ -315,11 +315,16 @@ describe("history.list", () => {
 		);
 	});
 
-	it("rejects an opaque cursor that cannot be decoded", async () => {
+	it("treats an undecodable cursor as the first page", async () => {
 		const db = await seededViewer();
+		const { continuityId } = await seedSpyXFamily(db);
+		await track(db, continuityId);
+		const { first } = await threeLocators(db, continuityId);
+		await markWatched(db, first, new Date("2026-04-08T12:00:00.000Z"));
+		const client = clientFor(db, "user-1");
 
-		await expect(
-			clientFor(db, "user-1").history.list({ cursor: "not-a-cursor" }),
-		).rejects.toMatchObject({ code: "BAD_REQUEST" });
+		expect(await client.history.list({ cursor: "not-a-cursor" })).toEqual(
+			await client.history.list({}),
+		);
 	});
 });
