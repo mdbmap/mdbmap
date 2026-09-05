@@ -1,13 +1,16 @@
 import { ExtraTypes } from "stremio-types";
 import type { ContentType, MetaItemPreview } from "stremio-types";
+import type { Promisable } from "type-fest";
 
 import type { MediaKind } from "@/engine";
+import type { MappingOutcome } from "@/engine/gateway";
 import { formatId } from "@/engine/identity.ts";
-import type { TitleIdentity } from "@/engine/identity.ts";
+import type { Profile, TitleIdentity } from "@/engine/identity.ts";
 import type { CatalogueSearchHit } from "@/orpc/providers";
 import type { CatalogueTitle } from "@/orpc/schema";
 
 import { CATALOG_IDS } from "./manifest.ts";
+import { imdbTitleIdFromMapping } from "./videos.ts";
 
 const TMDB_IMAGE_BASE = "https://image.tmdb.org/t/p/w500";
 const TMDB_REF_PREFIX = "tmdb:";
@@ -99,6 +102,72 @@ const mediaKindForCatalog = (catalogId: string): MediaKind | undefined => {
 	}
 };
 
+const profileForMediaKind = (mediaKind: MediaKind): Profile => {
+	switch (mediaKind) {
+		case "anime": {
+			return "anime";
+		}
+		case "film": {
+			return "movie";
+		}
+		case "tv": {
+			return "series";
+		}
+	}
+};
+
+const mappingBodyOf = (outcome: MappingOutcome) => {
+	switch (outcome.kind) {
+		case "conflict":
+		case "ok":
+		case "pending": {
+			return outcome.body;
+		}
+		case "malformed":
+		case "unknown": {
+			return;
+		}
+	}
+};
+
+type CatalogResolve = (
+	profile: Profile,
+	rawId: string,
+) => Promisable<MappingOutcome>;
+
+const remapPreview = async (
+	preview: MetaItemPreview,
+	profile: Profile,
+	resolve: CatalogResolve,
+): Promise<MetaItemPreview> => {
+	try {
+		const body = mappingBodyOf(await resolve(profile, preview.id));
+		if (body === undefined) {
+			return preview;
+		}
+		const imdbId = imdbTitleIdFromMapping(body);
+		if (imdbId === undefined) {
+			return preview;
+		}
+		return { ...preview, id: imdbId };
+	} catch {
+		return preview;
+	}
+};
+
+const catalogPreviews = async (
+	hits: readonly CatalogueSearchHit[],
+	type: ContentType,
+	mediaKind: MediaKind,
+	resolve: CatalogResolve,
+): Promise<MetaItemPreview[]> => {
+	const profile = profileForMediaKind(mediaKind);
+	const previews = previewsFromHits(hits, type);
+	return Promise.all(
+		previews.map(async (preview) => remapPreview(preview, profile, resolve)),
+	);
+};
+
 const searchQueryOf = (extra: URLSearchParams): string =>
 	extra.get(ExtraTypes.SEARCH)?.trim() ?? "";
 
@@ -111,4 +180,10 @@ const skipOf = (extra: URLSearchParams): number => {
 	return Number.isFinite(skip) && skip > 0 ? skip : 0;
 };
 
-export { mediaKindForCatalog, previewsFromHits, searchQueryOf, skipOf };
+export {
+	catalogPreviews,
+	mediaKindForCatalog,
+	previewsFromHits,
+	searchQueryOf,
+	skipOf,
+};

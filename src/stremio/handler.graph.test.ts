@@ -109,14 +109,24 @@ const seedContinuity = async (db: Db, titleId: number) => {
 	return continuity.id;
 };
 
-const depsFor = (db: Db): AddonDeps => ({
+const depsFor = (
+	db: Db,
+	search: AddonDeps["search"] = () => [],
+): AddonDeps => ({
 	resolve: async (profile, rawId) =>
 		resolveMapping(db, profile, rawId, noColdLookup),
-	search: () => [],
+	search,
 });
 
-const get = async (db: Db, path: string) =>
-	handleStremioRequest(new Request(`https://mdbmap.test${path}`), depsFor(db));
+const get = async (
+	db: Db,
+	path: string,
+	search: AddonDeps["search"] = () => [],
+) =>
+	handleStremioRequest(
+		new Request(`https://mdbmap.test${path}`),
+		depsFor(db, search),
+	);
 
 describe("stremio meta from the mapping graph", () => {
 	let db: Db;
@@ -139,6 +149,20 @@ describe("stremio meta from the mapping graph", () => {
 		});
 	});
 
+	it("returns IMDb video ids when meta is requested with the IMDb id", async () => {
+		const group = await seedGroup(db);
+		const source = await seedTitle(db, group.id, "tmdb", "movie:603");
+		const target = await seedTitle(db, group.id, "imdb", "tt0133093");
+		await linkTitles(db, source.id, target.id, "t1-structure");
+		await seedContinuity(db, source.id);
+
+		const response = await get(db, "/stremio/meta/movie/tt0133093.json");
+		expect(response.status).toBe(200);
+		await expect(response.json()).resolves.toMatchObject({
+			meta: { videos: [{ id: "tt0133093" }] },
+		});
+	});
+
 	it("returns IMDb season-episode ids as series video ids", async () => {
 		const group = await seedGroup(db);
 		const source = await seedTitle(db, group.id, "tmdb", "tv:1396");
@@ -154,6 +178,50 @@ describe("stremio meta from the mapping graph", () => {
 		expect(response.status).toBe(200);
 		await expect(response.json()).resolves.toMatchObject({
 			meta: { videos: [{ id: "tt0903747:1:1" }] },
+		});
+
+		const imdbResponse = await get(db, "/stremio/meta/series/tt0903747.json");
+		expect(imdbResponse.status).toBe(200);
+		await expect(imdbResponse.json()).resolves.toMatchObject({
+			meta: { videos: [{ id: "tt0903747:1:1" }] },
+		});
+	});
+});
+
+describe("stremio catalog from the mapping graph", () => {
+	let db: Db;
+
+	beforeEach(async () => {
+		db = await freshDb();
+	});
+
+	it("returns IMDb title ids for mapped catalog search hits", async () => {
+		const group = await seedGroup(db);
+		const source = await seedTitle(db, group.id, "tmdb", "movie:603");
+		const target = await seedTitle(db, group.id, "imdb", "tt0133093");
+		await linkTitles(db, source.id, target.id, "t1-structure");
+		await seedContinuity(db, source.id);
+
+		const response = await get(
+			db,
+			"/stremio/catalog/movie/mdbmap.movie/search=Matrix.json",
+			() => [
+				{
+					catalogue: {
+						id: "603",
+						namespace: "movie",
+						service: "tmdb",
+					},
+					coverRef: undefined,
+					mediaKind: "film",
+					title: "The Matrix",
+					year: 1999,
+				},
+			],
+		);
+		expect(response.status).toBe(200);
+		await expect(response.json()).resolves.toMatchObject({
+			metas: [{ id: "tt0133093", name: "The Matrix" }],
 		});
 	});
 });

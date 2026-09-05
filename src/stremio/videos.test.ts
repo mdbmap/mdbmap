@@ -8,7 +8,7 @@ import type {
 	TitleAnswer,
 } from "@/engine/serializer.ts";
 
-import { videosFromMapping } from "./videos.ts";
+import { imdbTitleIdFromMapping, videosFromMapping } from "./videos.ts";
 
 const tmdbTv: TitleIdentity = {
 	id: "1396",
@@ -67,6 +67,7 @@ describe("videosFromMapping series", () => {
 		expect(
 			videosFromMapping(serialize(answer)).map((video) => video.id),
 		).toEqual(["tt0903747:1:1", "tt0903747:1:2"]);
+		expect(imdbTitleIdFromMapping(serialize(answer))).toBe("tt0903747");
 	});
 
 	it("skips instalments without an IMDb counterpart", () => {
@@ -93,6 +94,34 @@ describe("videosFromMapping series", () => {
 		expect(
 			videosFromMapping(serialize(answer)).map((video) => video.id),
 		).toEqual(["tt0903747:1:1"]);
+		expect(imdbTitleIdFromMapping(serialize(answer))).toBe("tt0903747");
+	});
+
+	it("uses requested IMDb instalment ids when counterparts omit IMDb", () => {
+		const answer: TitleAnswer = {
+			groupSource: "t1-structure",
+			input: { kind: "title", title: imdbTitle },
+			instalments: [
+				{
+					input: episode(imdbTitle, 1, 1),
+					links: new Map(),
+					source: "t3-episode",
+				},
+				{
+					input: episode(imdbTitle, 1, 2),
+					links: new Map(),
+					source: "t3-episode",
+				},
+			],
+			kind: "title",
+			links: new Map(),
+		};
+		const serialized = serialize(answer);
+		expect(videosFromMapping(serialized).map((video) => video.id)).toEqual([
+			"tt0903747:1:1",
+			"tt0903747:1:2",
+		]);
+		expect(imdbTitleIdFromMapping(serialized)).toBe("tt0903747");
 	});
 });
 
@@ -118,5 +147,19 @@ describe("videosFromMapping movies", () => {
 		expect(video?.id).toBe("tt0133093");
 		expect(video?.season).toBe(0);
 		expect(video?.episode).toBe(0);
+		expect(imdbTitleIdFromMapping(serialize(answer))).toBe("tt0133093");
+	});
+
+	it("uses the requested IMDb title when the lookup is already IMDb", () => {
+		const answer: InstalmentAnswer = {
+			input: {
+				kind: "title",
+				title: { id: "tt0133093", service: "imdb" },
+			},
+			kind: "instalment",
+			links: new Map(),
+		};
+		const [video] = videosFromMapping(serialize(answer));
+		expect(video?.id).toBe("tt0133093");
 	});
 });

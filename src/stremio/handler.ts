@@ -7,8 +7,8 @@ import type { Profile } from "@/engine/identity.ts";
 import type { CatalogueSearchHit } from "@/orpc/providers";
 
 import {
+	catalogPreviews,
 	mediaKindForCatalog,
-	previewsFromHits,
 	searchQueryOf,
 	skipOf,
 } from "./catalog.ts";
@@ -71,7 +71,12 @@ const catalogMetas = async (
 	}
 	try {
 		const hits = await deps.search(query, mediaKind);
-		return previewsFromHits(hits.slice(skipOf(extra)), type);
+		return await catalogPreviews(
+			hits.slice(skipOf(extra)),
+			type,
+			mediaKind,
+			deps.resolve,
+		);
 	} catch {
 		return [];
 	}

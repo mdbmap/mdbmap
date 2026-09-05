@@ -1,7 +1,7 @@
 import { ContentTypes } from "stremio-types";
 import { describe, expect, it } from "vitest";
 
-import { previewsFromHits } from "./catalog.ts";
+import { catalogPreviews, previewsFromHits } from "./catalog.ts";
 
 describe("previewsFromHits", () => {
 	it("keeps catalogue ids and turns TMDB cover refs into poster URLs", () => {
@@ -46,5 +46,114 @@ describe("previewsFromHits", () => {
 		expect(preview?.id).toBe("anilist:140960");
 		expect(preview?.type).toBe(ContentTypes.SERIES);
 		expect(preview?.poster).toBe("https://img.example/cover.jpg");
+	});
+});
+
+describe("catalogPreviews", () => {
+	const matrixHit = {
+		catalogue: {
+			id: "603",
+			namespace: "movie" as const,
+			service: "tmdb" as const,
+		},
+		coverRef: "tmdb:/matrix.jpg",
+		mediaKind: "film" as const,
+		title: "The Matrix",
+		year: 1999,
+	};
+
+	it("rewrites mapped hits to IMDb title ids", async () => {
+		const [preview] = await catalogPreviews(
+			[matrixHit],
+			ContentTypes.MOVIE,
+			"film",
+			() => ({
+				body: {
+					input: "tmdb:603",
+					mappings: {
+						imdb: {
+							confidence: "exact",
+							counterparts: [
+								{
+									assertionPath: [{ confidence: "high", source: "community" }],
+									confidence: "exact",
+									id: "tt0133093",
+								},
+							],
+							errors: [],
+							source: "t1-structure",
+							status: "matched",
+						},
+					},
+				},
+				kind: "ok",
+			}),
+		);
+		expect(preview?.id).toBe("tt0133093");
+		expect(preview?.name).toBe("The Matrix");
+	});
+
+	it("keeps catalogue ids when no IMDb mapping exists", async () => {
+		const [preview] = await catalogPreviews(
+			[matrixHit],
+			ContentTypes.MOVIE,
+			"film",
+			() => ({ kind: "unknown" }),
+		);
+		expect(preview?.id).toBe("tmdb:603");
+	});
+
+	it("uses the IMDb title id, not an episode video id", async () => {
+		const [preview] = await catalogPreviews(
+			[
+				{
+					catalogue: {
+						id: "1396",
+						namespace: "tv",
+						service: "tmdb",
+					},
+					coverRef: undefined,
+					mediaKind: "tv",
+					title: "Breaking Bad",
+					year: 2008,
+				},
+			],
+			ContentTypes.SERIES,
+			"tv",
+			() => ({
+				body: {
+					input: "tmdb:1396",
+					instalments: [
+						{
+							input: "tmdb:1396:1:1",
+							mappings: {
+								imdb: {
+									confidence: "exact",
+									counterparts: [
+										{
+											assertionPath: [
+												{
+													confidence: "high",
+													source: "t3-episode",
+												},
+											],
+											confidence: "exact",
+											id: "tt0903747:1:1",
+										},
+									],
+									errors: [],
+									source: "t3-episode",
+									status: "matched",
+								},
+							},
+							source: "t3-episode",
+						},
+					],
+					mappings: {},
+				},
+				kind: "ok",
+			}),
+		);
+		expect(preview?.id).toBe("tt0903747");
 	});
 });

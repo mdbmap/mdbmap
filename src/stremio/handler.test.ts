@@ -123,7 +123,78 @@ describe("stremio manifest and catalog", () => {
 		);
 		expect(response.status).toBe(200);
 		await expect(response.json()).resolves.toMatchObject({
+			metas: [{ id: "tt0133093" }],
+		});
+	});
+
+	it("keeps catalogue ids when the hit has no IMDb mapping", async () => {
+		const response = await get(
+			"/stremio/catalog/movie/mdbmap.movie/search=Matrix.json",
+			depsOf(
+				() => ({ kind: "unknown" }),
+				() => [
+					{
+						catalogue: {
+							id: "603",
+							namespace: "movie",
+							service: "tmdb",
+						},
+						coverRef: undefined,
+						mediaKind: "film",
+						title: "The Matrix",
+						year: 1999,
+					},
+				],
+			),
+		);
+		await expect(response.json()).resolves.toMatchObject({
 			metas: [{ id: "tmdb:603" }],
+		});
+	});
+
+	it("returns IMDb title ids for series catalog hits", async () => {
+		const response = await get(
+			"/stremio/catalog/series/mdbmap.series/search=Bad.json",
+			depsOf(
+				() => ok(seriesBody),
+				() => [
+					{
+						catalogue: {
+							id: "1396",
+							namespace: "tv",
+							service: "tmdb",
+						},
+						coverRef: undefined,
+						mediaKind: "tv",
+						title: "Breaking Bad",
+						year: 2008,
+					},
+				],
+			),
+		);
+		await expect(response.json()).resolves.toMatchObject({
+			metas: [{ id: "tt0903747" }],
+		});
+	});
+
+	it("returns IMDb title ids for anime catalog hits", async () => {
+		const response = await get(
+			"/stremio/catalog/series/mdbmap.anime/search=Spy.json",
+			depsOf(
+				() => ok(seriesBody),
+				() => [
+					{
+						catalogue: { id: "140960", service: "anilist" },
+						coverRef: undefined,
+						mediaKind: "anime",
+						title: "Spy x Family",
+						year: 2022,
+					},
+				],
+			),
+		);
+		await expect(response.json()).resolves.toMatchObject({
+			metas: [{ id: "tt0903747" }],
 		});
 	});
 });
@@ -171,6 +242,24 @@ describe("stremio meta video ids", () => {
 		);
 		await expect(response.json()).resolves.toMatchObject({
 			meta: { videos: [{ id: "tt0903747:1:1" }] },
+		});
+	});
+
+	it("returns IMDb video ids when meta is requested with an IMDb id", async () => {
+		const response = await get(
+			"/stremio/meta/movie/tt0133093.json",
+			depsOf(() =>
+				ok({
+					input: "tt0133093",
+					mappings: {},
+				}),
+			),
+		);
+		await expect(response.json()).resolves.toMatchObject({
+			meta: {
+				behaviorHints: { defaultVideoId: "tt0133093" },
+				videos: [{ id: "tt0133093" }],
+			},
 		});
 	});
 

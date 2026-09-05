@@ -1,6 +1,6 @@
 import type { Video } from "stremio-types";
 
-import { parseId } from "@/engine/identity.ts";
+import { parseId, profileOrder } from "@/engine/identity.ts";
 import type { MappingResponse, Mappings } from "@/engine/serializer.ts";
 
 const ATOMIC_EPISODE = 0;
@@ -12,6 +12,24 @@ const firstImdbId = (mappings: Mappings): string | undefined => {
 		return undefined;
 	}
 	return link.counterparts[0]?.id;
+};
+
+const imdbBoundaryId = (raw: string): string | undefined => {
+	for (const profile of profileOrder) {
+		const parsed = parseId(profile, raw);
+		if (parsed.ok && parsed.identity.title.service === "imdb") {
+			return raw;
+		}
+	}
+	return undefined;
+};
+
+const imdbVideoId = (mappings: Mappings, input: string): string | undefined =>
+	firstImdbId(mappings) ?? imdbBoundaryId(input);
+
+const titleIdOf = (imdbId: string): string => {
+	const parsed = parseId("series", imdbId);
+	return parsed.ok ? parsed.identity.title.id : imdbId;
 };
 
 const locatorOf = (imdbId: string): { episode: number; season: number } => {
@@ -45,12 +63,23 @@ const videosFromMapping = (response: MappingResponse): Video[] => {
 	};
 	if (response.instalments !== undefined && response.instalments.length > 0) {
 		for (const instalment of response.instalments) {
-			push(firstImdbId(instalment.mappings));
+			push(imdbVideoId(instalment.mappings, instalment.input));
 		}
 		return videos;
 	}
-	push(firstImdbId(response.mappings));
+	push(imdbVideoId(response.mappings, response.input));
 	return videos;
 };
 
-export { firstImdbId, videosFromMapping };
+const imdbTitleIdFromMapping = (
+	response: MappingResponse,
+): string | undefined => {
+	const fromTitle = imdbVideoId(response.mappings, response.input);
+	if (fromTitle !== undefined) {
+		return titleIdOf(fromTitle);
+	}
+	const [video] = videosFromMapping(response);
+	return video === undefined ? undefined : titleIdOf(video.id);
+};
+
+export { firstImdbId, imdbTitleIdFromMapping, videosFromMapping };
