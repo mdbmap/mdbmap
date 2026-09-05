@@ -448,4 +448,56 @@ describe("history.list", () => {
 		expect(page.entries).toHaveLength(1);
 		expect(fetched).toHaveLength(1);
 	});
+
+	it("does not prefetch later titles when one work fills the page", async () => {
+		const db = await seededViewer();
+		const { continuityId } = await seedSpyXFamily(db);
+		await track(db, continuityId);
+		const locators = await locatorsFor(db, continuityId);
+		const prefix = locators.slice(0, 12);
+		if (prefix.length < 12) {
+			throw new Error("expected at least twelve instalment locators");
+		}
+		await Promise.all(
+			prefix.map(async (locator, index) =>
+				markWatched(
+					db,
+					locator,
+					new Date(`2026-03-01T00:00:${String(index).padStart(2, "0")}Z`),
+				),
+			),
+		);
+		const films = await Promise.all(
+			Array.from({ length: 12 }, async (_slot, index) =>
+				seedTmdbContinuity(db, "movie", String(81_000 + index)),
+			),
+		);
+		await Promise.all(
+			films.map(async ({ continuityId: filmId }, index) => {
+				await track(db, filmId);
+				const [locator] = await locatorsFor(db, filmId);
+				if (locator === undefined) {
+					throw new Error("expected a film locator");
+				}
+				await markWatched(
+					db,
+					locator,
+					new Date(`2026-02-01T00:00:${String(index).padStart(2, "0")}Z`),
+				);
+			}),
+		);
+		const fetched: string[] = [];
+		const counting: MetadataProvider = {
+			fetchWork: async (resolved) => {
+				fetched.push(resolved.continuityId);
+				await Promise.resolve();
+				return metadataFor(resolved);
+			},
+		};
+		const client = clientFor(db, "user-1", providersUsing(counting));
+
+		const page = await client.history.list({ limit: 3 });
+		expect(page.entries).toHaveLength(3);
+		expect(fetched).toEqual([continuityId]);
+	});
 });
