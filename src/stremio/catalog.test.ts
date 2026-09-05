@@ -1,7 +1,14 @@
 import { ContentTypes } from "stremio-types";
 import { describe, expect, it } from "vitest";
 
-import { catalogPreviews, previewsFromHits } from "./catalog.ts";
+import type { CatalogueSearchHit } from "@/orpc/providers";
+
+import {
+	catalogPreviews,
+	CATALOG_PAGE_SIZE,
+	pageHits,
+	previewsFromHits,
+} from "./catalog.ts";
 
 describe("previewsFromHits", () => {
 	it("keeps catalogue ids and turns TMDB cover refs into poster URLs", () => {
@@ -155,5 +162,32 @@ describe("catalogPreviews", () => {
 			}),
 		);
 		expect(preview?.id).toBe("tt0903747");
+	});
+});
+
+describe("pageHits", () => {
+	const hits: CatalogueSearchHit[] = [];
+	for (let index = 0; index < CATALOG_PAGE_SIZE + 5; index += 1) {
+		hits.push({
+			catalogue: {
+				id: String(index + 1),
+				namespace: "movie" as const,
+				service: "tmdb" as const,
+			},
+			coverRef: undefined,
+			mediaKind: "film" as const,
+			title: `Title ${String(index + 1)}`,
+			year: 1999,
+		});
+	}
+
+	it("keeps one page of hits", () => {
+		expect(pageHits(hits, new URLSearchParams())).toHaveLength(
+			CATALOG_PAGE_SIZE,
+		);
+	});
+
+	it("applies skip before the page bound", () => {
+		expect(pageHits(hits, new URLSearchParams("skip=20"))).toHaveLength(5);
 	});
 });

@@ -9,8 +9,8 @@ import type { CatalogueSearchHit } from "@/orpc/providers";
 import {
 	catalogPreviews,
 	mediaKindForCatalog,
+	pageHits,
 	searchQueryOf,
-	skipOf,
 } from "./catalog.ts";
 import { addonManifest } from "./manifest.ts";
 import { metaFromOutcome, profileFor } from "./meta.ts";
@@ -72,7 +72,7 @@ const catalogMetas = async (
 	try {
 		const hits = await deps.search(query, mediaKind);
 		return await catalogPreviews(
-			hits.slice(skipOf(extra)),
+			pageHits(hits, extra),
 			type,
 			mediaKind,
 			deps.resolve,

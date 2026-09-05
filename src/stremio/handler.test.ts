@@ -3,7 +3,9 @@ import { describe, expect, it } from "vitest";
 
 import type { MappingOutcome } from "@/engine/gateway";
 import type { MappingResponse } from "@/engine/serializer.ts";
+import type { CatalogueSearchHit } from "@/orpc/providers";
 
+import { CATALOG_PAGE_SIZE } from "./catalog.ts";
 import { handleStremioRequest, stremioOptionsResponse } from "./handler.ts";
 import type { AddonDeps } from "./handler.ts";
 
@@ -80,6 +82,42 @@ const depsOf = (
 	resolve: AddonDeps["resolve"] = () => ok(movieBody),
 	search: AddonDeps["search"] = () => [],
 ): AddonDeps => ({ resolve, search });
+
+const filmHits = (count: number): CatalogueSearchHit[] => {
+	const hits: CatalogueSearchHit[] = [];
+	for (let index = 0; index < count; index += 1) {
+		hits.push({
+			catalogue: {
+				id: String(index + 1),
+				namespace: "movie",
+				service: "tmdb",
+			},
+			coverRef: undefined,
+			mediaKind: "film",
+			title: `Title ${String(index + 1)}`,
+			year: 1999,
+		});
+	}
+	return hits;
+};
+
+const isCatalogPayload = (
+	value: unknown,
+): value is { readonly metas: readonly unknown[] } =>
+	typeof value === "object" &&
+	value !== null &&
+	"metas" in value &&
+	Array.isArray(value.metas);
+
+const catalogMetasFrom = async (
+	response: Response,
+): Promise<readonly unknown[]> => {
+	const payload: unknown = await response.json();
+	if (!isCatalogPayload(payload)) {
+		throw new Error("expected catalog metas");
+	}
+	return payload.metas;
+};
 
 const get = async (path: string, deps: AddonDeps = depsOf()) =>
 	handleStremioRequest(new Request(`https://mdbmap.test${path}`), deps);
@@ -214,6 +252,24 @@ describe("stremio manifest and catalog", () => {
 			cacheMaxAge: 0,
 			metas: [],
 		});
+	});
+
+	it("resolves at most one catalog page of search hits", async () => {
+		let resolved = 0;
+		const response = await get(
+			"/stremio/catalog/movie/mdbmap.movie/search=Matrix.json",
+			depsOf(
+				() => {
+					resolved += 1;
+					return ok(movieBody);
+				},
+				() => filmHits(CATALOG_PAGE_SIZE + 5),
+			),
+		);
+		expect(resolved).toBe(CATALOG_PAGE_SIZE);
+		await expect(catalogMetasFrom(response)).resolves.toHaveLength(
+			CATALOG_PAGE_SIZE,
+		);
 	});
 });
 

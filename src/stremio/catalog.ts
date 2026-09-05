@@ -171,6 +171,8 @@ const catalogPreviews = async (
 const searchQueryOf = (extra: URLSearchParams): string =>
 	extra.get(ExtraTypes.SEARCH)?.trim() ?? "";
 
+const CATALOG_PAGE_SIZE = 20;
+
 const skipOf = (extra: URLSearchParams): number => {
 	const raw = extra.get(ExtraTypes.SKIP);
 	if (raw === null || raw === "") {
@@ -180,9 +182,19 @@ const skipOf = (extra: URLSearchParams): number => {
 	return Number.isFinite(skip) && skip > 0 ? skip : 0;
 };
 
+const pageHits = (
+	hits: readonly CatalogueSearchHit[],
+	extra: URLSearchParams,
+): readonly CatalogueSearchHit[] => {
+	const skip = skipOf(extra);
+	return hits.slice(skip, skip + CATALOG_PAGE_SIZE);
+};
+
 export {
 	catalogPreviews,
+	CATALOG_PAGE_SIZE,
 	mediaKindForCatalog,
+	pageHits,
 	previewsFromHits,
 	searchQueryOf,
 	skipOf,
