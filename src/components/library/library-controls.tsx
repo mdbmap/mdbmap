@@ -16,6 +16,7 @@ const statusLabels: Record<WatchStatus | typeof STATUS_ALL, string> = {
 	completed: "Completed",
 	dropped: "Dropped",
 	on_hold: "On hold",
+	plan_to_watch: "Plan to watch",
 	rewatching: "Rewatching",
 	watching: "Watching",
 };

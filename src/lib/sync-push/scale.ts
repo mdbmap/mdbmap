@@ -19,6 +19,9 @@ const mapWatchStatus = (status: WatchStatus): MappedWatchStatus => {
 		case "rewatching": {
 			return "repeating";
 		}
+		case "plan_to_watch": {
+			return "planning";
+		}
 	}
 };
 

@@ -29,7 +29,7 @@ const INSTALMENTS = "instalments";
 const trackedCount = (total: number) =>
 	`${total} ${total === 1 ? "work" : "works"}`;
 
-const formatStatus = (status: WatchStatus) => status.replace("_", " ");
+const formatStatus = (status: WatchStatus) => status.replaceAll("_", " ");
 
 const formatMean = (mean: number, rated: number) =>
 	`${mean.toFixed(1)}${OUT_OF_TEN} · ${rated} ${RATED}`;

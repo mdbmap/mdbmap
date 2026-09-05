@@ -93,6 +93,21 @@ describe("applyEpisodeWatched", () => {
 		expect(next.viewer?.status).toBe("watching");
 	});
 
+	it("promotes plan_to_watch to watching on the first tick", () => {
+		const planned: WorkView = {
+			...work(),
+			viewer: {
+				personalRating: undefined,
+				rewatchCount: 0,
+				status: "plan_to_watch",
+				watched: [],
+			},
+		};
+		const next = applyEpisodeWatched(planned, "ep:1", true);
+		expect(next.viewer?.status).toBe("watching");
+		expect(next.viewer?.watched).toContain("ep:1");
+	});
+
 	it("clears the row and drops the locator when unwatched", () => {
 		const marked = applyEpisodeWatched(work(), "ep:1", true);
 		const cleared = applyEpisodeWatched(marked, "ep:1", false);

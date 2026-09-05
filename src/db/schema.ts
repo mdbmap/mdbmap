@@ -16,6 +16,7 @@ type RateableUnitKey = string;
 
 const watchStatuses = [
 	"watching",
+	"plan_to_watch",
 	"on_hold",
 	"completed",
 	"dropped",

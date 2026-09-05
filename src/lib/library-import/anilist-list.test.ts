@@ -60,6 +60,10 @@ describe("fetchAnilistAnimeList", () => {
 		});
 		expect(entries.map((item) => item.externalTitleId)).toEqual(["11", "12"]);
 		expect(entries[0]).toMatchObject({ score: 8, status: "watching" });
+		expect(entries[1]).toMatchObject({
+			score: undefined,
+			status: "plan_to_watch",
+		});
 	});
 
 	it("scales POINT_5 scores onto the shared 1–10 range", async () => {

@@ -2,19 +2,12 @@ import type { ChangeEvent } from "react";
 import { useCallback } from "react";
 
 import type { WatchStatus } from "@/db/schema";
-
-const STATUSES: readonly WatchStatus[] = [
-	"watching",
-	"on_hold",
-	"completed",
-	"dropped",
-	"rewatching",
-];
+import { watchStatuses } from "@/db/schema";
 
 const UNSET = "";
 const UNSET_LABEL = "set status";
 
-const formatStatus = (status: WatchStatus) => status.replace("_", " ");
+const formatStatus = (status: WatchStatus) => status.replaceAll("_", " ");
 
 interface StatusSelectProps {
 	disabled?: boolean;
@@ -25,7 +18,9 @@ interface StatusSelectProps {
 function StatusSelect({ disabled, onChange, value }: StatusSelectProps) {
 	const handleChange = useCallback(
 		(event: ChangeEvent<HTMLSelectElement>) => {
-			const next = STATUSES.find((status) => status === event.target.value);
+			const next = watchStatuses.find(
+				(status) => status === event.target.value,
+			);
 			if (next) {
 				onChange(next);
 			}
@@ -45,7 +40,7 @@ function StatusSelect({ disabled, onChange, value }: StatusSelectProps) {
 					{UNSET_LABEL}
 				</option>
 			)}
-			{STATUSES.map((status) => (
+			{watchStatuses.map((status) => (
 				<option key={status} value={status}>
 					{formatStatus(status)}
 				</option>

@@ -58,8 +58,8 @@ Madoka Magica films.
 
 - A user tracks one entry per **continuity** (ADR-0002), the whole work, not the
   per-service entry.
-- **Watch status** per work is one of watching, on hold, completed, dropped or
-  rewatching. A rewatch count is kept per work.
+- **Watch status** per work is one of watching, plan to watch, on hold,
+  completed, dropped or rewatching. A rewatch count is kept per work.
 - **Progress** is per episode. Marking episodes watched is what drives the
   watching and completed states and what sync reads. Status sits at the work
   level but is backed by per-episode progress.

@@ -28,6 +28,7 @@ describe("summarise empty library", () => {
 				completed: 0,
 				dropped: 0,
 				on_hold: 0,
+				plan_to_watch: 0,
 				rewatching: 0,
 				watching: 0,
 			},
@@ -46,16 +47,18 @@ describe("summarise watch statuses", () => {
 			entry({ continuityId: "continuity:3", status: "completed" }),
 			entry({ continuityId: "continuity:4", status: "dropped" }),
 			entry({ continuityId: "continuity:5", status: "rewatching" }),
+			entry({ continuityId: "continuity:6", status: "plan_to_watch" }),
 		]);
 
 		expect(stats.statusCounts).toEqual({
 			completed: 1,
 			dropped: 1,
 			on_hold: 0,
+			plan_to_watch: 1,
 			rewatching: 1,
 			watching: 2,
 		});
-		expect(stats.totalWorks).toBe(5);
+		expect(stats.totalWorks).toBe(6);
 	});
 });
 

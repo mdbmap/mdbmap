@@ -65,6 +65,7 @@ describe("CalendarPage empty state", () => {
 
 	it("explains when nothing is airing", () => {
 		expect(html).toContain("Nothing airing soon.");
+		expect(html).toContain("plan-to-watch");
 		expect(html).not.toContain("/work/");
 	});
 });

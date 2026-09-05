@@ -117,6 +117,14 @@ describe("LibraryPage rows", () => {
 		expect(html).toContain("on hold · 0 / 13");
 	});
 
+	it("renders plan_to_watch without a leftover underscore", () => {
+		const queued = renderPage([
+			entry({ status: "plan_to_watch", title: "Frieren" }),
+		]);
+		expect(queued).toContain("plan to watch · 25 / 37");
+		expect(queued).not.toContain("plan to_watch");
+	});
+
 	it("links every row to its numeric work path", () => {
 		expect(html).toContain('href="/work/12"');
 		expect(html).toContain('href="/work/34"');
@@ -136,6 +144,7 @@ describe("LibraryPage rows", () => {
 	it("counts the tracked works and exposes status and sort controls", () => {
 		expect(html).toContain("3 works");
 		expect(html).toContain("Watching");
+		expect(html).toContain("Plan to watch");
 		expect(html).toContain("Recent activity");
 	});
 

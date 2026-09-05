@@ -1,12 +1,8 @@
+import type { WatchStatus } from "@/db/schema";
+import { watchStatuses } from "@/db/schema";
 import type { LibraryEntry } from "@/orpc/schema";
 
-interface StatusCounts {
-	completed: number;
-	dropped: number;
-	on_hold: number;
-	rewatching: number;
-	watching: number;
-}
+type StatusCounts = Record<WatchStatus, number>;
 
 interface LibraryStats {
 	meanRating: number | undefined;
@@ -18,13 +14,21 @@ interface LibraryStats {
 	watchedInstalments: number;
 }
 
-const emptyCounts = (): StatusCounts => ({
-	completed: 0,
-	dropped: 0,
-	on_hold: 0,
-	rewatching: 0,
-	watching: 0,
-});
+const isStatusCounts = (
+	counts: Partial<Record<WatchStatus, number>>,
+): counts is StatusCounts =>
+	watchStatuses.every((status) => counts[status] !== undefined);
+
+const emptyCounts = (): StatusCounts => {
+	const counts: Partial<Record<WatchStatus, number>> = {};
+	for (const status of watchStatuses) {
+		counts[status] = 0;
+	}
+	if (!isStatusCounts(counts)) {
+		throw new Error("stats: incomplete status counts");
+	}
+	return counts;
+};
 
 const roundMean = (total: number, count: number): number =>
 	Math.round((total / count) * 10) / 10;

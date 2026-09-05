@@ -13,7 +13,7 @@ const TITLE = "Calendar";
 const TAGLINE = "Unwatched instalments airing in the next two weeks.";
 const EMPTY_HEADING = "Nothing airing soon.";
 const EMPTY_BODY =
-	"Watching, rewatching, and on-hold works show up here when the next instalment has an air date.";
+	"Watching, rewatching, on-hold, and plan-to-watch works show up here when the next instalment has an air date.";
 const SEARCH_NAV = "Search";
 const LIBRARY_NAV = "Library";
 const CALENDAR_NAV = "Calendar";

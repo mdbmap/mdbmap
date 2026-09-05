@@ -103,6 +103,26 @@ describe("persistProgressAndStatus", () => {
 		]);
 	});
 
+	it("moves plan_to_watch to watching on the first watched episode", async () => {
+		const db = await seedUser();
+		await db
+			.insert(watchStatus)
+			.values({
+				continuityKey: CONTINUITY_ID,
+				status: "plan_to_watch",
+				userId: USER_ID,
+			})
+			.run();
+		await persist(db, [OWNED[0]], true);
+		expect(await db.select().from(watchStatus).all()).toEqual([
+			expect.objectContaining({
+				continuityKey: CONTINUITY_ID,
+				status: "watching",
+				userId: USER_ID,
+			}),
+		]);
+	});
+
 	it("completes when concurrent part writes cover every locator", async () => {
 		const db = await seedUser();
 		await Promise.all([

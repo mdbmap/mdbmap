@@ -46,4 +46,31 @@ describe("createMalTargetClient", () => {
 		});
 		expect(fetchFn).toHaveBeenCalledTimes(1);
 	});
+
+	it("maps planning onto MAL plan_to_watch", async () => {
+		const fetchFn = vi.fn(
+			async (
+				_input: RequestInfo | URL,
+				_init?: RequestInit,
+			): Promise<Response> => {
+				await Promise.resolve();
+				return new Response("{}", { status: 200 });
+			},
+		);
+		const client = createMalTargetClient({
+			credentials: { accessToken: "tok" },
+			fetchFn,
+		});
+		await client.push({
+			progress: [],
+			ratings: [],
+			status: [{ externalTitleId: "20", status: "planning" }],
+		});
+		const body = fetchFn.mock.calls[0]?.[1]?.body;
+		expect(body).toBeInstanceOf(URLSearchParams);
+		if (!(body instanceof URLSearchParams)) {
+			throw new Error("expected form body");
+		}
+		expect(body.get("status")).toBe("plan_to_watch");
+	});
 });
