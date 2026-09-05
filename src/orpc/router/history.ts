@@ -263,26 +263,6 @@ const instalmentRef = (
 	return undefined;
 };
 
-const uniqueWorks = (
-	page: readonly ProgressRow[],
-	owners: ReadonlyMap<string, TrackedWork>,
-): TrackedWork[] => {
-	const works: TrackedWork[] = [];
-	const seen = new Set<string>();
-	for (const row of page) {
-		const work = owners.get(row.locator);
-		if (work === undefined) {
-			continue;
-		}
-		if (seen.has(work.resolved.continuityId)) {
-			continue;
-		}
-		seen.add(work.resolved.continuityId);
-		works.push(work);
-	}
-	return works;
-};
-
 const presentationsFor = async (
 	db: Db,
 	providers: Providers,
@@ -343,38 +323,159 @@ const cursorOf = (row: ProgressRow): HistoryListCursor =>
 		watchedAt: row.watchedAt.toISOString(),
 	});
 
+const nextUnfetchedWorks = (
+	fromIndex: number,
+	afterCursor: readonly ProgressRow[],
+	owners: ReadonlyMap<string, TrackedWork>,
+	presentations: ReadonlyMap<string, WorkPresentation>,
+	batchSize: number,
+): TrackedWork[] => {
+	const works: TrackedWork[] = [];
+	const seen = new Set<string>();
+	for (
+		let index = fromIndex;
+		index < afterCursor.length && works.length < batchSize;
+		index += 1
+	) {
+		const row = afterCursor[index];
+		if (row === undefined) {
+			continue;
+		}
+		const work = owners.get(row.locator);
+		if (work === undefined) {
+			continue;
+		}
+		const { continuityId } = work.resolved;
+		if (presentations.has(continuityId) || seen.has(continuityId)) {
+			continue;
+		}
+		seen.add(continuityId);
+		works.push(work);
+	}
+	return works;
+};
+
+interface PageFill {
+	readonly afterCursor: readonly ProgressRow[];
+	readonly db: Db;
+	readonly entries: HistoryEntry[];
+	readonly index: number;
+	readonly lastEmitted: ProgressRow | undefined;
+	readonly limit: number;
+	readonly owners: ReadonlyMap<string, TrackedWork>;
+	readonly presentations: Map<string, WorkPresentation>;
+	readonly providers: Providers;
+}
+
+const pageResult = (fill: PageFill): HistoryListResult => {
+	const { entries, lastEmitted } = fill;
+	if (lastEmitted === undefined || fill.index >= fill.afterCursor.length) {
+		return { entries };
+	}
+	return { entries, nextCursor: cursorOf(lastEmitted) };
+};
+
+const rememberPresentations = (
+	presentations: Map<string, WorkPresentation>,
+	fetched: ReadonlyMap<string, WorkPresentation>,
+): void => {
+	for (const [continuityId, presentation] of fetched) {
+		presentations.set(continuityId, presentation);
+	}
+};
+
+const fetchMissingPresentations = async (fill: PageFill): Promise<void> => {
+	const remaining = fill.limit - fill.entries.length;
+	const batchSize = Math.min(META_BATCH, Math.max(remaining, 1));
+	const works = nextUnfetchedWorks(
+		fill.index,
+		fill.afterCursor,
+		fill.owners,
+		fill.presentations,
+		batchSize,
+	);
+	const fetched = await presentationsFor(fill.db, fill.providers, works);
+	rememberPresentations(fill.presentations, fetched);
+};
+
+const needsPresentation = (
+	work: TrackedWork | undefined,
+	presentations: ReadonlyMap<string, WorkPresentation>,
+): work is TrackedWork =>
+	work !== undefined && !presentations.has(work.resolved.continuityId);
+
+const emitRow = (fill: PageFill, row: ProgressRow): PageFill => {
+	const entry = entryFor(row, fill.owners, fill.presentations);
+	if (entry === undefined) {
+		return { ...fill, index: fill.index + 1 };
+	}
+	return {
+		...fill,
+		entries: [...fill.entries, entry],
+		index: fill.index + 1,
+		lastEmitted: row,
+	};
+};
+
+const emitReadyRows = (fill: PageFill): PageFill => {
+	let current = fill;
+	while (
+		current.index < current.afterCursor.length &&
+		current.entries.length < current.limit
+	) {
+		const row = current.afterCursor[current.index];
+		if (row === undefined) {
+			return { ...current, index: current.afterCursor.length };
+		}
+		if (
+			needsPresentation(current.owners.get(row.locator), current.presentations)
+		) {
+			return current;
+		}
+		current = emitRow(current, row);
+	}
+	return current;
+};
+
+const fillPage = async (fill: PageFill): Promise<HistoryListResult> => {
+	const current = emitReadyRows(fill);
+	if (
+		current.index >= current.afterCursor.length ||
+		current.entries.length >= current.limit
+	) {
+		return pageResult(current);
+	}
+	const row = current.afterCursor[current.index];
+	if (row === undefined) {
+		return pageResult({ ...current, index: current.afterCursor.length });
+	}
+	await fetchMissingPresentations(current);
+	if (
+		needsPresentation(current.owners.get(row.locator), current.presentations)
+	) {
+		return fillPage({ ...current, index: current.index + 1 });
+	}
+	return fillPage(current);
+};
+
 const paginate = async (
 	db: Db,
 	providers: Providers,
 	owners: ReadonlyMap<string, TrackedWork>,
 	afterCursor: readonly ProgressRow[],
 	limit: number,
-): Promise<HistoryListResult> => {
-	const presentations = await presentationsFor(
+): Promise<HistoryListResult> =>
+	fillPage({
+		afterCursor,
 		db,
+		entries: [],
+		index: 0,
+		lastEmitted: undefined,
+		limit,
+		owners,
+		presentations: new Map(),
 		providers,
-		uniqueWorks(afterCursor, owners),
-	);
-	const entries: HistoryEntry[] = [];
-	let lastEmitted: ProgressRow | undefined;
-	let index = 0;
-	for (; index < afterCursor.length && entries.length < limit; index += 1) {
-		const row = afterCursor[index];
-		if (row === undefined) {
-			break;
-		}
-		const entry = entryFor(row, owners, presentations);
-		if (entry === undefined) {
-			continue;
-		}
-		entries.push(entry);
-		lastEmitted = row;
-	}
-	if (lastEmitted === undefined || index >= afterCursor.length) {
-		return { entries };
-	}
-	return { entries, nextCursor: cursorOf(lastEmitted) };
-};
+	});
 
 const list = authed
 	.input(HistoryListInput)
