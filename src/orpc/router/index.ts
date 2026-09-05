@@ -1,6 +1,7 @@
 import { apiKeys } from "./api-keys";
 import { billing } from "./billing";
 import { calendar } from "./calendar";
+import { history } from "./history";
 import { libraryImport } from "./import";
 import { ingest } from "./ingest";
 import { library } from "./library";
@@ -17,6 +18,7 @@ export const router = {
 	apiKeys,
 	billing,
 	calendar,
+	history,
 	import: libraryImport,
 	ingest,
 	library,

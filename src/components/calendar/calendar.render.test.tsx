@@ -57,6 +57,7 @@ describe("CalendarPage rows", () => {
 		expect(html).toContain('aria-current="page"');
 		expect(html).toContain("Calendar");
 		expect(html).toContain('href="/library"');
+		expect(html).toContain('href="/history"');
 	});
 });
 
