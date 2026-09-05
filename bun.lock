@@ -35,6 +35,7 @@
         "react": "^19.2.0",
         "react-aria-components": "^1.20.0",
         "react-dom": "^19.2.0",
+        "stremio-types": "^0.61.1",
         "strip-undefined": "^1.0.0",
         "stripe": "^22.6.0",
         "tailwind-variants": "^3.3.1",
@@ -1501,6 +1502,8 @@
     "stackback": ["stackback@0.0.2", "", {}, "sha512-1XMJE5fQo1jGH6Y/7ebnwPOBEkIEnT4QF32d5R1+VXdXveM0IBMJt8zfaxX1P3QhVwrYe+576+jkANtSS2mBbw=="],
 
     "std-env": ["std-env@4.2.0", "", {}, "sha512-oCUKSupKTHX53EyjDtuZQ64pjLJ6yYCtpmEw0goYxtjG9KpbRe8KAsl2tBUGU9DyMcJ0RwJ8GqJAFzMXcXW1Rw=="],
+
+    "stremio-types": ["stremio-types@0.61.1", "", {}, "sha512-SXNYm93hk7c8zHmF0OBnXHz+AjMgxhwcLyrcnQFI/atUn1rO3dOeq5SzQ7OqxcxrRWrD2ALRF3hKxVXQSDGfbw=="],
 
     "string-argv": ["string-argv@0.3.2", "", {}, "sha512-aqD2Q0144Z+/RqG52NeHEkZauTAUWJO8c6yTftGJKO3Tja5tUgIfmIl6kExvhtxSDP7fXB6DvzkfMpCd/F3G+Q=="],
 
