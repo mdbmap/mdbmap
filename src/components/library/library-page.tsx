@@ -77,7 +77,7 @@ const isFilteredEmpty = (
 		kind !== undefined ||
 		query.trim().length > 0);
 
-const formatStatus = (status: WatchStatus) => status.replace("_", " ");
+const formatStatus = (status: WatchStatus) => status.replaceAll("_", " ");
 
 const metaLine = (entry: LibraryEntry) =>
 	[
