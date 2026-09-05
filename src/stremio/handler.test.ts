@@ -197,6 +197,24 @@ describe("stremio manifest and catalog", () => {
 			metas: [{ id: "tt0903747" }],
 		});
 	});
+
+	it("does not cache catalog results when search fails", async () => {
+		const response = await get(
+			"/stremio/catalog/movie/mdbmap.movie/search=Matrix.json",
+			depsOf(
+				() => ok(movieBody),
+				() => {
+					throw new Error("search down");
+				},
+			),
+		);
+		expect(response.status).toBe(200);
+		expect(response.headers.get("cache-control")).toBe("public, max-age=0");
+		await expect(response.json()).resolves.toMatchObject({
+			cacheMaxAge: 0,
+			metas: [],
+		});
+	});
 });
 
 describe("stremio meta video ids", () => {

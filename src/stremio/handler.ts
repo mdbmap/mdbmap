@@ -1,4 +1,4 @@
-import type { ContentType } from "stremio-types";
+import type { ContentType, MetaItemPreview } from "stremio-types";
 import type { Promisable } from "type-fest";
 
 import type { MediaKind } from "@/engine";
@@ -63,7 +63,7 @@ const catalogMetas = async (
 	catalogId: string,
 	type: ContentType,
 	extra: URLSearchParams,
-) => {
+): Promise<MetaItemPreview[] | undefined> => {
 	const mediaKind = mediaKindForCatalog(catalogId);
 	const query = searchQueryOf(extra);
 	if (mediaKind === undefined || query === "") {
@@ -78,7 +78,7 @@ const catalogMetas = async (
 			deps.resolve,
 		);
 	} catch {
-		return [];
+		return undefined;
 	}
 };
 
@@ -100,6 +100,13 @@ const handleStremioRequest = async (
 			parsed.type,
 			parsed.extra,
 		);
+		if (metas === undefined) {
+			return jsonResponse(
+				{ cacheMaxAge: CACHE_NONE, metas: [] },
+				200,
+				CACHE_NONE,
+			);
+		}
 		return jsonResponse({ cacheMaxAge: CACHE_HOUR, metas }, 200, CACHE_HOUR);
 	}
 	const profile = profileFor(parsed.type, parsed.id);
