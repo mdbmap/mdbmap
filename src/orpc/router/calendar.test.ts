@@ -2,6 +2,7 @@ import { createRouterClient } from "@orpc/server";
 import { describe, expect, it } from "vitest";
 
 import { episodeProgress, user, watchStatus } from "@/db/schema";
+import type { WatchStatus } from "@/db/schema";
 import { freshDb } from "@/db/test-helpers";
 import type { ResolveResult } from "@/engine";
 import { createEngine } from "@/engine";
@@ -86,7 +87,7 @@ const seededViewer = async () => {
 const track = async (
 	db: TestDb,
 	continuityId: string,
-	status: "completed" | "watching" = "watching",
+	status: WatchStatus = "watching",
 ) => {
 	await db
 		.insert(watchStatus)
@@ -105,6 +106,30 @@ describe("calendar.list", () => {
 		const db = await seededViewer();
 		const { continuityId } = await seedSpyXFamily(db);
 		await track(db, continuityId);
+
+		const days = await clientFor(db, "user-1").calendar.list();
+
+		expect(days).toEqual([
+			{
+				date: today,
+				episodes: [
+					{
+						airDate: today,
+						continuityId,
+						number: 1,
+						partLabel: "Part 1",
+						title: "Episode 1",
+						workTitle: `Work ${continuityId}`,
+					},
+				],
+			},
+		]);
+	});
+
+	it("includes plan_to_watch works when an unwatched instalment airs", async () => {
+		const db = await seededViewer();
+		const { continuityId } = await seedSpyXFamily(db);
+		await track(db, continuityId, "plan_to_watch");
 
 		const days = await clientFor(db, "user-1").calendar.list();
 

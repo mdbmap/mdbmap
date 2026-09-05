@@ -16,6 +16,7 @@ const CALENDAR_STATUSES = [
 	"watching",
 	"rewatching",
 	"on_hold",
+	"plan_to_watch",
 ] as const satisfies readonly WatchStatus[];
 
 type WatchStatusRow = typeof watchStatus.$inferSelect;

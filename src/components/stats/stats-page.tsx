@@ -57,20 +57,12 @@ function HeaderNavLink({
 	to,
 }: {
 	label: string;
-	to: "/" | typeof LIBRARY_PATH | typeof SEARCH_PATH;
+	to: "/" | typeof HISTORY_PATH | typeof LIBRARY_PATH | typeof SEARCH_PATH;
 }) {
 	return (
 		<Link to={to}>
 			<span className={to === "/" ? brandClass : navClass}>{label}</span>
 		</Link>
-	);
-}
-
-function HistoryNavLink() {
-	return (
-		<a href={HISTORY_PATH}>
-			<span className={navClass}>{HISTORY_NAV}</span>
-		</a>
 	);
 }
 
@@ -81,7 +73,7 @@ function StatsHeader() {
 				<HeaderNavLink label={BRAND} to="/" />
 				<HeaderNavLink label={SEARCH_NAV} to={SEARCH_PATH} />
 				<HeaderNavLink label={LIBRARY_NAV} to={LIBRARY_PATH} />
-				<HistoryNavLink />
+				<HeaderNavLink label={HISTORY_NAV} to={HISTORY_PATH} />
 			</nav>
 			<div className="flex items-center gap-4">
 				<BetterAuthHeader />

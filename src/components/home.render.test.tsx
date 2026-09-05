@@ -176,6 +176,18 @@ const continueLibrary: LibraryEntry[] = [
 		status: "on_hold",
 		title: "Parked",
 	}),
+	entry({
+		continuityId: "continuity:90",
+		nextUp: {
+			number: 1,
+			partLabel: "Cour 1",
+			title: "It Started with a Lie",
+		},
+		status: "plan_to_watch",
+		title: "Solo Leveling",
+		totalInstalments: 12,
+		watchedInstalments: 0,
+	}),
 ];
 
 describe("Home", () => {
@@ -258,6 +270,8 @@ describe("Home continue", () => {
 		expect(html).toContain('href="/work/34"');
 		expect(html).not.toContain("Finished");
 		expect(html).not.toContain("Parked");
+		expect(html).not.toContain("Solo Leveling");
+		expect(html).not.toContain("It Started with a Lie");
 	});
 
 	it("hides continue when signed out", () => {

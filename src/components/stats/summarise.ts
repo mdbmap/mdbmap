@@ -39,7 +39,7 @@ const emptyStatusCounts = (): StatusCounts => {
 		counts[status] = 0;
 	}
 	if (!isStatusCounts(counts)) {
-		throw new Error("status counts incomplete");
+		throw new Error("stats: incomplete status counts");
 	}
 	return counts;
 };
@@ -50,7 +50,7 @@ const emptyKindCounts = (): KindCounts => {
 		counts[kind] = 0;
 	}
 	if (!isKindCounts(counts)) {
-		throw new Error("kind counts incomplete");
+		throw new Error("stats: incomplete kind counts");
 	}
 	return counts;
 };

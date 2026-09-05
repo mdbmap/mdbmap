@@ -79,15 +79,18 @@ describe("SiteHeader", () => {
 		expect(html).toContain('href="/"');
 		expect(html).toContain('href="/search"');
 		expect(html).not.toContain('href="/library"');
+		expect(html).not.toContain('href="/history"');
 		expect(html).toContain("px-8 py-3.5");
 	});
 
-	it("links library and stats when signed in", () => {
+	it("links library, calendar, history and stats when signed in", () => {
 		useSession.mockReturnValue(signedIn);
 		const html = renderToStaticMarkup(<SiteHeader current="library" />);
 		expect(html).toContain('href="/"');
 		expect(html).toContain('href="/search"');
 		expect(html).toContain('href="/library"');
+		expect(html).toContain('href="/calendar"');
+		expect(html).toContain('href="/history"');
 		expect(html).toContain('href="/stats"');
 		expect(classOf(html, "/library")).toContain("text-accent");
 	});
@@ -102,6 +105,7 @@ describe("SiteHeader", () => {
 		expect(html).toContain('href="/"');
 		expect(html).toContain('href="/search"');
 		expect(html).not.toContain('href="/library"');
+		expect(html).not.toContain('href="/history"');
 	});
 
 	it("marks the current item and keeps the wordmark accented", () => {

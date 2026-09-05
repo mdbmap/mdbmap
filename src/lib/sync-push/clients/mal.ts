@@ -22,6 +22,9 @@ const malStatusOf = (status: MappedWatchStatus): string => {
 		case "on_hold": {
 			return "on_hold";
 		}
+		case "planning": {
+			return "plan_to_watch";
+		}
 		case "repeating": {
 			return "watching";
 		}

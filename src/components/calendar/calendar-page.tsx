@@ -13,12 +13,14 @@ const TITLE = "Calendar";
 const TAGLINE = "Unwatched instalments airing in the next two weeks.";
 const EMPTY_HEADING = "Nothing airing soon.";
 const EMPTY_BODY =
-	"Watching, rewatching, and on-hold works show up here when the next instalment has an air date.";
+	"Watching, rewatching, on-hold, and plan-to-watch works show up here when the next instalment has an air date.";
 const SEARCH_NAV = "Search";
 const LIBRARY_NAV = "Library";
 const CALENDAR_NAV = "Calendar";
+const HISTORY_NAV = "History";
 const SEARCH_PATH = "/search";
 const LIBRARY_PATH = "/library";
+const HISTORY_PATH = "/history";
 const HOME_PATH = "/";
 
 const navItem = tv({
@@ -66,7 +68,11 @@ function HeaderNavLink({
 	active: boolean;
 	brand?: boolean;
 	label: string;
-	to: typeof HOME_PATH | typeof LIBRARY_PATH | typeof SEARCH_PATH;
+	to:
+		| typeof HOME_PATH
+		| typeof HISTORY_PATH
+		| typeof LIBRARY_PATH
+		| typeof SEARCH_PATH;
 }) {
 	return (
 		<Link aria-current={active ? "page" : undefined} to={to}>
@@ -84,6 +90,7 @@ function HeaderNav() {
 			<span aria-current="page" className={navItem({ active: true })}>
 				{CALENDAR_NAV}
 			</span>
+			<HeaderNavLink active={false} label={HISTORY_NAV} to={HISTORY_PATH} />
 		</nav>
 	);
 }

@@ -9,7 +9,7 @@ describe("malStatusToWatchStatus", () => {
 		expect(malStatusToWatchStatus("on_hold")).toBe("on_hold");
 		expect(malStatusToWatchStatus("dropped")).toBe("dropped");
 		expect(malStatusToWatchStatus("rewatching")).toBe("rewatching");
-		expect(malStatusToWatchStatus("plan_to_watch")).toBeUndefined();
+		expect(malStatusToWatchStatus("plan_to_watch")).toBe("plan_to_watch");
 		expect(malStatusToWatchStatus("unknown")).toBeUndefined();
 	});
 });

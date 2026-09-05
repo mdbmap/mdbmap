@@ -57,6 +57,7 @@ describe("CalendarPage rows", () => {
 		expect(html).toContain('aria-current="page"');
 		expect(html).toContain("Calendar");
 		expect(html).toContain('href="/library"');
+		expect(html).toContain('href="/history"');
 	});
 });
 
@@ -65,6 +66,7 @@ describe("CalendarPage empty state", () => {
 
 	it("explains when nothing is airing", () => {
 		expect(html).toContain("Nothing airing soon.");
+		expect(html).toContain("plan-to-watch");
 		expect(html).not.toContain("/work/");
 	});
 });

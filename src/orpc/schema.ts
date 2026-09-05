@@ -44,6 +44,13 @@ const LibraryListInput = z.object({
 	status: WatchStatusSchema.optional(),
 });
 
+type HistoryListCursor = string;
+
+const HistoryListInput = z.object({
+	cursor: z.string().min(1).optional(),
+	limit: z.number().int().min(1).max(100).optional(),
+});
+
 const SetStatusInput = z.object({
 	continuityId: z.string().min(1),
 	status: WatchStatusSchema,
@@ -389,6 +396,22 @@ interface LibraryEntry {
 	watchedInstalments: number;
 }
 
+interface HistoryEntry {
+	continuityId: string;
+	coverRef: string | undefined;
+	instalmentTitle: string;
+	mediaKind: MediaKind;
+	number: number;
+	partLabel: string;
+	watchedAt: string;
+	workTitle: string;
+}
+
+interface HistoryListResult {
+	entries: HistoryEntry[];
+	nextCursor?: HistoryListCursor;
+}
+
 interface EpisodeWatchedResult {
 	status: WatchStatus;
 	watched: string[];
@@ -407,6 +430,7 @@ export {
 	IngestStartInput,
 	ManualPairInput,
 	WorkOpenInput,
+	HistoryListInput,
 	MarkMatchedInput,
 	MintApiKeyInput,
 	RateableUnitInput,
@@ -441,6 +465,9 @@ export type {
 	EpisodeView,
 	EpisodeWatchedResult,
 	FilmView,
+	HistoryEntry,
+	HistoryListCursor,
+	HistoryListResult,
 	LibraryEntry,
 	NextUp,
 	LibrarySort,

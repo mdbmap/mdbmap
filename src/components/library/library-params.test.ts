@@ -13,6 +13,9 @@ describe("parseLibrarySearch", () => {
 		expect(
 			parseLibrarySearch({ sort: "activity", status: "watching" }),
 		).toEqual({ status: "watching" });
+		expect(parseLibrarySearch({ status: "plan_to_watch" })).toEqual({
+			status: "plan_to_watch",
+		});
 	});
 
 	it("keeps title and rating sorts", () => {

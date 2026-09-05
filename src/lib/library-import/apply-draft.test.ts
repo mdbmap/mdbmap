@@ -239,6 +239,43 @@ describe("applyImportDraft", () => {
 		]);
 	});
 
+	it("applies a matched plan_to_watch row", async () => {
+		const db = await freshDb();
+		await db
+			.insert(user)
+			.values({ email: "a@b.test", id: "user-1", name: "Ada" })
+			.run();
+		const draft = draftOf([
+			matched({
+				entry: {
+					externalTitleId: "1",
+					progress: 0,
+					score: 0,
+					status: "plan_to_watch",
+					title: "Queued",
+					updatedAt: undefined,
+				},
+				proposedProgress: 0,
+				proposedScore: undefined,
+				proposedStatus: "plan_to_watch",
+			}),
+		]);
+
+		const result = await apply(db, draft, stubEngine(["mal:1#1"]));
+
+		expect(result).toEqual({
+			applied: 1,
+			provider: "mal",
+			skippedNewerLocal: 0,
+			skippedUnmatched: 0,
+			skippedUnresolved: 0,
+		});
+		expect(await db.select().from(watchStatus).all()).toMatchObject([
+			{ continuityKey: continuityId, status: "plan_to_watch" },
+		]);
+		expect(await db.select().from(episodeProgress).all()).toEqual([]);
+	});
+
 	it("rejects a stale fingerprint", async () => {
 		const db = await freshDb();
 		await db

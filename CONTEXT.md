@@ -125,5 +125,5 @@ A reviewer's advisory judgement on one assertion under question: supporting, dis
 _Avoid_: Opinion, score
 
 **Watch status**:
-A user's state for a tracked work: watching, on hold, completed, dropped or rewatching, with a rewatch count. It is held once per continuity at the work level; sync fans it out to the correct per-entry record on each target service through the instalment mappings.
+A user's state for a tracked work: watching, plan to watch, on hold, completed, dropped or rewatching, with a rewatch count. It is held once per continuity at the work level; sync fans it out to the correct per-entry record on each target service through the instalment mappings.
 _Avoid_: Per-season status, list state
