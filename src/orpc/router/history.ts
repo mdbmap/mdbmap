@@ -328,13 +328,15 @@ const nextUnfetchedWorks = (
 	afterCursor: readonly ProgressRow[],
 	owners: ReadonlyMap<string, TrackedWork>,
 	presentations: ReadonlyMap<string, WorkPresentation>,
+	rowLimit: number,
 	batchSize: number,
 ): TrackedWork[] => {
 	const works: TrackedWork[] = [];
 	const seen = new Set<string>();
+	const end = Math.min(afterCursor.length, fromIndex + rowLimit);
 	for (
 		let index = fromIndex;
-		index < afterCursor.length && works.length < batchSize;
+		index < end && works.length < batchSize;
 		index += 1
 	) {
 		const row = afterCursor[index];
@@ -385,14 +387,14 @@ const rememberPresentations = (
 };
 
 const fetchMissingPresentations = async (fill: PageFill): Promise<void> => {
-	const remaining = fill.limit - fill.entries.length;
-	const batchSize = Math.min(META_BATCH, Math.max(remaining, 1));
+	const remaining = Math.max(fill.limit - fill.entries.length, 1);
 	const works = nextUnfetchedWorks(
 		fill.index,
 		fill.afterCursor,
 		fill.owners,
 		fill.presentations,
-		batchSize,
+		remaining,
+		META_BATCH,
 	);
 	const fetched = await presentationsFor(fill.db, fill.providers, works);
 	rememberPresentations(fill.presentations, fetched);
