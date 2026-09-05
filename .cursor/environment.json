@@ -1,7 +1,8 @@
 {
 	"name": "mdbmap",
 	"user": "ubuntu",
-	"install": "curl -fsSL https://bun.sh/install | bash && export BUN_INSTALL=\"$HOME/.bun\" && export PATH=\"$BUN_INSTALL/bin:$PATH\" && bun install --frozen-lockfile && bun run cf-typegen && bun run codegen",
+	"install": "bash .cursor/install.sh",
+	"repositoryDependencies": ["github.com/theacrat/skills"],
 	"terminals": [
 		{
 			"name": "dev",
