@@ -440,4 +440,52 @@ describe("stremio meta display metadata", () => {
 			},
 		});
 	});
+
+	it("overlays display metadata for a conflict mapping", async () => {
+		let seen: number | undefined;
+		const response = await get(
+			"/stremio/meta/movie/tmdb:603.json",
+			depsOf(
+				() => ({
+					body: { ...movieBody, continuityId: 42 },
+					kind: "conflict",
+					review: "review:1",
+				}),
+				() => [],
+				(continuityId) => {
+					seen = continuityId;
+					return workMeta({ title: "The Matrix" });
+				},
+			),
+		);
+		expect(seen).toBe(42);
+		expect(response.headers.get("cache-control")).toBe("public, max-age=0");
+		await expect(response.json()).resolves.toMatchObject({
+			meta: { name: "The Matrix", videos: [{ id: "tt0133093" }] },
+		});
+	});
+
+	it("overlays display metadata for a pending mapping", async () => {
+		let seen: number | undefined;
+		const response = await get(
+			"/stremio/meta/movie/tmdb:603.json",
+			depsOf(
+				() => ({
+					body: { ...movieBody, continuityId: 42 },
+					kind: "pending",
+					retryAfterSeconds: 3,
+					statusUrl: "/status",
+				}),
+				() => [],
+				(continuityId) => {
+					seen = continuityId;
+					return workMeta({ title: "The Matrix" });
+				},
+			),
+		);
+		expect(seen).toBe(42);
+		await expect(response.json()).resolves.toMatchObject({
+			meta: { name: "The Matrix", videos: [{ id: "tt0133093" }] },
+		});
+	});
 });

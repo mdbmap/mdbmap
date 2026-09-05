@@ -253,7 +253,7 @@ describe("mapping gateway resolution", () => {
 	it("returns 409 with an opaque review reference for a blocking conflict", async () => {
 		const group = await seedGroup(db);
 		const source = await seedTitle(db, group.id, "tmdb", "movie:603");
-		await seedContinuity(db, source.id);
+		const continuityId = await seedContinuity(db, source.id);
 		await seedCoverage(db, group.id, "imdb", "conflict");
 
 		const outcome = await resolveMapping(db, "movie", "tmdb:603", noColdLookup);
@@ -264,13 +264,13 @@ describe("mapping gateway resolution", () => {
 		}
 		expect(outcome.review.startsWith("review:")).toBe(true);
 		expect(outcome.body.mappings.imdb?.status).toBe("conflict");
-		expect("continuityId" in outcome.body).toBe(false);
+		expect(outcome.body.continuityId).toBe(continuityId);
 	});
 
 	it("returns 202 with a status URL for a seeded pending build", async () => {
 		const group = await seedGroup(db);
 		const source = await seedTitle(db, group.id, "tmdb", "movie:603");
-		await seedContinuity(db, source.id);
+		const continuityId = await seedContinuity(db, source.id);
 		await seedCoverage(db, group.id, "imdb", "pending");
 
 		const outcome = await resolveMapping(db, "movie", "tmdb:603", noColdLookup);
@@ -282,7 +282,7 @@ describe("mapping gateway resolution", () => {
 		expect(outcome.retryAfterSeconds).toBeGreaterThan(0);
 		expect(outcome.statusUrl.length).toBeGreaterThan(0);
 		expect(outcome.body.mappings.imdb?.status).toBe("pending");
-		expect("continuityId" in outcome.body).toBe(false);
+		expect(outcome.body.continuityId).toBe(continuityId);
 	});
 
 	it("serves a usable target at 200 while another target is still pending", async () => {
@@ -372,27 +372,27 @@ describe("mapping gateway HTTP responses", () => {
 	it("sets Retry-After and 202 for a pending build", async () => {
 		const group = await seedGroup(db);
 		const source = await seedTitle(db, group.id, "tmdb", "movie:603");
-		await seedContinuity(db, source.id);
+		const continuityId = await seedContinuity(db, source.id);
 		await seedCoverage(db, group.id, "imdb", "pending");
 
 		const response = await runMapping("movie", "tmdb:603", { db });
 
 		expect(response.status).toBe(202);
 		expect(Number(response.headers.get("retry-after"))).toBeGreaterThan(0);
-		await expect(response.json()).resolves.not.toHaveProperty("continuityId");
+		await expect(response.json()).resolves.toMatchObject({ continuityId });
 	});
 
 	it("omits Retry-After and returns 409 for a conflict", async () => {
 		const group = await seedGroup(db);
 		const source = await seedTitle(db, group.id, "tmdb", "movie:603");
-		await seedContinuity(db, source.id);
+		const continuityId = await seedContinuity(db, source.id);
 		await seedCoverage(db, group.id, "imdb", "conflict");
 
 		const response = await runMapping("movie", "tmdb:603", { db });
 
 		expect(response.status).toBe(409);
 		expect(response.headers.get("retry-after")).toBeNull();
-		await expect(response.json()).resolves.not.toHaveProperty("continuityId");
+		await expect(response.json()).resolves.toMatchObject({ continuityId });
 	});
 
 	it("returns 400 for a malformed id and 404 for an unknown id", async () => {

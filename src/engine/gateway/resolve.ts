@@ -57,21 +57,18 @@ const resolveMapping = async (
 		statuses.some(
 			(status) => status === "matched" || status === "known-no-counterpart",
 		);
+	const body = serialize(read.answer, { continuityId: read.continuityId });
 	if (usable) {
-		return {
-			body: serialize(read.answer, { continuityId: read.continuityId }),
-			kind: "ok",
-		};
+		return { body, kind: "ok" };
 	}
 	if (statuses.includes("pending") && read.pendingRef !== undefined) {
 		return {
-			body: serialize(read.answer),
+			body,
 			kind: "pending",
 			retryAfterSeconds: WARM_RETRY_AFTER_SECONDS,
 			statusUrl: statusUrlFor(read.pendingRef),
 		};
 	}
-	const body = serialize(read.answer);
 	return read.reviewRef === undefined
 		? { body, kind: "ok" }
 		: { body, kind: "conflict", review: read.reviewRef };
